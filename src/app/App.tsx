@@ -3161,9 +3161,9 @@ export default function App({
 
   const onClosePane = useCallback(
     (sessionId?: string) => {
-      // The project terminal is shared by every workspace tab in the project.
-      // Keep the global close command scoped to workspace tabs and panes even
-      // while the dock has focus; terminal tabs have their own close buttons.
+      // The project terminal is shared by every workspace tab in the project,
+      // so this only closes workspace tabs and panes; `onCloseInFocus` routes
+      // the close command to the dock's terminal tabs while it has focus.
       if (!activeTab) return;
       const focusedSurface = findSurfacePane(activeTab, activeTab.focusedId);
       if (sessionId === undefined && focusedSurface) {
@@ -3234,6 +3234,27 @@ export default function App({
     },
     [onClosePane, onCloseTab, tabCloseScope],
   );
+
+  // While the project terminal dock has focus, New Tab and Close act on its
+  // terminal tabs instead of the workspace's session tabs.
+  const onNewTabInFocus = useCallback(() => {
+    if (projectTerminalFocusedRef.current) onNewTerminalTab();
+    else onNew();
+  }, [onNew, onNewTerminalTab]);
+
+  const onCloseInFocus = useCallback(() => {
+    if (projectTerminalFocusedRef.current) {
+      const dock = findProjectTerminal(
+        projectTerminalsRef.current,
+        projectCwdRef.current,
+      );
+      if (dock?.open && dock.pane.activeFileId) {
+        onCloseProjectTerminal(dock.pane.activeFileId);
+        return;
+      }
+    }
+    onClosePane();
+  }, [onClosePane, onCloseProjectTerminal]);
 
   const deckProjectTabs = useMemo(() => {
     // A projectless session belongs to no project, so it stands on its own
@@ -9750,10 +9771,12 @@ export default function App({
 
   const actions = useRef({
     onNew,
+    onNewTabInFocus,
     onArchiveFocusedSession,
     onCloseOtherTabs,
     onCloseAllTabs,
     onClosePane,
+    onCloseInFocus,
     onNext,
     onPrev,
     onVisitBack,
@@ -9781,10 +9804,12 @@ export default function App({
   });
   actions.current = {
     onNew,
+    onNewTabInFocus,
     onArchiveFocusedSession,
     onCloseOtherTabs,
     onCloseAllTabs,
     onClosePane,
+    onCloseInFocus,
     onNext,
     onPrev,
     onVisitBack,
@@ -9840,6 +9865,23 @@ export default function App({
       const customCommand = matchCustomKeybinding(e);
       const pressed = (command: string, defaultMatch: boolean) =>
         keybindingPressed(command, e, defaultMatch);
+      // Cmd+T in the terminal dock opens another terminal, as it does in any
+      // terminal app, even when "Tab: New" has been rebound elsewhere. Ctrl+T
+      // stays with the shell.
+      if (
+        !customCommand &&
+        e.metaKey &&
+        !e.ctrlKey &&
+        tabCommand(e) === "new" &&
+        e.target instanceof Element &&
+        e.target.closest("[data-project-terminal-dock]")
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        // Shares "new" with the menu's New Tab so a native echo is debounced.
+        run("new", actions.current.onNewTerminalTab);
+        return;
+      }
       // A rebound zoom chord may be Option-only, so it is resolved outside the
       // Cmd/Ctrl guard that only the browser-standard defaults need.
       const zoom = resolveZoomKeybinding(e);
@@ -9929,11 +9971,11 @@ export default function App({
         e.preventDefault();
         e.stopPropagation();
         const a = actions.current;
-        if (cmd === "new") run("new", a.onNew);
+        if (cmd === "new") run("new", a.onNewTabInFocus);
         else if (cmd === "close-others")
           run("close-others", a.onCloseOtherTabs);
         else if (cmd === "close-all") run("close-all", a.onCloseAllTabs);
-        else if (cmd === "close") run("close", a.onClosePane);
+        else if (cmd === "close") run("close", a.onCloseInFocus);
         else if (cmd === "next") run("next", a.onNext);
         else if (cmd === "prev") run("prev", a.onPrev);
         else if (cmd === "cycle-next") run("next", a.onNext);
@@ -10023,14 +10065,14 @@ export default function App({
 
   useEffect(() => {
     const unlisten: Array<Promise<() => void>> = [
-      listen("new_tab", () => run("new", actions.current.onNew)),
+      listen("new_tab", () => run("new", actions.current.onNewTabInFocus)),
       listen("close_other_tabs", () =>
         run("close-others", actions.current.onCloseOtherTabs),
       ),
       listen("close_all_tabs", () =>
         run("close-all", actions.current.onCloseAllTabs),
       ),
-      listen("close_tab", () => run("close", actions.current.onClosePane)),
+      listen("close_tab", () => run("close", actions.current.onCloseInFocus)),
       listen("next_tab", () => run("next", actions.current.onNext)),
       listen("prev_tab", () => run("prev", actions.current.onPrev)),
       listen("back_tab", () => run("back", actions.current.onVisitBack)),

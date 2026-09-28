@@ -1,5 +1,6 @@
 const MATCH_HIGHLIGHT = "monocode-transcript-search-match";
 const CURRENT_HIGHLIGHT = "monocode-transcript-search-current";
+const HIGHLIGHT_STYLE_ID = "monocode-transcript-search-styles";
 const MATCH_CAP = 1000;
 const BLOCK_ELEMENTS = new Set([
   "blockquote",
@@ -97,6 +98,7 @@ export function paintTranscriptHighlights(
   current: Range | null,
 ): void {
   if (typeof CSS === "undefined" || !("highlights" in CSS)) return;
+  ensureHighlightStyles();
   if (highlightOwner !== owner) {
     CSS.highlights.delete(MATCH_HIGHLIGHT);
     CSS.highlights.delete(CURRENT_HIGHLIGHT);
@@ -114,6 +116,27 @@ export function clearTranscriptHighlights(owner: symbol): void {
     CSS.highlights.delete(CURRENT_HIGHLIGHT);
   }
   highlightOwner = null;
+}
+
+/**
+ * The paint for the ranges above. Lives in a style tag rather than index.css:
+ * Tailwind's CSS optimizer does not know the ::highlight() pseudo-element and
+ * warns on every build.
+ */
+function ensureHighlightStyles(): void {
+  if (typeof document === "undefined") return;
+  if (document.getElementById(HIGHLIGHT_STYLE_ID)) return;
+  const style = document.createElement("style");
+  style.id = HIGHLIGHT_STYLE_ID;
+  style.textContent = `
+    ::highlight(${MATCH_HIGHLIGHT}) {
+      background-color: color-mix(in srgb, #e2c08d 46%, transparent);
+    }
+    ::highlight(${CURRENT_HIGHLIGHT}) {
+      background-color: color-mix(in srgb, var(--color-accent) 62%, transparent);
+    }
+  `;
+  document.head.append(style);
 }
 
 type Segment = { node: Text; from: number; to: number };

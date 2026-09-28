@@ -10,6 +10,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { Composer } from "./Composer";
+import { RunningSubagents } from "./RunningSubagents";
 import type { Worktree } from "../../source-control/model/worktrees";
 import {
   orchestrationCheckoutCwd,
@@ -634,7 +635,14 @@ export const SessionPane = memo(function SessionPane({
         recallLastTurnRef.current = recall;
       }}
       onEditingLastTurnChange={setEditingLastTurn}
-    />
+    >
+      {session.busy ? (
+        <RunningSubagents
+          blocks={session.blocks}
+          onSelect={(blockId) => navigateBlock(blockId)}
+        />
+      ) : null}
+    </Composer>
   );
 
   return (

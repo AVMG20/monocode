@@ -97,6 +97,28 @@ describe("turn duration", () => {
     expect(session.blocks[0]?.durationMs).toBe(7_000);
   });
 
+  it("starts a subagent's clock when it is spawned, not other tools'", () => {
+    vi.spyOn(Date, "now").mockReturnValue(42_000);
+    let session = appendUser(newSession("codex", "/tmp"), "delegate it");
+    session = applyHarnessEvent(session, {
+      type: "tool.started",
+      callId: "read-1",
+      title: "Read",
+      kind: "read",
+    });
+    session = applyHarnessEvent(session, {
+      type: "tool.started",
+      callId: "agent-1",
+      title: "Inspect auth",
+      kind: "agent",
+      status: "in_progress",
+    });
+    const [read, agent] = session.blocks.filter((b) => b.role === "tool");
+    expect(read.startedAt).toBeUndefined();
+    expect(agent.startedAt).toBe(42_000);
+    vi.restoreAllMocks();
+  });
+
   it("marks orphaned subagent work failed when the provider dies", () => {
     let session = appendUser(newSession("codex", "/tmp"), "delegate it");
     session = applyHarnessEvent(session, {

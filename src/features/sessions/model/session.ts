@@ -280,7 +280,7 @@ export type Block = {
   text: string;
   attachments?: Attachment[];
   streaming?: boolean;
-  /** Epoch ms when this user turn started. */
+  /** Epoch ms when this user turn, or this delegated run, started. */
   startedAt?: number;
   /** How long the agent worked on this user turn, in ms. */
   durationMs?: number;

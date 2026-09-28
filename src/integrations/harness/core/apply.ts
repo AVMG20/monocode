@@ -11,6 +11,7 @@ import { mergeContextUsage } from "../../../features/sessions/model/contextUsage
 import { displayPath } from "../../../shared/lib/paths";
 import {
   composeToolTitle,
+  isAgentTool,
   isFileTool,
   isWeakToolTitle,
   mergeToolPreview,
@@ -831,6 +832,7 @@ function upsertTool(
       role: "tool",
       text: label,
       streaming: patch.streaming,
+      ...(isAgentTool(patch.kind, label) ? { startedAt: Date.now() } : {}),
       ...(patch.agentModel
         ? { agentRun: { name: label, model: patch.agentModel, steps: [] } }
         : {}),
@@ -880,6 +882,10 @@ function upsertTool(
     ...prev,
     text: label,
     streaming: patch.streaming,
+    // A run can be named as one only once its kind arrives; start its clock then.
+    ...(prev.startedAt == null && isAgentTool(kind, label)
+      ? { startedAt: Date.now() }
+      : {}),
     ...(patch.agentModel || prev.agentRun
       ? {
           agentRun: {
