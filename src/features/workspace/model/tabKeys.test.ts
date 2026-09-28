@@ -13,22 +13,64 @@ import {
 } from "./tabKeys";
 
 describe("new tab destination", () => {
-  it("opens a session from the agent composer even with stale terminal focus", () => {
-    const composer = document.createElement("div");
-    composer.dataset.composer = "";
-    const input = document.createElement("textarea");
-    composer.append(input);
-    expect(newTabDestination(input, true)).toBe("session");
+  it.each([
+    ["composer", "div", "data-composer"],
+    ["composer control", "button", "data-composer-plus"],
+    ["transcript selection", "p", "data-session-drop"],
+    ["sidebar", "button", "data-sidebar"],
+    ["editor", "textarea", "data-editor"],
+    ["unmarked content", "div", ""],
+  ])("opens a session from %s outside the terminal", (_, tag, attribute) => {
+    const surface = document.createElement("div");
+    if (attribute) surface.setAttribute(attribute, "");
+    const target = document.createElement(tag);
+    surface.append(target);
+    expect(newTabDestination(target, true)).toBe("session");
   });
 
-  it("opens a terminal only from the dock or its retained focus", () => {
+  it("opens a session when there is no focused element or focus is on the body", () => {
+    expect(newTabDestination(document.body)).toBe("session");
+    expect(newTabDestination(null)).toBe("session");
+    expect(newTabDestination(null, true)).toBe("terminal");
+  });
+
+  it("uses the last interaction even when terminal retains DOM focus", () => {
     const dock = document.createElement("section");
     dock.dataset.projectTerminalDock = "";
-    const input = document.createElement("textarea");
-    dock.append(input);
-    expect(newTabDestination(input, false)).toBe("terminal");
-    expect(newTabDestination(document.body, true)).toBe("terminal");
-    expect(newTabDestination(document.body, false)).toBe("session");
+    const terminal = document.createElement("textarea");
+    dock.append(terminal);
+    const composer = document.createElement("textarea");
+    const sidebar = document.createElement("button");
+    document.body.append(dock, composer, sidebar);
+    try {
+      terminal.focus();
+      expect(newTabDestination(document.activeElement, true)).toBe("terminal");
+      // Clicking nonfocusable text does not move DOM focus from xterm.
+      expect(newTabDestination(document.activeElement, false)).toBe("session");
+      expect(newTabDestination(null, false)).toBe("session");
+      composer.focus();
+      expect(newTabDestination(document.activeElement, true)).toBe("session");
+      terminal.focus();
+      sidebar.focus();
+      expect(newTabDestination(document.activeElement, true)).toBe("session");
+      sidebar.blur();
+      expect(newTabDestination(document.activeElement, false)).toBe("session");
+    } finally {
+      dock.remove();
+      composer.remove();
+      sidebar.remove();
+    }
+  });
+
+  it("opens a terminal from both terminal input and dock controls", () => {
+    const dock = document.createElement("section");
+    dock.dataset.projectTerminalDock = "";
+    for (const tag of ["textarea", "button", "span"]) {
+      const target = document.createElement(tag);
+      dock.append(target);
+      expect(newTabDestination(target, true)).toBe("terminal");
+      expect(newTabDestination(target, false)).toBe("session");
+    }
   });
 });
 

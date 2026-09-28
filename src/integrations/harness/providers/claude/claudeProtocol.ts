@@ -256,6 +256,7 @@ export function buildClaudeSpawnArgs(input: {
   ];
   if (!input.isolated) {
     args.push("--permission-prompt-tool", "stdio");
+    args.push("--chrome");
   }
   if (input.includePartialMessages !== false) {
     args.push("--include-partial-messages");

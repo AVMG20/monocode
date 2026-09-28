@@ -2140,6 +2140,8 @@ export default function App({
   }, []);
 
   const onNew = useCallback(() => {
+    projectTerminalFocusedRef.current = false;
+    setProjectTerminalFocused(false);
     setSearchViewOpen(false);
     setInboxViewOpen(false);
     setNotesViewOpen(false);
@@ -3241,7 +3243,7 @@ export default function App({
   // terminal tabs instead of the workspace's session tabs.
   const onNewTabInFocus = useCallback((target?: Element | null) => {
     const destination = newTabDestination(
-      target ?? document.activeElement,
+      target ?? null,
       projectTerminalFocusedRef.current,
     );
     if (destination === "terminal") onNewTerminalTab();
@@ -9683,6 +9685,27 @@ export default function App({
     if (!dockVisible) setProjectTerminalFocused(false);
   }, [dockVisible]);
 
+  useEffect(() => {
+    // Composer controls and transcript selections can stop bubbling before
+    // SessionPane sees them. Clear dock focus in capture phase for every
+    // outside interaction, including keyboard focus moving to the sidebar.
+    const syncTerminalFocus = (event: Event) => {
+      if (!(event.target instanceof Element)) return;
+      if (event.target.closest("[data-project-terminal-dock]")) {
+        focusProjectTerminal();
+      } else {
+        projectTerminalFocusedRef.current = false;
+        setProjectTerminalFocused(false);
+      }
+    };
+    window.addEventListener("pointerdown", syncTerminalFocus, true);
+    window.addEventListener("focusin", syncTerminalFocus, true);
+    return () => {
+      window.removeEventListener("pointerdown", syncTerminalFocus, true);
+      window.removeEventListener("focusin", syncTerminalFocus, true);
+    };
+  }, [focusProjectTerminal]);
+
   const openFilePaths = useMemo(() => {
     const paths: string[] = [];
     const seen = new Set<string>();
@@ -9881,7 +9904,8 @@ export default function App({
         !e.ctrlKey &&
         tabCommand(e) === "new" &&
         e.target instanceof Element &&
-        e.target.closest("[data-project-terminal-dock]")
+        newTabDestination(e.target, projectTerminalFocusedRef.current) ===
+          "terminal"
       ) {
         e.preventDefault();
         e.stopPropagation();
