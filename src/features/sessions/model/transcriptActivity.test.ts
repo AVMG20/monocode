@@ -711,6 +711,26 @@ describe("the subagent stack", () => {
     tool: { kind: "agent", title: name, status },
   });
 
+  it("keeps the real rows when older Claude snapshots added copies", () => {
+    const blocks = [
+      agent("real", "Review"),
+      {
+        ...agent("copy", "Review"),
+        tool: {
+          kind: "agent",
+          title: "Review",
+          callId: "agent:Review",
+          status: "in_progress",
+        },
+      },
+    ];
+    const items = groupTurnItems(blocks);
+    expect(items).toHaveLength(1);
+    expect(
+      items[0].type === "subagents" && items[0].blocks.map((b) => b.id),
+    ).toEqual(["real"]);
+  });
+
   it("gives delegated runs their own item instead of folding them into work", () => {
     const items = groupTurnItems([
       { id: "note", role: "assistant", text: "I will run two reviews." },

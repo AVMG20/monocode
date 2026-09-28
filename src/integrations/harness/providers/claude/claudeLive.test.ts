@@ -458,6 +458,58 @@ describe("claude legacy account resume", () => {
 });
 
 describe("claude subagents", () => {
+  it("keeps one row per Agent when task snapshots omit tool ids", async () => {
+    const { events, turn } = await startTurn("s1");
+    const names = ["Mail", "Customers", "SSO", "Key"];
+    emit({
+      type: "assistant",
+      session_id: "sess_1",
+      message: {
+        content: names.map((description, index) => ({
+          type: "tool_use",
+          id: `agent_${index}`,
+          name: "Agent",
+          input: { description },
+        })),
+      },
+    });
+    emit({
+      type: "system",
+      subtype: "background_tasks_changed",
+      tasks: names.map((description, index) => ({
+        task_id: `task_${index}`,
+        task_type: "local_agent",
+        description,
+      })),
+    });
+    expect(
+      events
+        .filter((event) => event.type === "tool.started")
+        .map((event) => event.title),
+    ).toEqual(names);
+    for (const [index, description] of names.entries()) {
+      emit({
+        type: "system",
+        subtype: "task_started",
+        task_id: `task_${index}`,
+        description,
+        task_type: "local_agent",
+        is_backgrounded: true,
+      });
+    }
+    const session = events.reduce(
+      applyHarnessEvent,
+      newSession("claude", "/repo"),
+    );
+    expect(
+      session.blocks
+        .filter((block) => block.tool?.kind === "agent")
+        .map((block) => block.tool?.callId),
+    ).toEqual(names.map((_, index) => `agent_${index}`));
+    await cancelClaudeTurn("s1");
+    await turn;
+  });
+
   it.each(["allow", "deny"] as const)(
     "routes a child permission decision: %s",
     async (decision) => {

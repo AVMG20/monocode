@@ -1123,6 +1123,7 @@ function handleAgentLifecycle(
   const started = parseTaskStarted(rec);
   if (started) {
     if (started.ambient) return true;
+    const existingTask = live.agentTasks.get(started.taskId);
     live.backgroundTasks.set(started.taskId, {
       description: started.description,
       toolUseId: started.toolUseId,
@@ -1131,13 +1132,16 @@ function handleAgentLifecycle(
     if (!isAgentTaskType(started.taskType)) return true;
     live.agentTasks.set(started.taskId, {
       taskId: started.taskId,
-      toolUseId: started.toolUseId,
+      toolUseId:
+        started.toolUseId ??
+        existingTask?.toolUseId ??
+        agentToolForTask(live, started.description),
       description: started.description,
       backgrounded: started.backgrounded,
     });
     upsertAgentTool(
       live,
-      started.toolUseId,
+      live.agentTasks.get(started.taskId)?.toolUseId,
       started.description,
       "in_progress",
     );
@@ -1147,6 +1151,10 @@ function handleAgentLifecycle(
   const progress = parseTaskProgress(rec);
   if (progress) {
     const task = live.agentTasks.get(progress.taskId);
+    if (task && !task.toolUseId) {
+      task.toolUseId =
+        progress.toolUseId ?? agentToolForTask(live, task.description);
+    }
     const title = progress.description || task?.description || "Subagent";
     const detail =
       progress.summary ||
@@ -1156,7 +1164,7 @@ function handleAgentLifecycle(
         : undefined);
     upsertAgentTool(
       live,
-      progress.toolUseId ?? task?.toolUseId,
+      task?.toolUseId ?? progress.toolUseId,
       title,
       "in_progress",
       detail,
@@ -1229,10 +1237,16 @@ function handleAgentLifecycle(
     if (live.agentTasks.has(row.taskId)) continue;
     live.agentTasks.set(row.taskId, {
       taskId: row.taskId,
+      toolUseId: agentToolForTask(live, row.description),
       description: row.description,
       backgrounded: true,
     });
-    upsertAgentTool(live, undefined, row.description, "in_progress");
+    upsertAgentTool(
+      live,
+      live.agentTasks.get(row.taskId)?.toolUseId,
+      row.description,
+      "in_progress",
+    );
   }
   maybeFinishTurn(live);
   syncBackgroundWait(live);
@@ -1390,6 +1404,24 @@ function isBackgroundedAgentTool(live: Live, toolUseId: string): boolean {
     if (task.toolUseId === toolUseId && task.backgrounded) return true;
   }
   return false;
+}
+
+/** A task snapshot may omit tool_use_id even though its Agent call is visible. */
+function agentToolForTask(live: Live, description: string): string | undefined {
+  const assigned = new Set(
+    [...live.agentTasks.values()].map((task) => task.toolUseId),
+  );
+  for (const tool of live.toolsById.values()) {
+    if (
+      isAgentToolName(tool.name) &&
+      !tool.id.startsWith("agent:") &&
+      tool.title === description &&
+      !assigned.has(tool.id)
+    ) {
+      return tool.id;
+    }
+  }
+  return undefined;
 }
 
 function upsertAgentTool(

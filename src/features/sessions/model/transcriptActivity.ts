@@ -362,7 +362,10 @@ export function groupTurnItems(
   const settled = options?.settled ?? false;
   const visible = withoutSupersededInitialThinking(
     blocks.filter(
-      (block) => !isIgnoredTurnBlock(block) && !isHiddenTool(block),
+      (block) =>
+        !isIgnoredTurnBlock(block) &&
+        !isHiddenTool(block) &&
+        !isSupersededSyntheticSubagent(block, blocks),
     ),
   );
   const items: TurnItem[] = [];
@@ -509,6 +512,25 @@ export function isSubagentBlock(block: Block): boolean {
     isToolBlock(block) &&
     !needsApproval(block) &&
     isAgentTool(block.tool?.kind, block.text || block.tool?.title)
+  );
+}
+
+/** Older Claude task snapshots could create a second row for an Agent call. */
+export function isSupersededSyntheticSubagent(
+  block: Block,
+  blocks: Block[],
+): boolean {
+  if (
+    !isSubagentBlock(block) ||
+    block.tool?.callId !== `agent:${block.text || block.tool?.title || ""}`
+  )
+    return false;
+  return blocks.some(
+    (other) =>
+      other !== block &&
+      isSubagentBlock(other) &&
+      other.tool?.callId !== block.tool?.callId &&
+      subagentBrief(other) === subagentBrief(block),
   );
 }
 

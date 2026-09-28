@@ -79,6 +79,29 @@ describe("RunningSubagents", () => {
     expect(pills.map((pill) => pill.dataset.runningSubagent)).toEqual(["new"]);
   });
 
+  it("hides duplicate rows from older Claude task snapshots", () => {
+    render({
+      blocks: [
+        { id: "u", role: "user", text: "Run four agents" },
+        ...["Mail", "Customers", "SSO", "Key"].flatMap((name, index) => [
+          run(`real_${index}`, name),
+          run(`duplicate_${index}`, name, {
+            tool: {
+              callId: `agent:${name}`,
+              kind: "agent",
+              status: "in_progress",
+            },
+          }),
+        ]),
+      ],
+    });
+    expect(
+      [
+        ...container.querySelectorAll<HTMLElement>("[data-running-subagent]"),
+      ].map((pill) => pill.textContent?.replace(/\d.*$/, "")),
+    ).toEqual(["Mail", "Customers", "SSO", "Key"]);
+  });
+
   it("renders nothing when no subagent is running and jumps to the row", () => {
     render({ blocks: [] });
     expect(container.querySelector("[data-running-subagents]")).toBeNull();

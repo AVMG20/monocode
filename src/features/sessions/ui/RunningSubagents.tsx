@@ -3,6 +3,7 @@ import type { Block } from "../model/session";
 import { formatLiveElapsed } from "../model/liveAgents";
 import {
   isSubagentBlock,
+  isSupersededSyntheticSubagent,
   subagentBrief,
   subagentModelName,
   subagentName,
@@ -83,13 +84,16 @@ export function RunningSubagents({ blocks, onSelect }: Props) {
  * read as in progress; only the turn since the last prompt is live.
  */
 export function runningSubagents(blocks: Block[]): Block[] {
-  const running: Block[] = [];
+  const turn: Block[] = [];
   for (let i = blocks.length - 1; i >= 0; i--) {
     const block = blocks[i];
     if (block.role === "user" && !block.internal) break;
-    if (isSubagentBlock(block) && toolCallState(block) === "pending") {
-      running.unshift(block);
-    }
+    turn.unshift(block);
   }
-  return running;
+  return turn.filter(
+    (block) =>
+      isSubagentBlock(block) &&
+      toolCallState(block) === "pending" &&
+      !isSupersededSyntheticSubagent(block, turn),
+  );
 }
