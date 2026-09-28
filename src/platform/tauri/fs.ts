@@ -87,6 +87,20 @@ export function openInExternalEditor(
   return invoke<void>("open_in_external_editor", { editorId, cwd });
 }
 
+export function openFileInExternalEditor(
+  editorId: string,
+  path: string,
+  line?: number,
+  column?: number,
+): Promise<void> {
+  return invoke<void>("open_file_in_external_editor", {
+    editorId,
+    path,
+    line,
+    column,
+  });
+}
+
 export type ProjectFile = {
   name: string;
   path: string;

@@ -123,6 +123,7 @@ import {
 import {
   basename,
   notifyGitChanged,
+  openFileInExternalEditor,
   pickFolders,
   type GitFileDiffKind,
   type GitHistoryCommit,
@@ -5349,6 +5350,19 @@ export default function App({
         const fileProjectCwd = sidebarCwdRef.current;
         const resolved = await resolveFileOpenRequest(fileCwd, path, options);
         rememberOpenedFile(fileCwd, resolved);
+        // Files open in PhpStorm; the built-in editor is only the fallback
+        // when PhpStorm cannot be launched.
+        try {
+          await openFileInExternalEditor(
+            "phpstorm",
+            resolved,
+            navigation?.line,
+            navigation?.column,
+          );
+          return;
+        } catch (error) {
+          console.warn("Could not open file in PhpStorm", error);
+        }
         const tab = tabsRef.current.find(
           (entry) => entry.id === activeTabIdRef.current,
         );

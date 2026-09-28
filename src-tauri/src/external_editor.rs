@@ -124,6 +124,15 @@ const EDITORS: &[EditorDefinition] = &[
             ("ProgramFiles(x86)", "Sublime Text/sublime_text.exe"),
         ],
     },
+    EditorDefinition {
+        id: "phpstorm",
+        name: "PhpStorm",
+        commands: &["phpstorm"],
+        #[cfg(target_os = "macos")]
+        mac_apps: &["PhpStorm.app"],
+        #[cfg(windows)]
+        windows_paths: &[],
+    },
 ];
 
 enum EditorLauncher {
@@ -239,6 +248,79 @@ fn launch_editor_sync(editor_id: &str, cwd: &str) -> Result<(), String> {
         .spawn()
         .map(|_| ())
         .map_err(|error| format!("Could not open {}: {error}", editor.name))
+}
+
+fn launch_file_sync(
+    editor_id: &str,
+    path: &str,
+    line: Option<u32>,
+    column: Option<u32>,
+) -> Result<(), String> {
+    let editor = definition(editor_id).ok_or_else(|| "Unknown external editor.".to_string())?;
+    let path = expand_home(path);
+    if !path.is_file() {
+        return Err(format!("{} is not a file.", path.display()));
+    }
+    let launcher =
+        resolve_editor(editor).ok_or_else(|| format!("{} is no longer installed.", editor.name))?;
+
+    // JetBrains launchers take `--line`/`--column` ahead of the path and hand
+    // the request to an already running IDE.
+    let mut args: Vec<std::ffi::OsString> = Vec::new();
+    if let Some(line) = line {
+        args.push("--line".into());
+        args.push(line.to_string().into());
+        if let Some(column) = column {
+            args.push("--column".into());
+            args.push(column.to_string().into());
+        }
+    }
+    args.push(path.into_os_string());
+
+    #[cfg(target_os = "macos")]
+    let mut command = match launcher {
+        EditorLauncher::MacApp(app) => {
+            // `-n` so the arguments reach the launcher even while the IDE runs.
+            let mut command = Command::new("/usr/bin/open");
+            command.arg("-na").arg(app).arg("--args").args(&args);
+            command
+        }
+        EditorLauncher::Command(program) => {
+            let mut command = Command::new(program);
+            command.args(&args);
+            command
+        }
+    };
+
+    #[cfg(not(target_os = "macos"))]
+    let mut command = match launcher {
+        EditorLauncher::Command(program) => {
+            let mut command = Command::new(program);
+            command.args(&args);
+            command
+        }
+    };
+
+    harness::apply_gui_env(&mut command);
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("Could not open {}: {error}", editor.name))
+}
+
+#[tauri::command(async)]
+pub async fn open_file_in_external_editor(
+    editor_id: String,
+    path: String,
+    line: Option<u32>,
+    column: Option<u32>,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || launch_file_sync(&editor_id, &path, line, column))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[tauri::command(async)]
