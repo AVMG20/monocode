@@ -59,6 +59,16 @@ export type TabCommand =
   | { activate: number }
   | { focus: FocusDir };
 
+/** A focused composer takes priority over a stale terminal dock focus flag. */
+export function newTabDestination(
+  target: Element | null,
+  projectTerminalFocused: boolean,
+): "session" | "terminal" {
+  if (target?.closest("[data-project-terminal-dock]")) return "terminal";
+  if (target?.closest("[data-composer], [data-session-drop]")) return "session";
+  return projectTerminalFocused ? "terminal" : "session";
+}
+
 export function tabCommand(e: KeyboardEvent): TabCommand | null {
   if (e.isComposing) return null;
 

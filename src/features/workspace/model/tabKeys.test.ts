@@ -1,14 +1,36 @@
+// @vitest-environment happy-dom
 import { describe, expect, it, vi } from "vitest";
 import {
   adjacentItemId,
   deferUnhandledEscape,
   focusedBusyAgentSessionId,
+  newTabDestination,
   shouldHandleListNavigation,
   shouldStopFocusedTurnOnEscape,
   tabCommand,
   tabCommandForKeybinding,
   tabCommandKeybinding,
 } from "./tabKeys";
+
+describe("new tab destination", () => {
+  it("opens a session from the agent composer even with stale terminal focus", () => {
+    const composer = document.createElement("div");
+    composer.dataset.composer = "";
+    const input = document.createElement("textarea");
+    composer.append(input);
+    expect(newTabDestination(input, true)).toBe("session");
+  });
+
+  it("opens a terminal only from the dock or its retained focus", () => {
+    const dock = document.createElement("section");
+    dock.dataset.projectTerminalDock = "";
+    const input = document.createElement("textarea");
+    dock.append(input);
+    expect(newTabDestination(input, false)).toBe("terminal");
+    expect(newTabDestination(document.body, true)).toBe("terminal");
+    expect(newTabDestination(document.body, false)).toBe("session");
+  });
+});
 
 function key(
   partial: Partial<

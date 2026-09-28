@@ -466,6 +466,7 @@ import {
   adjacentItemId,
   deferUnhandledEscape,
   focusedBusyAgentSessionId,
+  newTabDestination,
   shouldHandleListNavigation,
   shouldStopFocusedTurnOnEscape,
   tabCommand,
@@ -2326,6 +2327,7 @@ export default function App({
   );
 
   const focusProjectTerminal = useCallback(() => {
+    projectTerminalFocusedRef.current = true;
     setProjectTerminalFocused(true);
     setComposerFocused(false);
   }, []);
@@ -3237,8 +3239,12 @@ export default function App({
 
   // While the project terminal dock has focus, New Tab and Close act on its
   // terminal tabs instead of the workspace's session tabs.
-  const onNewTabInFocus = useCallback(() => {
-    if (projectTerminalFocusedRef.current) onNewTerminalTab();
+  const onNewTabInFocus = useCallback((target?: Element | null) => {
+    const destination = newTabDestination(
+      target ?? document.activeElement,
+      projectTerminalFocusedRef.current,
+    );
+    if (destination === "terminal") onNewTerminalTab();
     else onNew();
   }, [onNew, onNewTerminalTab]);
 
@@ -3322,6 +3328,7 @@ export default function App({
 
   const onFocusPane = useCallback(
     (paneId: string) => {
+      projectTerminalFocusedRef.current = false;
       setProjectTerminalFocused(false);
       if (inboxAskPortal?.sessionId === paneId) {
         setComposerFocused(true);
@@ -9971,7 +9978,7 @@ export default function App({
         e.preventDefault();
         e.stopPropagation();
         const a = actions.current;
-        if (cmd === "new") run("new", a.onNewTabInFocus);
+        if (cmd === "new") run("new", () => a.onNewTabInFocus(target));
         else if (cmd === "close-others")
           run("close-others", a.onCloseOtherTabs);
         else if (cmd === "close-all") run("close-all", a.onCloseAllTabs);
