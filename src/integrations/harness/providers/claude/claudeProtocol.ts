@@ -69,6 +69,17 @@ export type ClaudeCliSettings = {
   fastMode?: boolean;
   ultracode?: boolean;
   disableAllHooks?: boolean;
+  env?: Record<string, string>;
+};
+
+/**
+ * Claude Code keeps its Artifact tools off by default when driven over
+ * stream-json, the way SDK embedders are. MonoCode is an interactive client,
+ * so it opts back in; `enableArtifact: false` and
+ * `CLAUDE_CODE_DISABLE_ARTIFACT` still turn them off.
+ */
+const CLAUDE_INTERACTIVE_ENV: Record<string, string> = {
+  CLAUDE_CODE_ARTIFACT: "1",
 };
 
 export function asRecord(value: unknown): Record<string, unknown> | null {
@@ -266,7 +277,9 @@ export function buildClaudeSpawnArgs(input: {
   // whatever the caller decided so `~/.claude` hooks keep working.
   const settings: ClaudeCliSettings = {
     ...input.settings,
-    ...(input.isolated ? { disableAllHooks: true } : {}),
+    ...(input.isolated
+      ? { disableAllHooks: true }
+      : { env: { ...CLAUDE_INTERACTIVE_ENV, ...input.settings?.env } }),
   };
   if (input.isolated) {
     args.push("--no-session-persistence");

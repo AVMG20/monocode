@@ -11,6 +11,7 @@ import {
 } from "react";
 import { Composer } from "./Composer";
 import { RunningSubagents } from "./RunningSubagents";
+import { SessionArtifacts } from "./SessionArtifacts";
 import type { Worktree } from "../../source-control/model/worktrees";
 import {
   orchestrationCheckoutCwd,
@@ -688,6 +689,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       }}
       onEditingLastTurnChange={setEditingLastTurn}
     >
+      <SessionArtifacts blocks={session.blocks} />
       {session.busy ? (
         <RunningSubagents
           blocks={session.blocks}

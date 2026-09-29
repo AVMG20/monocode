@@ -133,6 +133,12 @@ describe("buildClaudeSpawnArgs", () => {
     expect(JSON.parse(settings).disableAllHooks).toBeUndefined();
   });
 
+  it("opts interactive sessions into the Artifact tools", () => {
+    const args = buildClaudeSpawnArgs({});
+    const settings = args[args.indexOf("--settings") + 1];
+    expect(JSON.parse(settings).env).toEqual({ CLAUDE_CODE_ARTIFACT: "1" });
+  });
+
   it("only disables hooks for interactive sessions when asked", () => {
     const args = buildClaudeSpawnArgs({ settings: { disableAllHooks: true } });
     const settings = args[args.indexOf("--settings") + 1];
@@ -150,6 +156,7 @@ describe("buildClaudeSpawnArgs", () => {
     expect(args).toEqual(expect.arrayContaining(["--max-turns", "1"]));
     const settings = args[args.indexOf("--settings") + 1];
     expect(JSON.parse(settings)).toMatchObject({ disableAllHooks: true });
+    expect(JSON.parse(settings).env).toBeUndefined();
     expect(args).not.toContain("--permission-prompt-tool");
     expect(args).not.toContain("--chrome");
   });
