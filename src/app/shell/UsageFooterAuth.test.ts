@@ -91,6 +91,33 @@ function connectedLimits(provider: RateLimitProvider): ProviderRateLimits {
 }
 
 describe("UsageFooter provider authentication", () => {
+  it("shows the last Claude usage snapshot after a 503 refresh", async () => {
+    rateLimitsFetch.fetchClaudeRateLimits
+      .mockResolvedValueOnce({
+        ...connectedLimits("claude"),
+        session: {
+          usedPercent: 94,
+          windowMinutes: 300,
+          resetsAt: Date.now() + 60_000,
+        },
+      })
+      .mockResolvedValueOnce({
+        ...signedOutLimits("claude"),
+        error: "Claude usage request failed (503)",
+      });
+
+    await act(async () =>
+      root.render(createElement(UsageFooter, { providers: ["claude"] })),
+    );
+    await act(async () => button("Refresh usage").click());
+    await act(async () => button("Claude Code usage details").click());
+
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog?.textContent).toContain("94%");
+    expect(dialog?.textContent).toContain("Showing the last available snapshot");
+    expect(dialog?.textContent).toContain("503");
+  });
+
   it("makes one final poll after a Codex turn finishes, then stops", async () => {
     vi.useFakeTimers();
     try {

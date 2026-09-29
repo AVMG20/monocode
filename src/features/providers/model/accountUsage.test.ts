@@ -235,6 +235,25 @@ describe("useProviderAccountUsage", () => {
     expect(latest.refreshing).toBe(false);
   });
 
+  it("keeps the last Claude snapshot when a refresh returns HTTP 503", async () => {
+    fetches.claude
+      .mockResolvedValueOnce(limits(window(94)))
+      .mockResolvedValueOnce(
+        limits(null, null, {
+          status: "error",
+          error: "Claude usage request failed (503)",
+        }),
+      );
+
+    const first = await loadRateLimits("claude", "default");
+    const refreshed = await loadRateLimits("claude", "default", true);
+
+    expect(refreshed.status).toBe("error");
+    expect(refreshed.error).toBe("Claude usage request failed (503)");
+    expect(refreshed.session).toEqual(first.session);
+    expect(refreshed.updatedAt).toBe(first.updatedAt);
+  });
+
   it("shares an in-flight account request between views", async () => {
     let complete: ((value: ProviderRateLimits) => void) | undefined;
     fetches.claude.mockImplementation(

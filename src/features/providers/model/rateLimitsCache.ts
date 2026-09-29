@@ -94,12 +94,20 @@ export function loadRateLimits(
   publish(key, fetchingRateLimits(provider, cached));
   const run = (async () => {
     try {
-      const result =
+      const fetched =
         provider === "claude"
           ? await fetchClaudeRateLimits(accountId)
           : provider === "codex"
             ? await fetchCodexRateLimits(accountId)
             : await fetchOpencodeGoRateLimits();
+      const result =
+        fetched.status === "error"
+          ? errorRateLimits(
+              provider,
+              fetched.error || "Usage unavailable",
+              cached,
+            )
+          : fetched;
       publish(key, result);
       return result;
     } catch (error) {

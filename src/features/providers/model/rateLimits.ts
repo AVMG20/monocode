@@ -122,7 +122,8 @@ export function errorRateLimits(
       ...previous,
       error,
       status: "error",
-      updatedAt: Date.now(),
+      // The retained windows still come from the last successful fetch.
+      updatedAt: previous.updatedAt,
     };
   }
   return {
