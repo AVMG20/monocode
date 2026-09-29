@@ -666,9 +666,11 @@ function stopBlockProgress(block: Block): Block {
 }
 
 function stampTurnDuration(blocks: Block[], endedAt: number): Block[] {
+  // A steered message joined the run in flight; the run's clock started on
+  // the prompt it cut in on.
   let lastUser = -1;
   for (let i = blocks.length - 1; i >= 0; i--) {
-    if (blocks[i].role === "user") {
+    if (blocks[i].role === "user" && !blocks[i].steered) {
       lastUser = i;
       break;
     }

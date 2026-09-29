@@ -421,6 +421,15 @@ describe("appendSteerUser", () => {
       noteCard: { id: "n1", slug: "overview", title: "Overview" },
     });
   });
+
+  it("times the run from the prompt a steered message cut in on", () => {
+    let session = appendUser(newSession("claude", "/tmp"), "build it");
+    const startedAt = session.blocks[0].startedAt!;
+    session = appendSteerUser(session, "make it pop");
+    session = stopStreaming(session, startedAt + 5_000);
+    expect(session.blocks[0].durationMs).toBe(5_000);
+    expect(session.blocks[1].durationMs).toBeUndefined();
+  });
 });
 
 describe("usage limits", () => {

@@ -1,12 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { applyHarnessEvent } from "../../core/apply";
+import {
+  appendSteerUser,
+  appendUser,
+  applyHarnessEvent,
+  stopStreaming,
+} from "../../core/apply";
 import { newSession } from "../../../../features/sessions/model/session";
 import {
   foldableWork,
   foldedBlocks,
   groupTurnItems,
+  groupTurns,
+  liveRunStartIndex,
   workSummaryLine,
 } from "../../../../features/sessions/model/transcriptActivity";
+import { runningSubagents } from "../../../../features/sessions/ui/RunningSubagents";
 
 const sent: string[] = [];
 const spawned: string[][] = [];
@@ -41,6 +49,7 @@ const {
   respondClaudeApproval,
   respondClaudeQuestion,
   sendClaudeTurn,
+  steerClaudeTurn,
   stopClaudeSession,
   __claudeTestReset,
 } = await import("./claude");
@@ -794,6 +803,156 @@ describe("claude subagents", () => {
     expect(events.some((event) => event.type === "message.completed")).toBe(
       true,
     );
+  });
+
+  it("keeps every background subagent on one live row across a steered message", async () => {
+    const { events, turn } = await startTurn("s1");
+    let session = appendUser(newSession("claude", "/repo"), "build it");
+    let applied = 0;
+    const sync = () => {
+      session = events.slice(applied).reduce(applyHarnessEvent, session);
+      applied = events.length;
+    };
+    const spawn = (id: string, taskId: string, description: string) => {
+      emit({
+        type: "assistant",
+        session_id: "sess_1",
+        message: {
+          content: [
+            {
+              type: "tool_use",
+              id,
+              name: "Agent",
+              input: { description, run_in_background: true },
+            },
+          ],
+        },
+      });
+      emit({
+        type: "system",
+        subtype: "task_started",
+        task_id: taskId,
+        tool_use_id: id,
+        description,
+        task_type: "local_agent",
+        is_backgrounded: true,
+      });
+      emit({
+        type: "user",
+        session_id: "sess_1",
+        message: {
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: id,
+              content: "Async agent launched successfully.",
+            },
+          ],
+        },
+      });
+    };
+    const agentRows = () =>
+      session.blocks.filter((block) => block.tool?.kind === "agent");
+    const liveRowsByTurn = () => {
+      const turns = groupTurns(session.blocks);
+      const start = session.busy
+        ? liveRunStartIndex(turns)
+        : turns.length;
+      return turns.map((blocks, index) =>
+        groupTurnItems(blocks, { settled: index < start })
+          .filter((item) => item.type === "subagents")
+          .flatMap((item) => item.blocks.map((block) => block.tool?.callId)),
+      );
+    };
+
+    spawn("toolu_backend", "t_backend", "Backend agent");
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    sync();
+
+    // The user writes in while the backend agent is still going.
+    session = appendSteerUser(session, "make it pop");
+    await steerClaudeTurn({
+      sessionId: "s1",
+      cwd: "/repo",
+      model: "claude:claude-sonnet-5",
+      modelSettings: {},
+      text: "make it pop",
+      attachments: [],
+    });
+    emit({ type: "system", subtype: "init", session_id: "sess_1" });
+    spawn("toolu_front_a", "t_front_a", "Frontend shell");
+    spawn("toolu_front_b", "t_front_b", "Frontend pages");
+    // Snapshots omit tool ids; they must not mint rows of their own.
+    emit({
+      type: "system",
+      subtype: "background_tasks_changed",
+      tasks: [
+        ["t_backend", "Backend agent"],
+        ["t_front_a", "Frontend shell"],
+        ["t_front_b", "Frontend pages"],
+      ].map(([task_id, description]) => ({
+        task_id,
+        task_type: "local_agent",
+        description,
+      })),
+    });
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    sync();
+
+    expect(agentRows().map((block) => block.tool?.callId)).toEqual([
+      "toolu_backend",
+      "toolu_front_a",
+      "toolu_front_b",
+    ]);
+    expect(runningSubagents(session.blocks).map((b) => b.tool?.callId)).toEqual(
+      ["toolu_backend", "toolu_front_a", "toolu_front_b"],
+    );
+    expect(liveRowsByTurn()).toEqual([
+      ["toolu_backend"],
+      ["toolu_front_a", "toolu_front_b"],
+    ]);
+
+    // The backend agent reports back first; the others are still counted.
+    emit({
+      type: "system",
+      subtype: "task_notification",
+      task_id: "t_backend",
+      tool_use_id: "toolu_backend",
+      status: "completed",
+      summary: "API ready",
+    });
+    sync();
+    expect(runningSubagents(session.blocks).map((b) => b.tool?.callId)).toEqual(
+      ["toolu_front_a", "toolu_front_b"],
+    );
+
+    for (const [taskId, id] of [
+      ["t_front_a", "toolu_front_a"],
+      ["t_front_b", "toolu_front_b"],
+    ]) {
+      emit({
+        type: "system",
+        subtype: "task_notification",
+        task_id: taskId,
+        tool_use_id: id,
+        status: "completed",
+        summary: "Done",
+      });
+    }
+    emitFollowUpTurn("Everything is built.");
+    await turn;
+    sync();
+    session = stopStreaming(session);
+
+    expect(agentRows()).toHaveLength(3);
+    expect(agentRows().map((block) => block.tool?.status)).toEqual([
+      "completed",
+      "completed",
+      "completed",
+    ]);
+    expect(runningSubagents(session.blocks)).toEqual([]);
+    // Settled, the runs fold into their turns' trails.
+    expect(liveRowsByTurn()).toEqual([[], []]);
   });
 
   it("does not end the turn on a subagent result", async () => {
