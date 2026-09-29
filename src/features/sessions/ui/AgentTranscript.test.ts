@@ -502,6 +502,32 @@ describe("AgentTranscript collapsed work", () => {
     expect(markup).toContain("Both reviewers agree.");
   });
 
+  it("keeps a running subagent's row when a steered message cuts in", () => {
+    const blocks = (steered: boolean): Block[] => [
+      { id: "user", role: "user", text: "Build it", startedAt: 1_000 },
+      { id: "lead", role: "assistant", text: "Launching the backend agent." },
+      {
+        id: "a1",
+        role: "tool",
+        text: "Backend agent",
+        tool: { callId: "agent-1", kind: "agent", status: "in_progress" },
+      },
+      tool("t1"),
+      { id: "note", role: "assistant", text: "Writing the frontend now." },
+      { id: "more", role: "user", text: "Make it pop", steered },
+      { id: "reply", role: "assistant", text: "On it." },
+    ];
+
+    const markup = render(blocks(true), true);
+    expect(markup).toContain('aria-label="Subagent: Backend agent"');
+    expect(markup).toContain("mascot-active");
+
+    // A real new turn settles the one before it, so its run folds away.
+    expect(render(blocks(false), true)).not.toContain(
+      'aria-label="Subagent: Backend agent"',
+    );
+  });
+
   it("keeps the turn's status line at the top of the turn above a stack", () => {
     const markup = render(
       [

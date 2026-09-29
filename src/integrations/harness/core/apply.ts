@@ -480,6 +480,7 @@ export function appendSteerUser(
         id: crypto.randomUUID(),
         role: "user",
         text,
+        steered: true,
         ...turnModelFields(session),
         ...(attachments.length > 0 ? { attachments } : {}),
         ...userTurnFields(extra),

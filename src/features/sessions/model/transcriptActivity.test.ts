@@ -14,6 +14,7 @@ import {
   hasRunningSubagent,
   initialThinkingIndex,
   lastActivityIndex,
+  liveRunStartIndex,
   nestedScrollAbsorbsWheel,
   proseSummary,
   resolveToolCallDisplay,
@@ -345,6 +346,29 @@ describe("turnCopyText", () => {
         { id: "a", role: "assistant", text: "  " },
       ]),
     ).toBe("");
+  });
+});
+
+describe("liveRunStartIndex", () => {
+  it("reaches back past steered messages to the turn they cut in on", () => {
+    const turns = groupTurns([
+      { id: "u1", role: "user", text: "first" },
+      { id: "a1", role: "assistant", text: "Done." },
+      { id: "u2", role: "user", text: "build it" },
+      { id: "a2", role: "assistant", text: "Spawning agents." },
+      { id: "u3", role: "user", text: "and more", steered: true },
+      { id: "u4", role: "user", text: "even more", steered: true },
+    ]);
+    expect(turns).toHaveLength(4);
+    expect(liveRunStartIndex(turns)).toBe(1);
+  });
+
+  it("is the last turn when nothing was steered", () => {
+    const turns = groupTurns([
+      { id: "u1", role: "user", text: "first" },
+      { id: "u2", role: "user", text: "second" },
+    ]);
+    expect(liveRunStartIndex(turns)).toBe(1);
   });
 });
 

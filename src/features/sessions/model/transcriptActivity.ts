@@ -346,6 +346,17 @@ export function groupTurns(blocks: Block[], managed = false): Block[][] {
 }
 
 /**
+ * The first turn of the run in flight. A message steered into a running turn
+ * reads as a turn of its own, but the turn it interrupted is still going: its
+ * delegated runs are still working and must keep their rows.
+ */
+export function liveRunStartIndex(turns: Block[][]): number {
+  let start = turns.length - 1;
+  while (start > 0 && turns[start][0]?.steered) start -= 1;
+  return start;
+}
+
+/**
  * Fold contiguous runs of tool calls and reasoning into activity groups.
  * Assistant prose always stands on its own, including progress updates between
  * groups, so the readable transcript never disappears into activity chrome.

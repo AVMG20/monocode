@@ -103,6 +103,7 @@ import {
   isSubagentBlock,
   isThinkingBlock,
   lastActivityIndex,
+  liveRunStartIndex,
   isProseBlock,
   needsApproval,
   nestedScrollAbsorbsWheel,
@@ -472,6 +473,7 @@ function AgentTranscriptComponent({
   useTurnScrollAnchor(scrollerEl, visible, stickToBottom);
 
   const turns = groupTurns(blocks, managed);
+  const liveRunStart = busy ? liveRunStartIndex(turns) : turns.length;
   const firstVisibleTurn = Math.max(0, turns.length - visibleTurnCount);
   const visibleTurns = turns.slice(firstVisibleTurn);
   const turnsRef = useRef(turns);
@@ -667,12 +669,15 @@ function AgentTranscriptComponent({
           const userBlock = turnUserBlock(turn, managed);
           const durationMs = userBlock?.durationMs;
           const settled = !(busy && isLastTurn);
+          // A turn a steered message cut in on is still running underneath
+          // it, so its delegated runs keep their live rows.
+          const runLive = firstVisibleTurn + turnIndex >= liveRunStart;
           const proposals = turn.filter((block) => block.orchestration);
           // Proposals are turn results, like the changes card. Keep them out
           // of the live work and append them after all of the lead's output.
           const items = groupTurnItems(
             turn.filter((block) => !block.orchestration),
-            { settled },
+            { settled: !runLive },
           );
           // Earlier activity groups have already been followed by prose or
           // more work. Only the last one can still be the live group.
@@ -750,7 +755,7 @@ function AgentTranscriptComponent({
                 key={item.blocks[0].id}
                 blocks={item.blocks}
                 cwd={cwd}
-                live={live}
+                live={visible && runLive && !preparingHandoff}
                 onOpenFile={onOpenFile}
                 onOpenDiff={onOpenDiff}
               />

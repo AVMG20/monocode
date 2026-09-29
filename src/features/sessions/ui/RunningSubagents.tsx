@@ -81,13 +81,14 @@ export function RunningSubagents({ blocks, onSelect }: Props) {
 /**
  * Runs spawned by the live turn that have not reported back. A stopped turn
  * leaves its runs' last status behind, so a run from an earlier turn can still
- * read as in progress; only the turn since the last prompt is live.
+ * read as in progress; only the run since the last prompt is live. A message
+ * steered into that run joins it, so its runs stay counted.
  */
 export function runningSubagents(blocks: Block[]): Block[] {
   const turn: Block[] = [];
   for (let i = blocks.length - 1; i >= 0; i--) {
     const block = blocks[i];
-    if (block.role === "user" && !block.internal) break;
+    if (block.role === "user" && !block.internal && !block.steered) break;
     turn.unshift(block);
   }
   return turn.filter(

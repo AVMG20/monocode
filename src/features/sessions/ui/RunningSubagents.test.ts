@@ -79,6 +79,26 @@ describe("RunningSubagents", () => {
     expect(pills.map((pill) => pill.dataset.runningSubagent)).toEqual(["new"]);
   });
 
+  it("keeps runs from the turn a steered message cut in on", () => {
+    render({
+      blocks: [
+        { id: "u1", role: "user", text: "first" },
+        run("old", "Stale review"),
+        { id: "u2", role: "user", text: "second" },
+        run("live", "Backend agent"),
+        { id: "u3", role: "user", text: "and more", steered: true },
+        run("new", "Frontend agent"),
+      ],
+    });
+    const pills = [
+      ...container.querySelectorAll<HTMLElement>("[data-running-subagent]"),
+    ];
+    expect(pills.map((pill) => pill.dataset.runningSubagent)).toEqual([
+      "live",
+      "new",
+    ]);
+  });
+
   it("hides duplicate rows from older Claude task snapshots", () => {
     render({
       blocks: [

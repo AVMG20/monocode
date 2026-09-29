@@ -400,6 +400,7 @@ describe("appendSteerUser", () => {
     expect(session.blocks[2]).toMatchObject({
       role: "user",
       text: "focus on tests",
+      steered: true,
       turnModel: {
         harness: "cursor",
         id: session.model,

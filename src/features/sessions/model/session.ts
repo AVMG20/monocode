@@ -335,6 +335,12 @@ export type Block = {
    * conversation rather than the user narrating their own agents.
    */
   internal?: boolean;
+  /**
+   * A user message sent into a turn that was already running. It reads as its
+   * own turn, but the run it joined — and the subagents that run spawned —
+   * is still the one in flight.
+   */
+  steered?: boolean;
   handoff?: HandoffMeta;
   secondOpinion?: SecondOpinionMeta;
   /** Independent read-only side conversations anchored to this user turn. */
