@@ -91,6 +91,68 @@ function connectedLimits(provider: RateLimitProvider): ProviderRateLimits {
 }
 
 describe("UsageFooter provider authentication", () => {
+  it("makes one final poll after a Codex turn finishes, then stops", async () => {
+    vi.useFakeTimers();
+    try {
+      rateLimitsFetch.fetchCodexRateLimits.mockResolvedValue(
+        connectedLimits("codex"),
+      );
+      const session = { id: "active", harness: "codex" as const, busy: true };
+      await act(async () =>
+        root.render(createElement(UsageFooter, { providers: ["codex"], session })),
+      );
+      expect(rateLimitsFetch.fetchCodexRateLimits).toHaveBeenCalledTimes(1);
+
+      await act(async () => vi.advanceTimersByTimeAsync(2 * 60_000));
+
+      await act(async () =>
+        root.render(createElement(UsageFooter, {
+          providers: ["codex"],
+          session: { ...session, busy: false },
+        })),
+      );
+      expect(rateLimitsFetch.fetchCodexRateLimits).toHaveBeenCalledTimes(1);
+
+      await act(async () => vi.advanceTimersByTimeAsync(3 * 60_000));
+      expect(rateLimitsFetch.fetchCodexRateLimits).toHaveBeenCalledTimes(2);
+
+      await act(async () => vi.advanceTimersByTimeAsync(5 * 60_000));
+      expect(rateLimitsFetch.fetchCodexRateLimits).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("polls only the active session when switching between running sessions", async () => {
+    vi.useFakeTimers();
+    try {
+      rateLimitsFetch.fetchCodexRateLimits.mockResolvedValue(
+        connectedLimits("codex"),
+      );
+      await act(async () =>
+        root.render(createElement(UsageFooter, {
+          providers: ["codex"],
+          session: { id: "first", harness: "codex", busy: true },
+        })),
+      );
+      await act(async () => vi.advanceTimersByTimeAsync(2 * 60_000));
+      await act(async () =>
+        root.render(createElement(UsageFooter, {
+          providers: ["codex"],
+          session: { id: "second", harness: "codex", busy: true },
+        })),
+      );
+
+      await act(async () => vi.advanceTimersByTimeAsync(3 * 60_000));
+      expect(rateLimitsFetch.fetchCodexRateLimits).toHaveBeenCalledTimes(1);
+
+      await act(async () => vi.advanceTimersByTimeAsync(2 * 60_000));
+      expect(rateLimitsFetch.fetchCodexRateLimits).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("reuses usage on remount and only fetches again on Refresh", async () => {
     rateLimitsFetch.fetchCodexRateLimits.mockResolvedValue(
       connectedLimits("codex"),
