@@ -15,10 +15,7 @@ import {
   providerAccounts,
   saveProviderAccount,
 } from "../../providers/model/providerAccounts";
-import {
-  HARNESSES,
-  HARNESS_TITLE,
-} from "../../sessions/model/session";
+import { HARNESSES, HARNESS_TITLE } from "../../sessions/model/session";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(async () => undefined),
@@ -108,6 +105,28 @@ afterEach(async () => {
 });
 
 describe("settings pages", () => {
+  it("persists the changed files card visibility setting", async () => {
+    await render("appearance");
+    const toggle = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Show changed files card"]',
+    )!;
+    expect(toggle).not.toBeNull();
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+
+    await act(async () => toggle.click());
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(localStorage.getItem("monocode.showChangedFilesCard")).toBe("0");
+
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await render("appearance");
+    expect(
+      container
+        .querySelector('[aria-label="Show changed files card"]')
+        ?.getAttribute("aria-checked"),
+    ).toBe("false");
+  });
+
   it("shows background effect choices above scope when artwork is available", async () => {
     localStorage.setItem(
       "monocode.chatBackgroundPath",
@@ -288,7 +307,9 @@ describe("settings pages", () => {
     const save = async (provider: "Codex" | "OpenCode", path: string) => {
       const id = `${provider.toLowerCase()}-binary-path`;
       if (!document.querySelector(`#${id}`)) {
-        if (!document.querySelector(`[aria-label="Edit ${provider} CLI path"]`)) {
+        if (
+          !document.querySelector(`[aria-label="Edit ${provider} CLI path"]`)
+        ) {
           await act(async () =>
             container
               .querySelector<HTMLButtonElement>(
@@ -350,11 +371,13 @@ describe("settings pages", () => {
       ).codex,
     ).toBe("/opt/codex/bin/codex");
     await act(async () =>
-      Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(
-        (button) => button.textContent === "Cancel",
-      )!.click(),
+      Array.from(document.querySelectorAll<HTMLButtonElement>("button"))
+        .find((button) => button.textContent === "Cancel")!
+        .click(),
     );
-    expect(document.querySelector('[aria-label="Retry Codex configured path"]')).not.toBeNull();
+    expect(
+      document.querySelector('[aria-label="Retry Codex configured path"]'),
+    ).not.toBeNull();
 
     failAutoCodex = true;
     await save("Codex", "");
@@ -598,7 +621,9 @@ describe("settings pages", () => {
   it("shows path details for every Agent CLI", async () => {
     await render("providers");
     expect(
-      vi.mocked(invoke).mock.calls.some(([command]) => command === "harness_exec"),
+      vi
+        .mocked(invoke)
+        .mock.calls.some(([command]) => command === "harness_exec"),
     ).toBe(false);
     for (const harness of HARNESSES) {
       expect(
@@ -628,7 +653,8 @@ describe("settings pages", () => {
     vi.mocked(invoke).mockImplementation(async (command) => {
       if (command === "harness_resolve_codex") return { path: "/auto/codex" };
       if (command === "harness_exec") return "codex-cli 0.156.1";
-      if (command === "reveal_path") throw new Error("File manager unavailable");
+      if (command === "reveal_path")
+        throw new Error("File manager unavailable");
       return undefined;
     });
     await render("providers");

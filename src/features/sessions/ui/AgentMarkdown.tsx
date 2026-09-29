@@ -25,7 +25,10 @@ import {
   type Components,
 } from "streamdown";
 import type { PluggableList } from "unified";
-import { ExplorerMenu, type ExplorerMenuItem } from "../../files/ui/ExplorerMenu";
+import {
+  ExplorerMenu,
+  type ExplorerMenuItem,
+} from "../../files/ui/ExplorerMenu";
 import { FileActionError } from "../../files/ui/FileActionError";
 import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
 import { createLazyMermaidPlugin } from "../../files/editor/mermaidPlugin";
@@ -41,7 +44,10 @@ import { useColorScheme } from "../../../shared/hooks/useColorScheme";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { copyText } from "../../../platform/tauri/clipboard";
 import { openPathWithDefaultApp, revealPath } from "../../../platform/tauri/fs";
-import { INBOX_MEDIA_PREFIXES, isInboxMediaUrl } from "../../inbox/model/inboxMedia";
+import {
+  INBOX_MEDIA_PREFIXES,
+  isInboxMediaUrl,
+} from "../../inbox/model/inboxMedia";
 import { isNoteImagePath } from "../../notes";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 import { InboxMedia } from "../../inbox/ui/InboxMedia";
@@ -330,6 +336,8 @@ function MarkdownCode({
     (fence.language ? fileNameForLanguage(fence.language) : "");
   const lineNumbers = !/\bnoLineNumbers\b/.test(meta);
   const code = textContent(children);
+  const previewable =
+    !incomplete && ["html", "svg"].includes(fence.language.toLowerCase());
 
   return (
     <div className="markdown-code-shell" dir="ltr">
@@ -342,6 +350,9 @@ function MarkdownCode({
         <MarkdownCodePath path={fence.filePath} startLine={fence.startLine} />
       ) : null}
       <CodeCopyButton code={code} />
+      {previewable ? (
+        <ArtifactPreview code={code} language={fence.language} />
+      ) : null}
       <CodeBlock
         className={className}
         code={code}
@@ -351,6 +362,47 @@ function MarkdownCode({
         startLine={fence.startLine}
       />
     </div>
+  );
+}
+
+/** Render authored markup in a separate, script-free document. */
+function ArtifactPreview({
+  code,
+  language,
+}: {
+  code: string;
+  language: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const policy =
+    "default-src 'none'; img-src data: blob:; font-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'";
+  const document = `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="${policy}"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>${code}</body></html>`;
+
+  return (
+    <>
+      <button
+        type="button"
+        className="markdown-artifact-toggle"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        {open ? "Hide preview" : "Preview"}
+      </button>
+      {open ? (
+        <div className="markdown-artifact-preview">
+          <div className="markdown-artifact-label">
+            {language.toUpperCase()} preview · scripts and external resources
+            disabled
+          </div>
+          <iframe
+            title={`${language.toUpperCase()} artifact preview`}
+            sandbox=""
+            referrerPolicy="no-referrer"
+            srcDoc={document}
+          />
+        </div>
+      ) : null}
+    </>
   );
 }
 

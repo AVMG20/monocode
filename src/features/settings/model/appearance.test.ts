@@ -22,6 +22,9 @@ import {
   loadShowExcludedFiles,
   saveShowExcludedFiles,
   SHOW_EXCLUDED_FILES_DEFAULT,
+  loadShowChangedFilesCard,
+  saveShowChangedFilesCard,
+  SHOW_CHANGED_FILES_CARD_DEFAULT,
   loadThemePreference,
   loadThemeDarkLightness,
   saveThemeDarkLightness,
@@ -37,6 +40,7 @@ const ACCENT_COLOR_KEY = "monocode.accentColor";
 const SCHEME_KEY = "monocode.colorScheme";
 const ANCHOR_KEY = "monocode.transcriptAnchor";
 const SHOW_EXCLUDED_FILES_KEY = "monocode.showExcludedFiles";
+const SHOW_CHANGED_FILES_CARD_KEY = "monocode.showChangedFilesCard";
 const CHAT_BACKGROUND_PATH_KEY = "monocode.chatBackgroundPath";
 const CHAT_BACKGROUND_OPACITY_KEY = "monocode.chatBackgroundOpacity";
 const CHAT_BACKGROUND_SCOPE_KEY = "monocode.chatBackgroundScope";
@@ -152,6 +156,22 @@ describe("show excluded files setting", () => {
     expect(loadShowExcludedFiles()).toBe(true);
     saveShowExcludedFiles(false);
     expect(loadShowExcludedFiles()).toBe(false);
+  });
+});
+
+describe("changed files card setting", () => {
+  beforeEach(mockLocalStorage);
+  afterEach(() => {
+    localStorage.removeItem(SHOW_CHANGED_FILES_CARD_KEY);
+  });
+
+  it("shows the card by default and persists the hidden choice", () => {
+    expect(SHOW_CHANGED_FILES_CARD_DEFAULT).toBe(true);
+    expect(loadShowChangedFilesCard()).toBe(true);
+    saveShowChangedFilesCard(false);
+    expect(loadShowChangedFilesCard()).toBe(false);
+    saveShowChangedFilesCard(true);
+    expect(loadShowChangedFilesCard()).toBe(true);
   });
 });
 

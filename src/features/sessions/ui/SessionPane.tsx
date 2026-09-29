@@ -88,7 +88,9 @@ import { GradientBlurBackground } from "../../settings/ui/GradientBlurBackground
 import {
   loadChatBackgroundPath,
   loadNewThreadBackgroundEffect,
+  loadShowChangedFilesCard,
   subscribeChatBackgroundPath,
+  subscribeShowChangedFilesCard,
 } from "../../settings/model/appearance";
 import type { SessionFolderTarget } from "../model/sessionFolders";
 import { markLinkedSessionUpdateSeen } from "../../inbox/model/linkedSessionSeen";
@@ -342,6 +344,11 @@ const LocalSessionPane = memo(function LocalSessionPane({
     subscribeChatBackgroundPath,
     loadNewThreadBackgroundEffect,
     loadNewThreadBackgroundEffect,
+  );
+  const showChangedFilesCard = useSyncExternalStore(
+    subscribeShowChangedFilesCard,
+    loadShowChangedFilesCard,
+    () => true,
   );
   const projectBackground = loadProjectChatBackgroundSettings(
     projectKey(session.cwd),
@@ -893,6 +900,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                       : undefined
                   }
                   latestTurnAccessory={
+                    !showChangedFilesCard ||
                     remote ||
                     session.inboxAsk ||
                     session.worktreeRemoved ||

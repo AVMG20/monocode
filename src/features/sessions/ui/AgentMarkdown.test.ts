@@ -1,7 +1,13 @@
-import { createElement } from "react";
+// @vitest-environment happy-dom
+import { act, createElement } from "react";
+import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { AgentMarkdown } from "./AgentMarkdown";
+
+(
+  globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe("AgentMarkdown text direction", () => {
   it("detects direction independently for RTL and LTR blocks", () => {
@@ -79,5 +85,42 @@ describe("AgentMarkdown note images", () => {
       'data-note-image="/note-assets/note-1/123-diagram.png"',
     );
     expect(markup).toContain('alt="Diagram"');
+  });
+});
+
+describe("AgentMarkdown artifact previews", () => {
+  it("offers an isolated preview for completed HTML and SVG fences", () => {
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    act(() =>
+      root.render(
+        createElement(AgentMarkdown, {
+          text: '```html\n<h1>Hello</h1><script>alert(1)</script>\n```\n\n```svg\n<svg><circle r="5"/></svg>\n```',
+        }),
+      ),
+    );
+
+    const buttons = container.querySelectorAll<HTMLButtonElement>(
+      ".markdown-artifact-toggle",
+    );
+    expect(buttons).toHaveLength(2);
+    expect(container.querySelector("iframe")).toBeNull();
+    act(() => buttons[0].click());
+
+    const frame = container.querySelector("iframe");
+    expect(frame?.getAttribute("sandbox")).toBe("");
+    expect(frame?.getAttribute("referrerpolicy")).toBe("no-referrer");
+    expect(frame?.getAttribute("srcdoc")).toContain("default-src 'none'");
+    expect(frame?.getAttribute("srcdoc")).toContain("<h1>Hello</h1>");
+    act(() => root.unmount());
+  });
+
+  it("does not preview unrelated code", () => {
+    const markup = renderToStaticMarkup(
+      createElement(AgentMarkdown, {
+        text: "```javascript\nalert(1)\n```",
+      }),
+    );
+    expect(markup).not.toContain("markdown-artifact-toggle");
   });
 });

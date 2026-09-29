@@ -31,6 +31,7 @@ const CHAT_BACKGROUND_SCOPE_KEY = "monocode.chatBackgroundScope";
 const NEW_THREAD_BACKGROUND_EFFECT_KEY = "monocode.newThreadBackgroundEffect";
 const CHANGES_VIEW_KEY = "monocode.changesView";
 const SHOW_EXCLUDED_FILES_KEY = "monocode.showExcludedFiles";
+const SHOW_CHANGED_FILES_CARD_KEY = "monocode.showChangedFilesCard";
 let chatBackgroundRevision = Date.now();
 let nativeGlassReady = false;
 
@@ -95,6 +96,10 @@ export const TRANSCRIPT_ANCHOR_CHANGE_EVENT = "monocode:transcriptanchorchange";
 export const TRANSCRIPT_LAYOUT_CHANGE_EVENT = "monocode:transcriptlayoutchange";
 
 export const SHOW_EXCLUDED_FILES_DEFAULT = false;
+export const SHOW_CHANGED_FILES_CARD_DEFAULT = true;
+
+export const SHOW_CHANGED_FILES_CARD_CHANGE_EVENT =
+  "monocode:showchangedfilescardchange";
 
 /** Fired on `window` whenever the explorer excluded-files setting flips (detail: boolean). */
 export const SHOW_EXCLUDED_FILES_CHANGE_EVENT =
@@ -811,4 +816,29 @@ export function subscribeShowExcludedFiles(onStoreChange: () => void) {
   window.addEventListener(SHOW_EXCLUDED_FILES_CHANGE_EVENT, onStoreChange);
   return () =>
     window.removeEventListener(SHOW_EXCLUDED_FILES_CHANGE_EVENT, onStoreChange);
+}
+
+export function loadShowChangedFilesCard(): boolean {
+  return (
+    readFlag(SHOW_CHANGED_FILES_CARD_KEY) ?? SHOW_CHANGED_FILES_CARD_DEFAULT
+  );
+}
+
+export function saveShowChangedFilesCard(value: boolean) {
+  writeFlag(SHOW_CHANGED_FILES_CARD_KEY, value);
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(SHOW_CHANGED_FILES_CARD_CHANGE_EVENT));
+}
+
+export function subscribeShowChangedFilesCard(onStoreChange: () => void) {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener(SHOW_CHANGED_FILES_CARD_CHANGE_EVENT, onStoreChange);
+  window.addEventListener("storage", onStoreChange);
+  return () => {
+    window.removeEventListener(
+      SHOW_CHANGED_FILES_CARD_CHANGE_EVENT,
+      onStoreChange,
+    );
+    window.removeEventListener("storage", onStoreChange);
+  };
 }

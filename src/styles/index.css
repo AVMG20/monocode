@@ -1557,6 +1557,48 @@ header[data-tauri-drag-region] button {
     background-color 160ms ease;
 }
 
+.agent-markdown .markdown-artifact-toggle {
+  position: absolute;
+  z-index: 2;
+  top: 6px;
+  right: 40px;
+  height: 24px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-content) 8%, transparent);
+  color: var(--color-content);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.agent-markdown .markdown-artifact-toggle:hover,
+.agent-markdown .markdown-artifact-toggle:focus-visible {
+  background: color-mix(in srgb, var(--color-content) 16%, transparent);
+}
+
+.agent-markdown .markdown-artifact-preview {
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--color-content) 15%, transparent);
+  border-radius: 9px;
+  background: white;
+}
+
+.agent-markdown .markdown-artifact-label {
+  padding: 5px 10px;
+  background: #f3f4f6;
+  color: #4b5563;
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.agent-markdown .markdown-artifact-preview iframe {
+  display: block;
+  width: 100%;
+  height: min(480px, 60vh);
+  border: 0;
+}
+
 .agent-markdown .markdown-code-copy:hover {
   background: color-mix(in srgb, var(--color-content) 10%, transparent);
   color: var(--color-content);

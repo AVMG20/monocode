@@ -102,6 +102,9 @@ import {
   loadShowExcludedFiles,
   saveShowExcludedFiles,
   SHOW_EXCLUDED_FILES_DEFAULT,
+  loadShowChangedFilesCard,
+  saveShowChangedFilesCard,
+  SHOW_CHANGED_FILES_CARD_DEFAULT,
   SIDEBAR_BLUR_DEFAULT,
   SIDEBAR_BLUR_MAX,
   SIDEBAR_BLUR_MIN,
@@ -1802,6 +1805,9 @@ function useAppearanceSettings(
   const [showExcludedFiles, setShowExcludedFiles] = useState(
     loadShowExcludedFiles,
   );
+  const [showChangedFilesCard, setShowChangedFilesCard] = useState(
+    loadShowChangedFilesCard,
+  );
   const [chatBackgroundPath, setChatBackgroundPath] = useState(
     loadChatBackgroundPath,
   );
@@ -1873,6 +1879,11 @@ function useAppearanceSettings(
   const onShowExcludedFiles = useCallback((next: boolean) => {
     saveShowExcludedFiles(next);
     setShowExcludedFiles(next);
+  }, []);
+
+  const onShowChangedFilesCard = useCallback((next: boolean) => {
+    saveShowChangedFilesCard(next);
+    setShowChangedFilesCard(next);
   }, []);
 
   const onChooseChatBackground = useCallback(async () => {
@@ -1960,6 +1971,7 @@ function useAppearanceSettings(
     onDarkLightness(THEME_DARK_LIGHTNESS_DEFAULT);
     onBodyGlass(BODY_GLASS_DEFAULT);
     onShowExcludedFiles(SHOW_EXCLUDED_FILES_DEFAULT);
+    onShowChangedFilesCard(SHOW_CHANGED_FILES_CARD_DEFAULT);
     onChatBackgroundEmptyOpacity(
       Math.round(CHAT_BACKGROUND_EMPTY_OPACITY_DEFAULT * 100),
     );
@@ -1982,6 +1994,7 @@ function useAppearanceSettings(
     onClearChatBackground,
     onAccentColor,
     onShowExcludedFiles,
+    onShowChangedFilesCard,
     onThemePreference,
     onOpacity,
     onTint,
@@ -2000,6 +2013,7 @@ function useAppearanceSettings(
     themeDarkLightness,
     bodyGlass,
     showExcludedFiles,
+    showChangedFilesCard,
     chatBackgroundPath,
     chatBackgroundEmptyOpacity,
     chatBackgroundSessionOpacity,
@@ -2017,6 +2031,7 @@ function useAppearanceSettings(
     onDarkLightness,
     onBodyGlass,
     onShowExcludedFiles,
+    onShowChangedFilesCard,
     onChooseChatBackground,
     onClearChatBackground,
     onChatBackgroundEmptyOpacity,
@@ -2177,6 +2192,17 @@ function AppearancePage({ appearance }: { appearance: AppearanceSettings }) {
       <ChatBackgroundCard appearance={appearance} />
 
       <Group title="Layout">
+        <Row
+          id="show-changed-files-card"
+          label="Show changed files card"
+          description="Show the file summary and Undo, Keep, and Review actions below an agent reply."
+        >
+          <Toggle
+            label="Show changed files card"
+            on={appearance.showChangedFilesCard}
+            onChange={appearance.onShowChangedFilesCard}
+          />
+        </Row>
         <Row
           id="collapsed-project-rail"
           label="Collapsed project rail"
@@ -2722,7 +2748,10 @@ function binaryInspectionError(
   inspection: HarnessBinaryInspection,
 ): string | null {
   if (inspection.error) return inspection.error;
-  if (provider === "codex" && !/^codex-cli\s+\d+\.\d+\.\d+/.test(inspection.version ?? "")) {
+  if (
+    provider === "codex" &&
+    !/^codex-cli\s+\d+\.\d+\.\d+/.test(inspection.version ?? "")
+  ) {
     return "Codex CLI returned an invalid version.";
   }
   if (provider === "opencode") {
@@ -2856,7 +2885,9 @@ function ProviderBinaryControl({
           setEditing(false);
         }}
         className={`grid size-6 place-items-center rounded hover:bg-content/10 focus-visible:outline-2 focus-visible:outline-accent ${
-          restartRequired ? "text-amber-300" : "text-content/35 hover:text-content"
+          restartRequired
+            ? "text-amber-300"
+            : "text-content/35 hover:text-content"
         }`}
       >
         <FolderOpen className="size-3.5" strokeWidth={1.75} />
@@ -2933,7 +2964,8 @@ function ProviderBinaryControl({
                 className="mt-1.5 h-8 w-full rounded-md border border-content/10 bg-content/[0.04] px-2 font-mono text-[11px] text-content outline-none placeholder:font-sans placeholder:text-content/35 focus:border-accent/45 disabled:opacity-50"
               />
               <p className="mt-1.5 text-[10px] text-content/40">
-                Enter the absolute path to the CLI executable. Changes apply after restarting MonoCode.
+                Enter the absolute path to the CLI executable. Changes apply
+                after restarting MonoCode.
               </p>
               {error ? (
                 <span
@@ -2972,31 +3004,33 @@ function ProviderBinaryControl({
               <div className="mt-2 rounded-md border border-content/10 bg-content/[0.03] px-2.5 py-2">
                 <span className="block max-h-12 overflow-y-auto whitespace-pre-wrap break-all font-mono text-[10px] text-content/65">
                   {inspection?.path ??
-                    (error ? "CLI could not be resolved" : "Checking the selected CLI…")}
+                    (error
+                      ? "CLI could not be resolved"
+                      : "Checking the selected CLI…")}
                 </span>
                 <span className="mt-1 block max-h-10 overflow-y-auto whitespace-pre-wrap break-words text-[10px] text-content/40">
                   {inspection?.version ??
                     (error ? "Retry to check this CLI" : "Checking version…")}
                 </span>
               </div>
-               {error ? (
-                 <span
-                   role="alert"
-                   title={error}
-                   className="mt-1.5 block max-h-20 overflow-y-auto whitespace-pre-wrap break-words text-[10px] leading-4 text-red-400"
-                 >
-                   {error}
-                 </span>
-               ) : null}
-               {revealError ? (
-                 <span
-                   role="alert"
-                   className="mt-1.5 block max-h-20 overflow-y-auto whitespace-pre-wrap break-words text-[10px] leading-4 text-red-400"
-                 >
-                   Could not open the CLI location: {revealError}
-                 </span>
-               ) : null}
-               <div className="mt-3 flex justify-end gap-2">
+              {error ? (
+                <span
+                  role="alert"
+                  title={error}
+                  className="mt-1.5 block max-h-20 overflow-y-auto whitespace-pre-wrap break-words text-[10px] leading-4 text-red-400"
+                >
+                  {error}
+                </span>
+              ) : null}
+              {revealError ? (
+                <span
+                  role="alert"
+                  className="mt-1.5 block max-h-20 overflow-y-auto whitespace-pre-wrap break-words text-[10px] leading-4 text-red-400"
+                >
+                  Could not open the CLI location: {revealError}
+                </span>
+              ) : null}
+              <div className="mt-3 flex justify-end gap-2">
                 {error ? (
                   <SecondaryButton
                     disabled={working}
@@ -3018,7 +3052,9 @@ function ProviderBinaryControl({
                     if (inspection) {
                       void revealPath(inspection.path).catch((cause) => {
                         setRevealError(
-                          cause instanceof Error ? cause.message : String(cause),
+                          cause instanceof Error
+                            ? cause.message
+                            : String(cause),
                         );
                       });
                     }

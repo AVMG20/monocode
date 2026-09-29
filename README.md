@@ -43,6 +43,10 @@ Experimental remote sessions: run agents on an always-on Windows, Linux, or macO
 
 This is very early and you should expect bugs.
 
+### Artifact previews
+
+Claude Code runs in MonoCode through its CLI, and MonoCode does not have the Claude.ai Artifacts panel. For standalone `html` and `svg` code fences in an agent reply, MonoCode offers a **Preview** button alongside the source and copy control. Previews run in an isolated frame with scripts and external resources disabled. Interactive web apps can be created as project files and run with the project's normal dev server.
+
 ### Agent access to MonoCode
 
 Type `/operator` at the start of a composer message to enable MonoCode access in that thread. For example, `/operator start two Codex sessions: one to inspect the API and one to review the UI`, or `/operator list my notes`. The slash picker also offers this command. The transcript shows only the request text in a translucent amber bubble; MonoCode removes the command from the request sent to the agent and supplies the local `app` CLI path and instructions on that turn. Later turns in the same thread can use the CLI without repeating `/operator`; other threads receive no CLI instructions or app access. The CLI can act only during an active agent turn. The agent can run the shown `app --help` command for the exact JSON input fields.
