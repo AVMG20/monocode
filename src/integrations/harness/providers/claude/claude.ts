@@ -22,6 +22,7 @@ import {
   turnMetricsFromResult,
   buildClaudeSpawnArgs,
   buildClaudeUserMessage,
+  artifactTitleField,
   buildControlRequest,
   buildControlResponse,
   claudeSettingsKey,
@@ -853,6 +854,7 @@ function handleUser(live: Live, rec: Record<string, unknown>): void {
       status: result.isError ? "failed" : "completed",
       detail: result.text || undefined,
       preview: previewFromTool(tool.name, tool.input, result.text),
+      ...artifactTitleField(tool.name, tool.input),
     });
     // What a subagent hands back is the last thing it said, so it closes out
     // that agent's own trail rather than sitting on the parent row as detail.

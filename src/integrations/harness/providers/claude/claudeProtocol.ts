@@ -1013,6 +1013,26 @@ export function previewFromTool(
   );
 }
 
+/**
+ * The name a call gives the page it makes: a Claude Doc's `create.name`, or
+ * the Artifact tool's fallback `title`. Results only carry the link, so the
+ * session's artifact pills would otherwise go unnamed.
+ */
+export function artifactTitleField(
+  name: string,
+  input: Record<string, unknown>,
+): { artifactTitle?: string } {
+  let title: string | undefined;
+  if (/Claude_Docs__/.test(name)) {
+    const create = asRecord(asRecord(input.container)?.create);
+    title = create ? stringField(create, "name") : undefined;
+  } else if (name === "Artifact") {
+    title = stringField(input, "title");
+  }
+  title = title?.trim();
+  return title ? { artifactTitle: title } : {};
+}
+
 export function summarizeToolRequest(
   toolName: string,
   input: Record<string, unknown>,

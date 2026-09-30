@@ -89,6 +89,7 @@ export function applyHarnessEvent(
         preview: event.preview,
         streaming: event.status !== "completed" && event.status !== "failed",
         agentModel: event.agentModel,
+        artifactTitle: event.artifactTitle,
       });
     case "agent.step":
       return recordAgentStep(session, event);
@@ -879,6 +880,7 @@ function upsertTool(
     streaming: boolean;
     agentModel?: string;
     background?: boolean;
+    artifactTitle?: string;
   },
 ): Session {
   const index = findToolIndex(session, patch);
@@ -908,6 +910,7 @@ function upsertTool(
         ...(detail ? { detail } : {}),
         ...(preview ? { preview } : {}),
         ...(patch.background ? { background: true } : {}),
+        ...(patch.artifactTitle ? { artifactTitle: patch.artifactTitle } : {}),
       },
     });
   }
@@ -927,6 +930,7 @@ function upsertTool(
   );
   const kind = patch.kind ?? prev.tool?.kind;
   const status = patch.status ?? prev.tool?.status;
+  const artifactTitle = patch.artifactTitle ?? prev.tool?.artifactTitle;
   const agentName = prev.agentRun?.steps.length ? prev.agentRun.name : label;
   if (
     prev.text === label &&
@@ -935,6 +939,7 @@ function upsertTool(
     prev.tool?.kind === kind &&
     prev.tool?.status === status &&
     prev.tool?.detail === detail &&
+    prev.tool?.artifactTitle === artifactTitle &&
     (!patch.agentModel || prev.agentRun?.model === patch.agentModel) &&
     (!prev.agentRun || prev.agentRun.name === agentName) &&
     samePreview(prev.tool?.preview, preview)
@@ -968,6 +973,7 @@ function upsertTool(
       ...(detail ? { detail } : {}),
       ...(preview ? { preview } : {}),
       ...(prev.tool?.background ? { background: true } : {}),
+      ...(artifactTitle ? { artifactTitle } : {}),
     },
   };
   return { ...session, blocks };

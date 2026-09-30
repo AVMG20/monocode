@@ -317,6 +317,8 @@ export type Block = {
     preview?: ToolPreview;
     /** Left running by the agent when it yielded; the turn waits on it. */
     background?: boolean;
+    /** The name a claude.ai artifact or Claude Doc was given in the call. */
+    artifactTitle?: string;
   };
   approval?: {
     requestId: number;

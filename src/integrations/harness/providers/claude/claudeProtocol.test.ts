@@ -4,6 +4,7 @@ import {
   modelsFromClaudeListModels,
 } from "./claudeCatalog";
 import {
+  artifactTitleField,
   applyClaudePromptEffortPrefix,
   askUserQuestionAllowInput,
   buildClaudeSpawnArgs,
@@ -178,6 +179,26 @@ describe("buildClaudeSpawnArgs", () => {
       permissionMode: "bypassPermissions",
     });
     expect(args).toContain("--allow-dangerously-skip-permissions");
+  });
+});
+
+describe("artifactTitleField", () => {
+  it("names a Claude Doc at birth and an Artifact publish by its fallback title", () => {
+    expect(
+      artifactTitleField("mcp__claude_ai_Claude_Docs__batch", {
+        container: { kind: "project", create: { name: " Release notes " } },
+        batch: [],
+      }),
+    ).toEqual({ artifactTitle: "Release notes" });
+    expect(
+      artifactTitleField("mcp__claude_ai_Claude_Docs__update", {
+        container: { kind: "project", id: "x" },
+      }),
+    ).toEqual({});
+    expect(
+      artifactTitleField("Artifact", { file_path: "/a.html", title: "Flow" }),
+    ).toEqual({ artifactTitle: "Flow" });
+    expect(artifactTitleField("Write", { title: "Nope" })).toEqual({});
   });
 });
 

@@ -74,6 +74,8 @@ export type HarnessEvent =
       preview?: ToolPreview;
       /** Every path affected when one structured edit changes multiple files. */
       paths?: string[];
+      /** The name a claude.ai artifact or Claude Doc was given in the call. */
+      artifactTitle?: string;
     }
   /** Something a subagent did, mirrored onto its parent Agent tool call. */
   | {
