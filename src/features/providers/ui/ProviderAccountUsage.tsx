@@ -173,14 +173,14 @@ export function UsageMeter({
       <div
         className="mt-1.5 h-1 overflow-hidden rounded-full bg-content/10"
         role="progressbar"
-        aria-label={`${title} limit remaining`}
+        aria-label={`${title} limit used`}
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-valuenow={Math.round(remaining)}
+        aria-valuenow={Math.round(pct)}
       >
         <span
           className={`block h-full rounded-full transition-[width] duration-300 ${barClass(pct)}`}
-          style={{ width: `${remaining}%` }}
+          style={{ width: `${pct}%` }}
         />
       </div>
     </div>
