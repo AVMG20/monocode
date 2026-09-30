@@ -51,6 +51,7 @@ const {
   restoreClaudeTaskLists,
   sendClaudeTurn,
   steerClaudeTurn,
+  stopClaudeBackgroundTask,
   stopClaudeSession,
   __claudeTestReset,
 } = await import("./claude");
@@ -260,7 +261,9 @@ function emitBashFinished(taskId = "b1") {
 
 function backgroundUpdates(events: HarnessEvent[]): string[][] {
   return events.flatMap((event) =>
-    event.type === "background.updated" ? [event.tasks] : [],
+    event.type === "background.updated"
+      ? [event.tasks.map((task) => task.description)]
+      : [],
   );
 }
 
@@ -2013,6 +2016,31 @@ describe("claude background tasks", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("stops one background task without interrupting the turn", async () => {
+    const { events } = await startTurn("s1");
+    emitBackgroundBash("b7");
+    const waiting = events
+      .filter((event) => event.type === "background.updated")
+      .at(-1);
+    expect(waiting).toEqual({
+      type: "background.updated",
+      tasks: [{ id: "b7", description: "Wait 30 seconds then print done" }],
+    });
+
+    await stopClaudeBackgroundTask("s1", "b7");
+    await stopClaudeBackgroundTask("s1", "unknown");
+    const requests = parse().flatMap((m) => {
+      const request = m.request as Record<string, unknown> | undefined;
+      return request ? [request] : [];
+    });
+    expect(
+      requests.filter((request) => request.subtype === "stop_task"),
+    ).toEqual([{ subtype: "stop_task", task_id: "b7" }]);
+    expect(requests.some((request) => request.subtype === "interrupt")).toBe(
+      false,
+    );
   });
 
   it("stops background commands when the turn is stopped", async () => {

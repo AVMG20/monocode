@@ -77,6 +77,7 @@ import {
 } from "../../projects/model/recents";
 import type {
   Attachment,
+  BackgroundTask,
   HarnessId,
   MessageQueueStatus,
   QueuedMessage,
@@ -108,6 +109,7 @@ import {
   type SlashToken,
 } from "../../skills/model/skills";
 import { AccessPicker } from "./AccessPicker";
+import { BackgroundTasksBar } from "./BackgroundTasksBar";
 import { ComposerRunner } from "./ComposerRunner";
 import { ContextMeter } from "./ContextMeter";
 import { AttachmentChip } from "./AttachmentChip";
@@ -250,6 +252,9 @@ type Props = {
   lastTurnRecall?: LastTurnRecall | null;
   queuedMessages?: QueuedMessage[];
   queueStatus?: MessageQueueStatus;
+  /** Work the agent left running after it yielded. */
+  backgroundTasks?: BackgroundTask[];
+  onStopBackgroundTask?: (taskId: string) => void;
   usageLimit?: UsageLimit;
   hotkeys?: boolean;
   onFocus: () => void;
@@ -335,6 +340,7 @@ function ToolButton({
 }
 
 function MessageQueue({
+  joined = false,
   messages,
   status,
   onDelete,
@@ -343,6 +349,8 @@ function MessageQueue({
   onSteer,
   onResume,
 }: {
+  /** Continues the card docked above it instead of starting its own tab. */
+  joined?: boolean;
   messages: QueuedMessage[];
   status?: MessageQueueStatus;
   onDelete?: (messageId: string) => void;
@@ -385,7 +393,9 @@ function MessageQueue({
   return (
     <div className="px-2 text-content/55" data-message-queue>
       <div
-        className="relative z-0 rounded-t-[10px] border border-b-0 border-content/10 bg-content/3 px-2 py-1"
+        className={`relative z-0 border border-b-0 border-content/10 bg-content/3 px-2 py-1 ${
+          joined ? "" : "rounded-t-[10px]"
+        }`}
         data-message-queue-card
       >
         {paused ? (
@@ -540,6 +550,8 @@ export function Composer({
   lastTurnRecall = null,
   queuedMessages = [],
   queueStatus,
+  backgroundTasks,
+  onStopBackgroundTask,
   usageLimit,
   onFocus,
   onCwdChange,
@@ -1979,7 +1991,15 @@ export function Composer({
           onDismiss={onUsageLimitDismiss}
         />
       ) : null}
+      {backgroundTasks?.length ? (
+        <BackgroundTasksBar
+          tasks={backgroundTasks}
+          onStopTask={onStopBackgroundTask}
+          onStopAll={onStop}
+        />
+      ) : null}
       <MessageQueue
+        joined={!!backgroundTasks?.length}
         messages={queuedMessages}
         status={queueStatus}
         onDelete={onDeleteQueuedMessage}

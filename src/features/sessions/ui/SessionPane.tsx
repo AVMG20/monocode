@@ -24,6 +24,7 @@ import { SessionReview } from "./SessionReview";
 import { PromptOutline } from "./PromptOutline";
 import {
   canCompactHarnessContext,
+  canStopHarnessBackgroundTask,
   type ApprovalDecision,
   type UserQuestionReply,
 } from "../../../integrations/harness";
@@ -142,6 +143,7 @@ export type SessionPaneProps = {
   ) => boolean | void;
   onRemoveDraft: (sessionId: string, draftBlockId: string) => boolean | void;
   onStop: (sessionId: string) => void;
+  onStopBackgroundTask?: (sessionId: string, taskId: string) => void;
   onCompactContext: (sessionId: string) => boolean;
   onPlaceSessionInFolder: (
     sessionId: string,
@@ -279,6 +281,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   onRemoveDraft,
   onSubmit,
   onStop,
+  onStopBackgroundTask,
   onCompactContext,
   onPlaceSessionInFolder,
   onDeleteQueuedMessage,
@@ -658,6 +661,14 @@ const LocalSessionPane = memo(function LocalSessionPane({
       }}
       onBtwCommand={btw.openWith}
       onStop={() => onStop(session.id)}
+      backgroundTasks={session.backgroundTasks}
+      onStopBackgroundTask={
+        onStopBackgroundTask &&
+        !remote &&
+        canStopHarnessBackgroundTask(session.harness)
+          ? (taskId) => onStopBackgroundTask(session.id, taskId)
+          : undefined
+      }
       onCompactContext={() => onCompactContext(session.id)}
       onPlaceInFolder={(target) => onPlaceSessionInFolder(session.id, target)}
       queuedMessages={session.queuedMessages}

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Work Claude leaves running after it replies (dev servers, watchers, monitors) is listed in a bar docked above the composer instead of on the last message. Each task has its own Stop, and several tasks collapse behind a count with Stop all. Once only background work is left, the reply reads as finished and the sidebar, project rail, and tab stop showing the session as running. In #501.
+
 ## [0.6.0] - 2026-09-30
 
 ### Added

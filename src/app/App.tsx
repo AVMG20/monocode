@@ -253,6 +253,7 @@ import {
   sendHarnessTurn,
   steerHarnessTurn,
   startHarnessBridge,
+  stopHarnessBackgroundTask,
   stopHarnessSession,
   stopHarnessTextPrompts,
   stopStreaming,
@@ -395,6 +396,7 @@ import {
   canReplaceSessionTitle,
   formatSessionTitle,
   sessionNeedsInput,
+  sessionWorking,
   newDefaultSession,
   newSession,
   retargetSessionToProject,
@@ -1528,7 +1530,7 @@ export default function App({
   const nextBusySessionIds = useMemo(() => {
     const ids = new Set<string>();
     for (const session of sessions) {
-      if (session.busy) {
+      if (sessionWorking(session)) {
         ids.add(session.id);
         if (session.orchestrationLeadId) ids.add(session.orchestrationLeadId);
       }
@@ -8562,6 +8564,17 @@ export default function App({
     [flushHarnessEvents],
   );
 
+  const onStopBackgroundTask = useCallback(
+    (sessionId: string, taskId: string) => {
+      const session = sessionsRef.current.find((s) => s.id === sessionId);
+      if (!session || remoteProjectFor(session.cwd)) return;
+      void stopHarnessBackgroundTask(session.harness, sessionId, taskId).catch(
+        console.error,
+      );
+    },
+    [],
+  );
+
   useEffect(() => {
     const onEscape = (event: KeyboardEvent) => {
       const target = event.target instanceof Element ? event.target : null;
@@ -10531,6 +10544,7 @@ export default function App({
     onRemoveDraft,
     onSubmit,
     onStop,
+    onStopBackgroundTask,
     onCompactContext,
     onPlaceSessionInFolder,
     onDeleteQueuedMessage,
@@ -10681,7 +10695,7 @@ export default function App({
               textHarness={pickTextHarness(active?.harness)}
               recents={recents}
               busyProjectPaths={sessions.flatMap((session) =>
-                session.busy && session.cwd ? [session.cwd] : [],
+                sessionWorking(session) && session.cwd ? [session.cwd] : [],
               )}
               liveAgents={liveAgents}
               onSelectAgent={onSelectLiveAgent}
@@ -11233,7 +11247,7 @@ function toTitleTab(
     : tabSessions;
   for (const session of ordered) {
     if (
-      session.busy &&
+      sessionWorking(session) &&
       !sessionNeedsInput(session) &&
       !busySeen.has(session.harness)
     ) {

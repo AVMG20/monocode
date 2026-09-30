@@ -318,6 +318,26 @@ export function respondClaudeQuestion(
   pending.resolve(reply);
 }
 
+/**
+ * Stops one task Claude left running (a shell, a monitor, a subagent) without
+ * interrupting the rest of the turn. Claude reports it ended like any other
+ * finished task, which settles its row and, if it was the last, the turn.
+ */
+export async function stopClaudeBackgroundTask(
+  sessionId: string,
+  taskId: string,
+): Promise<void> {
+  const live = liveByThread.get(sessionId);
+  if (!live?.backgroundTasks.has(taskId)) return;
+  await writeJson(
+    sessionId,
+    buildControlRequest(nextControlId(live), {
+      subtype: "stop_task",
+      task_id: taskId,
+    }),
+  );
+}
+
 export async function cancelClaudeTurn(sessionId: string): Promise<void> {
   const live = liveByThread.get(sessionId);
   if (!live) {
@@ -1695,9 +1715,14 @@ function clearAwaitingResume(live: Live): void {
 function syncBackgroundWait(live: Live): void {
   const waiting =
     live.activeTurn && live.turnResultSeen && !live.cancelled
-      ? [...live.backgroundTasks.values()].map((task) => task.description)
+      ? [...live.backgroundTasks].map(([id, task]) => ({
+          id,
+          description: task.description,
+        }))
       : [];
-  const key = waiting.join("\n");
+  const key = waiting
+    .map((task) => `${task.id}\u0000${task.description}`)
+    .join("\n");
   if (key === live.backgroundKey) return;
   live.backgroundKey = key;
   if (live.muteUpdates) return;

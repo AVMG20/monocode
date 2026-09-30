@@ -60,7 +60,7 @@ import {
   stubFilePreview,
 } from "../../../integrations/harness/core/preview";
 import { copyMessage } from "../../../platform/tauri/clipboard";
-import type { Attachment } from "../model/session";
+import type { Attachment, BackgroundTask } from "../model/session";
 import { visibleUserPrompt } from "../../orchestration/model/orchestration";
 import { playCue } from "../../settings/model/sounds";
 import { legacyTaskListFromText } from "../model/taskList";
@@ -171,7 +171,7 @@ type Props = {
   modelSettings?: Record<string, string>;
   pendingQuestion?: boolean;
   /** Work the agent left running when it yielded; the turn waits on it. */
-  backgroundTasks?: string[];
+  backgroundTasks?: BackgroundTask[];
   onApproval?: (requestId: number, decision: ApprovalDecision) => void;
   onAddToChat?: (text: string) => void;
   onSaveNote?: (text: string) => void | Promise<void>;
@@ -1030,35 +1030,29 @@ function LiveFoldTitle({
   startedAt?: number;
   paused: boolean;
   waitingLabel?: string;
-  background?: string[];
+  background?: BackgroundTask[];
   modelName?: string;
 }) {
-  const elapsedMs = useElapsedFrom(startedAt, paused);
-  // Yielding with a command still going is not the end of the turn. The clock
-  // keeps running and the line says what it is waiting on.
+  const yielded = !paused && !!background?.length;
+  // Yielding with work still going leaves the turn open, but the agent itself
+  // is done until that work wakes it. The clock holds and the line reads as
+  // finished; what is still running lives in the bar above the composer.
+  const elapsedMs = useElapsedFrom(startedAt, paused || yielded);
+  if (yielded) {
+    return (
+      <span className="min-w-0 truncate font-sans text-sm">
+        {formatWorkingDuration(elapsedMs, modelName, true)}
+      </span>
+    );
+  }
   const text = paused
     ? (waitingLabel ?? "Waiting for approval")
-    : background?.length
-      ? `${formatWorkingDuration(elapsedMs, modelName)} · ${backgroundLabel(background)}`
-      : formatWorkingDuration(elapsedMs, modelName);
-  const shimmer = (
+    : formatWorkingDuration(elapsedMs, modelName);
+  return (
     <Shimmer className="min-w-0 truncate font-sans text-sm" duration={1}>
       {text}
     </Shimmer>
   );
-  return background?.length ? (
-    <span className="flex min-w-0" title={background.join("\n")}>
-      {shimmer}
-    </span>
-  ) : (
-    shimmer
-  );
-}
-
-function backgroundLabel(tasks: string[]): string {
-  return tasks.length === 1
-    ? "running in background"
-    : `${tasks.length} tasks running in background`;
 }
 
 /**

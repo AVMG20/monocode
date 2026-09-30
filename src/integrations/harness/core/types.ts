@@ -1,6 +1,7 @@
 import type {
   AgentStepKind,
   Attachment,
+  BackgroundTask,
   InterjectionMeta,
   RuntimeMode,
   TaskListItem,
@@ -28,7 +29,7 @@ export type HarnessEvent =
    * The agent has yielded but the turn is not over: work it started is still
    * running and will wake it again. Empty once it is back at work.
    */
-  | { type: "background.updated"; tasks: string[] }
+  | { type: "background.updated"; tasks: BackgroundTask[] }
   | ({ type: "interjection"; text: string } & InterjectionMeta)
   | { type: "message.delta"; text: string }
   | { type: "message.completed" }

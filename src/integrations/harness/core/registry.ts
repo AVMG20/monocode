@@ -60,6 +60,8 @@ export type HarnessAdapter = {
   rewindLastTurn?(input: RewindLastTurnInput): Promise<RewindLastTurnResult>;
   steerTurn(input: SteerTurnInput): Promise<void>;
   cancelTurn(sessionId: string): Promise<void>;
+  /** Stop one task the agent left running in the background. */
+  stopBackgroundTask?(sessionId: string, taskId: string): Promise<void>;
   respondApproval(
     sessionId: string,
     requestId: number,
@@ -313,6 +315,18 @@ export async function cancelHarnessTurn(
   cancelIdlePark(sessionId);
   await adapter.cancelTurn(sessionId);
   scheduleIdlePark(harness, sessionId);
+}
+
+export function canStopHarnessBackgroundTask(harness: HarnessId): boolean {
+  return !!getHarness(harness)?.stopBackgroundTask;
+}
+
+export async function stopHarnessBackgroundTask(
+  harness: HarnessId,
+  sessionId: string,
+  taskId: string,
+): Promise<void> {
+  await getHarness(harness)?.stopBackgroundTask?.(sessionId, taskId);
 }
 
 export function respondHarnessApproval(

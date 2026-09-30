@@ -177,6 +177,8 @@ export {
   canRewindHarnessLastTurn,
   rewindHarnessLastTurn,
   cancelHarnessTurn,
+  canStopHarnessBackgroundTask,
+  stopHarnessBackgroundTask,
   respondHarnessApproval,
   respondHarnessQuestion,
   keepHarnessQuestionOpen,

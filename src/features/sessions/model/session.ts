@@ -399,6 +399,12 @@ export const RUNTIME_MODE_HINT: Record<RuntimeMode, string> = {
 
 export type WorkspaceMode = "current" | "worktree";
 
+/** Work the agent left running after it yielded: a shell, monitor, subagent. */
+export type BackgroundTask = {
+  id: string;
+  description: string;
+};
+
 export type Session = {
   /** Receipt for an acknowledged floating-composer handoff. */
   quickLaunchAccepted?: boolean;
@@ -421,7 +427,7 @@ export type Session = {
    * What the live turn is waiting on after the agent yielded with work still
    * running in the background. In-memory only.
    */
-  backgroundTasks?: string[];
+  backgroundTasks?: BackgroundTask[];
   /** Follow-ups waiting for current turn. In-memory only. */
   queuedMessages?: QueuedMessage[];
   /** Paused after user stops current turn; resuming waits for continued turn. */
@@ -684,6 +690,17 @@ export function sessionNeedsInput(session: Session): boolean {
     !session.worktreeRemoved &&
     (hasPendingApproval(session.blocks) || session.pendingQuestion != null)
   );
+}
+
+/**
+ * The agent itself is at work. A turn it yielded with only background work
+ * left (a dev server, a watcher) stays open underneath, but the agent is
+ * waiting, not working, so running indicators should not read it as busy.
+ */
+export function sessionWorking(
+  session: Pick<Session, "busy" | "backgroundTasks">,
+): boolean {
+  return !!session.busy && !session.backgroundTasks?.length;
 }
 
 /** The single unsent user turn held by a session, when present. */

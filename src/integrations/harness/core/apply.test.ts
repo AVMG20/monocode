@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   newSession,
+  sessionWorking,
   type Session,
 } from "../../../features/sessions/model/session";
 import { planTurnKey } from "../../../features/sessions/model/plan";
@@ -30,19 +31,23 @@ describe("background work", () => {
     let session = appendUser(newSession("claude", "/tmp"), "hi");
     session = applyHarnessEvent(session, {
       type: "background.updated",
-      tasks: ["npm test"],
+      tasks: [{ id: "b1", description: "npm test" }],
     });
-    expect(session.backgroundTasks).toEqual(["npm test"]);
+    expect(session.backgroundTasks).toEqual([
+      { id: "b1", description: "npm test" },
+    ]);
+    expect(sessionWorking({ ...session, busy: true })).toBe(false);
 
     session = applyHarnessEvent(session, {
       type: "background.updated",
       tasks: [],
     });
     expect(session.backgroundTasks).toBeUndefined();
+    expect(sessionWorking({ ...session, busy: true })).toBe(true);
 
     session = applyHarnessEvent(session, {
       type: "background.updated",
-      tasks: ["npm run dev"],
+      tasks: [{ id: "b2", description: "npm run dev" }],
     });
     session = stopStreaming(session);
     expect(session.backgroundTasks).toBeUndefined();
