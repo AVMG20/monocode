@@ -5,7 +5,10 @@ import {
   applyHarnessEvent,
   stopStreaming,
 } from "../../core/apply";
-import { newSession } from "../../../../features/sessions/model/session";
+import {
+  newSession,
+  sessionWorking,
+} from "../../../../features/sessions/model/session";
 import {
   foldableWork,
   foldedBlocks,
@@ -2016,6 +2019,43 @@ describe("claude background tasks", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("keeps the session working while a subagent runs after Claude yields", async () => {
+    const { events } = await startTurn("s1");
+    emit({
+      type: "system",
+      subtype: "background_tasks_changed",
+      tasks: [
+        {
+          task_id: "a1",
+          task_type: "local_agent",
+          description: "Review today's commits",
+        },
+        {
+          task_id: "b1",
+          task_type: "local_bash",
+          description: "Run demo server",
+        },
+      ],
+    });
+    emit({
+      type: "assistant",
+      session_id: "sess_1",
+      message: { content: [{ type: "text", text: "waiting" }] },
+    });
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    await new Promise((r) => setTimeout(r, 10));
+
+    const session = events.reduce(
+      applyHarnessEvent,
+      newSession("claude", "/repo"),
+    );
+    expect(session.backgroundTasks).toEqual([
+      { id: "a1", description: "Review today's commits", agent: true },
+      { id: "b1", description: "Run demo server" },
+    ]);
+    expect(sessionWorking({ ...session, busy: true })).toBe(true);
   });
 
   it("stops one background task without interrupting the turn", async () => {

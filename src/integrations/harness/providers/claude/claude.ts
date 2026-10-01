@@ -124,6 +124,7 @@ type LiveAgentTask = {
 type BackgroundTask = {
   description: string;
   toolUseId?: string;
+  agent: boolean;
 };
 
 type Live = {
@@ -1226,6 +1227,7 @@ function handleAgentLifecycle(
     live.backgroundTasks.set(started.taskId, {
       description: started.description,
       toolUseId: started.toolUseId,
+      agent: isAgentTaskType(started.taskType),
     });
     syncBackgroundWait(live);
     if (!isAgentTaskType(started.taskType)) return true;
@@ -1325,7 +1327,10 @@ function handleAgentLifecycle(
   }
   for (const row of allTasks) {
     if (!live.backgroundTasks.has(row.taskId)) {
-      live.backgroundTasks.set(row.taskId, { description: row.description });
+      live.backgroundTasks.set(row.taskId, {
+        description: row.description,
+        agent: isAgentTaskType(row.taskType),
+      });
     }
   }
   const liveTasks = allTasks.filter((task) => isAgentTaskType(task.taskType));
@@ -1718,10 +1723,11 @@ function syncBackgroundWait(live: Live): void {
       ? [...live.backgroundTasks].map(([id, task]) => ({
           id,
           description: task.description,
+          ...(task.agent || live.agentTasks.has(id) ? { agent: true } : {}),
         }))
       : [];
   const key = waiting
-    .map((task) => `${task.id}\u0000${task.description}`)
+    .map((task) => `${task.id}\u0000${task.description}\u0000${!!task.agent}`)
     .join("\n");
   if (key === live.backgroundKey) return;
   live.backgroundKey = key;
