@@ -23,6 +23,15 @@ export function isImagePath(path: string): boolean {
   return IMAGE_EXTENSIONS.has(extension);
 }
 
+/** Video formats the chat can play inline (the webview's own codecs). */
+const VIDEO_EXTENSIONS = new Set([".mp4", ".m4v", ".mov", ".webm"]);
+
+export function isVideoPath(path: string): boolean {
+  const name = basename(path).toLowerCase();
+  const extension = name.includes(".") ? name.slice(name.lastIndexOf(".")) : "";
+  return VIDEO_EXTENSIONS.has(extension);
+}
+
 /**
  * Identify image bytes by their magic number rather than trusting the name.
  *

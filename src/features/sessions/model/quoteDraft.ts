@@ -34,6 +34,12 @@ export function composerSeedForAddToChat(
     : appendSelectionQuote("", text);
 }
 
+/** Files to attach to the composer, such as an image from the chat. */
+export type AttachRequest = {
+  id: number;
+  paths: string[];
+};
+
 export type QuoteConsumption = {
   draft: string;
   consumedId: number | null;

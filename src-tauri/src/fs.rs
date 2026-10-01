@@ -5713,6 +5713,72 @@ pub async fn copy_path(from: String, dest_parent: String) -> Result<String, Stri
         .map_err(|e| e.to_string())?
 }
 
+/// Copy one file to the exact destination a save dialog returned. The dialog
+/// has already asked about replacing an existing file.
+fn copy_file_to_sync(from: &str, to: &str) -> Result<(), String> {
+    let from = expand_home(from);
+    if !from.is_file() {
+        return Err(format!("{}: No such file", from.display()));
+    }
+    let to = expand_home(to);
+    if same_entry(&from, &to) {
+        return Ok(());
+    }
+    std::fs::copy(&from, &to)
+        .map(|_| ())
+        .map_err(|e| format!("{}: {e}", to.display()))
+}
+
+#[tauri::command]
+pub async fn copy_file_to(from: String, to: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || copy_file_to_sync(&from, &to))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Video formats the webview can play straight from disk.
+const STREAMABLE_VIDEO_EXTENSIONS: &[&str] = &["mp4", "m4v", "mov", "webm"];
+
+#[derive(Serialize, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct StreamableVideo {
+    path: String,
+    size: u64,
+}
+
+fn is_streamable_video(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase())
+        .is_some_and(|ext| STREAMABLE_VIDEO_EXTENSIONS.contains(&ext.as_str()))
+}
+
+/// Let the asset protocol stream one video file, so the chat can play it
+/// without reading it into memory. Only that file is added to the scope.
+#[tauri::command]
+pub fn allow_video_file(app: AppHandle, path: String) -> Result<StreamableVideo, String> {
+    let path = expand_home(&path);
+    if !is_streamable_video(&path) {
+        return Err(format!("{}: not a playable video", path.display()));
+    }
+    let meta = std::fs::metadata(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    if !meta.is_file() {
+        return Err(format!("{}: not a file", path.display()));
+    }
+    let scope = app.asset_protocol_scope();
+    scope.allow_file(&path).map_err(|e| e.to_string())?;
+    // The protocol checks the resolved path, so a symlinked file needs both.
+    if let Ok(real) = std::fs::canonicalize(&path) {
+        if real != path {
+            scope.allow_file(&real).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(StreamableVideo {
+        path: path.to_string_lossy().into_owned(),
+        size: meta.len(),
+    })
+}
+
 fn move_path_sync(from: &str, dest_parent: &str) -> Result<String, String> {
     let from = expand_home(from);
     if !from.exists() {

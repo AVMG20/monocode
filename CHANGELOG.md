@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Images and videos an agent's reply refers to (markdown images or links, inline code, or plain paths) show as thumbnails under the reply. Clicking one opens a lightbox that pages through every image and video in the chat, with arrow buttons, ←/→ keys, and a thumbnail strip. Videos stream from disk and play with native controls.
+- Each image or video in the chat, including generated images, has a ⋯ menu to reveal it in the file manager, save a copy, or use it as a reference: the file is attached to the next prompt like an upload, so several can be added and each removed again.
+
 ### Changed
 
 - Work Claude leaves running after it replies (dev servers, watchers, monitors) is listed in a bar docked above the composer instead of on the last message. Each task has its own Stop, and several tasks collapse behind a count with Stop all. Once only background work is left, the reply reads as finished and the sidebar, project rail, and tab stop showing the session as running. In #501.

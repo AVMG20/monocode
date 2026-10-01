@@ -46,6 +46,7 @@ import {
   type Session,
   type WorkspaceMode,
   type ComposerTurnOptions,
+  harnessSupportsAttachments,
 } from "../model/session";
 import { sessionHasBtwThreads, supportsBtwHarness } from "../model/btw";
 import { BtwSheet, useBtwConversation } from "./BtwSheet";
@@ -64,6 +65,7 @@ import {
   acknowledgeQuoteRequest,
   ADD_TO_CHAT_EVENT,
   type AddToChatRequest,
+  type AttachRequest,
   type QuoteRequest,
 } from "../model/quoteDraft";
 import { createNote, noteTitle } from "../../notes";
@@ -506,6 +508,21 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const acknowledgeQuote = useCallback((handledId: number) => {
     setQuoteRequest((current) => acknowledgeQuoteRequest(current, handledId));
   }, []);
+  const attachRequestId = useRef(0);
+  const [attachRequest, setAttachRequest] = useState<AttachRequest>();
+  const imageReferencesSupported =
+    (!remote || !!remoteFeatures?.attachments) &&
+    !session.worktreeRemoved &&
+    harnessSupportsAttachments(session.harness);
+  const referenceImage = useCallback((path: string) => {
+    attachRequestId.current += 1;
+    setAttachRequest({ id: attachRequestId.current, paths: [path] });
+  }, []);
+  const acknowledgeAttach = useCallback((handledId: number) => {
+    setAttachRequest((current) =>
+      current?.id === handledId ? undefined : current,
+    );
+  }, []);
   const notesEnabled = useSyncExternalStore(
     subscribeNotesEnabled,
     loadNotesEnabled,
@@ -583,6 +600,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       hideTopBar={!!session.inboxAsk}
       context={session.context}
       quoteRequest={quoteRequest}
+      attachRequest={attachRequest}
       initialDraft={
         draftRef.current ??
         (session.inboxCard || session.noteCard || session.handoffCard
@@ -598,6 +616,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       handoffCard={session.handoffCard}
       question={session.pendingQuestion}
       onQuoteRequestConsumed={acknowledgeQuote}
+      onAttachRequestConsumed={acknowledgeAttach}
       onInboxCardDismiss={() => onInboxCardDismiss?.(session.id)}
       onNoteCardDismiss={() => onNoteCardDismiss?.(session.id)}
       onHandoffCardDismiss={() => onHandoffCardDismiss?.(session.id)}
@@ -856,6 +875,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
                   backgroundTasks={session.backgroundTasks}
                   onApproval={session.worktreeRemoved ? undefined : approve}
                   onAddToChat={addSelectionToChat}
+                  onReferenceImage={
+                    imageReferencesSupported ? referenceImage : undefined
+                  }
                   onSaveNote={notesEnabled ? saveNote : undefined}
                   onSendDraft={
                     draftBlock
