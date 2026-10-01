@@ -7,6 +7,7 @@ import * as fs from "../../../platform/tauri/fs";
 import { GeneratedImage } from "./GeneratedImage";
 
 vi.mock("../../../platform/tauri/fs", () => ({
+  basename: (path: string) => path.split("/").pop() ?? path,
   readBinaryFile: vi.fn(),
 }));
 import { AttachmentChip } from "./AttachmentChip";

@@ -1,5 +1,5 @@
 import { invoke as invokeLocal } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { slash } from "../../shared/lib/paths";
 import { REMOTE_PATH_PREFIX } from "../../shared/lib/remotePaths";
 import type { InterjectionMeta } from "../../features/sessions/model/session";
@@ -487,6 +487,25 @@ export function copyFileToClipboard(path: string): Promise<void> {
   return invoke<void>("copy_file_to_clipboard", { path });
 }
 
+/**
+ * Ask where to save a copy of a file, then copy it there. Resolves to the
+ * chosen path, or null when the dialog was cancelled.
+ */
+export async function saveFileCopyAs(path: string): Promise<string | null> {
+  const name = basename(path);
+  const extension = name.includes(".") ? name.slice(name.lastIndexOf(".") + 1) : "";
+  const target = await save({
+    title: `Save ${name}`,
+    defaultPath: name,
+    ...(extension
+      ? { filters: [{ name: extension.toUpperCase(), extensions: [extension] }] }
+      : {}),
+  });
+  if (!target) return null;
+  await invoke<void>("copy_file_to", { from: path, to: target });
+  return slash(target);
+}
+
 export function revealPath(path: string): Promise<void> {
   return invoke<void>("reveal_path", { path });
 }
@@ -585,6 +604,16 @@ export async function readBinaryFile(path: string): Promise<Uint8Array> {
   return typeof buffer === "string"
     ? Uint8Array.from(atob(buffer), (char) => char.charCodeAt(0))
     : new Uint8Array(buffer);
+}
+
+export type StreamableVideo = {
+  path: string;
+  size: number;
+};
+
+/** Let the asset protocol stream this one video file from disk. */
+export function allowVideoFile(path: string): Promise<StreamableVideo> {
+  return invoke<StreamableVideo>("allow_video_file", { path });
 }
 
 export type GeneratedImageAsset = {

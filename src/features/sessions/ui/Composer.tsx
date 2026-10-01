@@ -132,7 +132,11 @@ import { ModelControlPills, ModelPicker } from "./ModelPicker";
 import { QuestionForm } from "./QuestionForm";
 import { SkillPicker } from "../../skills/ui/SkillPicker";
 import { pathKey, projectKey } from "../../../shared/lib/paths";
-import { consumeQuoteRequest, type QuoteRequest } from "../model/quoteDraft";
+import {
+  consumeQuoteRequest,
+  type AttachRequest,
+  type QuoteRequest,
+} from "../model/quoteDraft";
 import { useTabGroupLogos } from "../../projects/hooks/useTabGroupLogos";
 import { useProjectBranchesState } from "../../source-control/hooks/useProjectBranches";
 import {
@@ -239,6 +243,8 @@ type Props = {
   context?: ContextUsage;
   compactSupported?: boolean;
   quoteRequest?: QuoteRequest;
+  /** Files from the chat (an image used as a reference) to attach. */
+  attachRequest?: AttachRequest;
   initialDraft?: string;
   draftResetToken?: number;
   inboxCard?: InboxComposerCard;
@@ -273,6 +279,7 @@ type Props = {
   onModelSettingsChange?: (settings: Record<string, string>) => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
   onQuoteRequestConsumed?: (id: number) => void;
+  onAttachRequestConsumed?: (id: number) => void;
   onInboxCardDismiss?: () => void;
   onNoteCardDismiss?: () => void;
   onHandoffCardDismiss?: () => void;
@@ -538,6 +545,7 @@ export function Composer({
   context,
   compactSupported = false,
   quoteRequest,
+  attachRequest,
   initialDraft,
   draftResetToken,
   inboxCard,
@@ -569,6 +577,7 @@ export function Composer({
   onModelSettingsChange,
   onRuntimeModeChange,
   onQuoteRequestConsumed,
+  onAttachRequestConsumed,
   onInboxCardDismiss,
   onBtwCommand,
   onNoteCardDismiss,
@@ -891,6 +900,26 @@ export function Composer({
     },
     [harness, syncHasValue],
   );
+
+  const consumedAttachId = useRef<number | null>(null);
+  useEffect(() => {
+    if (!attachRequest || attachRequest.id === consumedAttachId.current) return;
+    consumedAttachId.current = attachRequest.id;
+    if (attachmentsSupported) {
+      void attachmentsFromPaths(attachRequest.paths)
+        .then(addAttachments)
+        .catch((error) => {
+          console.error("Failed to attach image reference:", error);
+          setPasteError(`Could not attach the image: ${String(error)}`);
+        });
+    }
+    onAttachRequestConsumed?.(attachRequest.id);
+  }, [
+    addAttachments,
+    attachRequest,
+    attachmentsSupported,
+    onAttachRequestConsumed,
+  ]);
 
   const removeAttachment = useCallback(
     (id: string) => {

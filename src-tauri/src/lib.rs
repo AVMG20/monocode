@@ -394,6 +394,8 @@ pub fn run() {
             fs::rename_path,
             fs::delete_path,
             fs::copy_path,
+            fs::copy_file_to,
+            fs::allow_video_file,
             fs::move_path,
             fs::reveal_path,
             pasteboard::clipboard_file_paths,

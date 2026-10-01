@@ -35,6 +35,8 @@ type Props = (
   ariaLabel?: string;
   header?: ReactNode;
   width?: number;
+  /** Defaults to the popover layer; a menu opened over a dialog wants higher. */
+  layer?: number;
   onPick: (id: string) => void;
   onClose: () => void;
   onMouseEnter?: () => void;
@@ -67,6 +69,7 @@ export function ExplorerMenu({
   ariaLabel = "File actions",
   header,
   width = MENU_WIDTH,
+  layer,
   onPick,
   onClose,
   onMouseEnter,
@@ -274,7 +277,7 @@ export function ExplorerMenu({
         anchor={anchor ?? { x: x ?? 0, y: y ?? 0 }}
         side={anchor ? "right" : undefined}
         gap={anchor ? 4 : 0}
-        layer={anchor ? LAYER.submenu : undefined}
+        layer={layer ?? (anchor ? LAYER.submenu : undefined)}
         data-menu-owner={ownerId}
         width={width}
         autoFocus
