@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
 import {
   clearInboxCache,
   githubWorkItemDetails,
@@ -15,6 +16,13 @@ import {
   inboxShowsFullFileDiff,
   LinkedWorkItemPanel,
 } from "./InboxView";
+
+// Exercises the upstream git/files UI, which this build hides by default.
+vi.mock("../../../app/model/features", () => ({
+  SHOW_SOURCE_CONTROL: true,
+  SHOW_FILES: true,
+  sidebarTabEnabled: () => true,
+}));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 

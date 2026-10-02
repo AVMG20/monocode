@@ -2,12 +2,20 @@
 import { act, createElement, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
 import { formatSessionTitle } from "../../features/sessions/model/session";
 import { formatReminderTime } from "../../features/sessions/model/sessionReminders";
 import { Sidebar } from "./Sidebar";
 import { loadSessionFolders } from "../../features/sessions/model/sessionFolders";
 import { useProjectDiffStats } from "../../features/source-control/hooks/useProjectDiffStats";
 import { copyText } from "../../platform/tauri/clipboard";
+
+// Exercises the upstream git/files UI, which this build hides by default.
+vi.mock("../model/features", () => ({
+  SHOW_SOURCE_CONTROL: true,
+  SHOW_FILES: true,
+  sidebarTabEnabled: () => true,
+}));
 
 // Keep native services out of these menu/input interaction tests.
 vi.mock("../../features/source-control/hooks/useProjectDiffStats", () => ({

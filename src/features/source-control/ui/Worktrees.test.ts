@@ -4,6 +4,13 @@ import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
+// Exercises the upstream git/files UI, which this build hides by default.
+vi.mock("../../../app/model/features", () => ({
+  SHOW_SOURCE_CONTROL: true,
+  SHOW_FILES: true,
+  sidebarTabEnabled: () => true,
+}));
+
 vi.mock("../model/worktrees", async (original) => ({
   ...(await original<typeof import("../model/worktrees")>()),
   listWorktrees: vi.fn(),

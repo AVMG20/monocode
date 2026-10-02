@@ -2,11 +2,19 @@
 import { act, createElement, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+
 import { gitCheckout, gitCreateBranch } from "../../../platform/tauri/fs";
 import { QuickGitPopupPicker } from "./QuickGitPopup";
 import { NativePopupHost } from "../../../shared/ui/NativePopupHost";
 import type { QuickGitRequest } from "../model/quickGitPopup";
 import type { QuickWorkspace } from "../model/quickWorkspace";
+
+// Exercises the upstream git/files UI, which this build hides by default.
+vi.mock("../../../app/model/features", () => ({
+  SHOW_SOURCE_CONTROL: true,
+  SHOW_FILES: true,
+  sidebarTabEnabled: () => true,
+}));
 
 const git = vi.hoisted(() => ({ available: true, settled: true }));
 vi.mock("../../source-control/hooks/useProjectBranches", () => ({

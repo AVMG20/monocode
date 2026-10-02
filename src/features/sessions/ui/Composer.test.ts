@@ -4,6 +4,13 @@ import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// Exercises the upstream git/files UI, which this build hides by default.
+vi.mock("../../../app/model/features", () => ({
+  SHOW_SOURCE_CONTROL: true,
+  SHOW_FILES: true,
+  sidebarTabEnabled: () => true,
+}));
+
 const mcpInvoke = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", async (importOriginal) => {
   const original =

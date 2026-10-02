@@ -2,6 +2,7 @@
 import { act, createElement, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
 import { invoke } from "@tauri-apps/api/core";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { SettingsView } from "./SettingsView";
@@ -20,6 +21,13 @@ import {
   setCachedRateLimits,
 } from "../../providers/model/rateLimitsCache";
 import { HARNESSES, HARNESS_TITLE } from "../../sessions/model/session";
+
+// Exercises the upstream git/files UI, which this build hides by default.
+vi.mock("../../../app/model/features", () => ({
+  SHOW_SOURCE_CONTROL: true,
+  SHOW_FILES: true,
+  sidebarTabEnabled: () => true,
+}));
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(async () => undefined),

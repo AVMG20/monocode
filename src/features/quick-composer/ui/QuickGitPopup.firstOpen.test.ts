@@ -2,9 +2,17 @@
 import { act, createElement, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+
 import { QuickGitPopup } from "./QuickGitPopup";
 import { gitBranches, type GitBranches } from "../../../platform/tauri/fs";
 import type { QuickGitRequest } from "../model/quickGitPopup";
+
+// Exercises the upstream git/files UI, which this build hides by default.
+vi.mock("../../../app/model/features", () => ({
+  SHOW_SOURCE_CONTROL: true,
+  SHOW_FILES: true,
+  sidebarTabEnabled: () => true,
+}));
 
 const bridge = vi.hoisted(() => ({
   request: null as QuickGitRequest | null,

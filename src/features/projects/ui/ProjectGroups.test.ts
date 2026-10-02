@@ -2,6 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+
 import { pathKey } from "../../../shared/lib/paths";
 import {
   loadProjectGroupAssignments,
@@ -12,6 +13,13 @@ import {
 import { savePinnedProjects } from "../model/recents";
 import { ProjectRail } from "../../../app/shell/ProjectRail";
 import { useProjectDiffStats } from "../../source-control/hooks/useProjectDiffStats";
+
+// Exercises the upstream git/files UI, which this build hides by default.
+vi.mock("../../../app/model/features", () => ({
+  SHOW_SOURCE_CONTROL: true,
+  SHOW_FILES: true,
+  sidebarTabEnabled: () => true,
+}));
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(async () => null),

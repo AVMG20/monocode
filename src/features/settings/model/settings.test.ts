@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
 import {
   COMPOSER_RUNNER_DEFAULT,
   AUTOSAVE_DEFAULT,
@@ -49,6 +50,13 @@ import {
   saveTabAnimationsEnabled,
 } from "./settings";
 import { IS_MAC, MOD, SHIFT } from "../../../platform/tauri/platform";
+
+// Exercises the upstream git/files UI, which this build hides by default.
+vi.mock("../../../app/model/features", () => ({
+  SHOW_SOURCE_CONTROL: true,
+  SHOW_FILES: true,
+  sidebarTabEnabled: () => true,
+}));
 
 const KEY = "monocode.composerRunner";
 const MODEL_CONTROLS_KEY = "monocode.modelControls";

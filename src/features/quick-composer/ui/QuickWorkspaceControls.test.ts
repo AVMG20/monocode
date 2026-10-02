@@ -2,9 +2,17 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+
 import { invoke } from "@tauri-apps/api/core";
 import { QuickWorkspaceControls } from "./QuickWorkspaceControls";
 import type { QuickGitResult } from "../model/quickGitPopup";
+
+// Exercises the upstream git/files UI, which this build hides by default.
+vi.mock("../../../app/model/features", () => ({
+  SHOW_SOURCE_CONTROL: true,
+  SHOW_FILES: true,
+  sidebarTabEnabled: () => true,
+}));
 
 const bridge = vi.hoisted(() => ({
   result: (_event: { payload: QuickGitResult }) => {},
