@@ -32,6 +32,8 @@ import {
   type NativeSessionPatch,
 } from "../model/nativeSession";
 import { HarnessIcon } from "./HarnessIcon";
+import { preferredModelId, saveLastModelChoice } from "../model/models";
+import { isRemoteProjectPath } from "../../projects/model/recents";
 import { Terminal } from "../../../shared/ui/icons";
 
 import {
@@ -70,6 +72,14 @@ export function NativeSessionPane({
 }: Props) {
   const launched =
     !!session.providerSessionId && isNativeProvider(session.harness);
+  if (isRemoteProjectPath(session.cwd)) {
+    return (
+      <div className="flex h-full items-center justify-center p-6 text-center text-[13px] text-content/50">
+        Agent sessions run in a terminal on this computer, so they can't open
+        in a remote project yet.
+      </div>
+    );
+  }
   return (
     <div
       className="flex h-full min-h-0 w-full min-w-0 flex-col"
@@ -136,13 +146,12 @@ function NativeSessionHeader({
           type="button"
           title="Open a terminal below this session"
           aria-label="Open a terminal below this session"
-          className="flex items-center gap-1 rounded-md px-1.5 py-0.5 hover:bg-content/5 hover:text-content"
+          className="grid size-6 place-items-center rounded-md hover:bg-content/5 hover:text-content"
           onMouseDown={(event) => event.stopPropagation()}
           onPointerDown={(event) => event.stopPropagation()}
           onClick={() => onNewTerminal(session.id)}
         >
           <Terminal className="size-3.5" />
-          <span>Terminal</span>
         </button>
       ) : null}
     </div>
@@ -313,6 +322,7 @@ function NativeSessionLauncher({
     if (supportsProviderAccounts(provider)) {
       selectProviderAccount(provider, session.cwd, accountId);
     }
+    saveLastModelChoice(provider, preferredModelId(provider));
     markFreshNativeLaunch(session.id);
     onPatch(session.id, {
       harness: provider,

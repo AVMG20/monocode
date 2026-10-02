@@ -221,22 +221,6 @@ fn build(
         "App: Open Project",
         overrides,
     )?;
-    let go_to_file = menu_item(
-        app,
-        "go_to_file",
-        "Go to File…",
-        "CmdOrCtrl+P",
-        "App: Go to File",
-        overrides,
-    )?;
-    let command_palette = menu_item(
-        app,
-        "open_command_palette",
-        "Command Palette…",
-        "CmdOrCtrl+Shift+P",
-        "App: Command Palette",
-        overrides,
-    )?;
     let open_search = menu_item(
         app,
         "open_search",
@@ -245,7 +229,6 @@ fn build(
         "App: Search",
         overrides,
     )?;
-    let open_inbox = MenuItemBuilder::with_id("open_inbox", "Inbox").build(app)?;
     let open_notes = MenuItemBuilder::with_id("open_notes", "Notes").build(app)?;
     let new_tab = menu_item(
         app,
@@ -401,14 +384,6 @@ fn build(
         "App: Toggle Session Sidebar",
         overrides,
     )?;
-    let open_model_picker = menu_item(
-        app,
-        "open_model_picker",
-        "Switch Model…",
-        "CmdOrCtrl+.",
-        "App: Switch Model",
-        overrides,
-    )?;
     let sidebar_opacity =
         MenuItemBuilder::with_id("sidebar_opacity", "Sidebar Appearance…").build(app)?;
     // No accelerators here on purpose: the webview key handler owns
@@ -425,23 +400,6 @@ fn build(
         "View: Reload",
         overrides,
     )?;
-    let find = menu_item(
-        app,
-        "find",
-        "Find",
-        "CmdOrCtrl+F",
-        "Editor: Find",
-        overrides,
-    )?;
-
-    let find_in_project = menu_item(
-        app,
-        "find_in_project",
-        "Find in Files…",
-        "CmdOrCtrl+Shift+F",
-        "App: Find in Files",
-        overrides,
-    )?;
     let autosave = CheckMenuItem::with_id(
         app,
         "toggle_autosave",
@@ -455,9 +413,6 @@ fn build(
         .item(&new_window)
         .item(&open_project)
         .item(&open_search)
-        .item(&go_to_file)
-        .item(&command_palette)
-        .item(&find_in_project)
         .separator()
         .item(&autosave)
         .separator()
@@ -479,10 +434,8 @@ fn build(
     let view = SubmenuBuilder::new(app, "View")
         .item(&toggle_sidebar)
         .item(&toggle_session_sidebar)
-        .item(&open_inbox)
         .item(&open_notes)
         .item(&toggle_terminal)
-        .item(&open_model_picker)
         .separator()
         .item(&focus_left)
         .item(&focus_right)
@@ -505,8 +458,6 @@ fn build(
         .copy()
         .paste()
         .select_all()
-        .separator()
-        .item(&find)
         .build()?;
 
     #[cfg(target_os = "macos")]

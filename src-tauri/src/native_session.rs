@@ -174,6 +174,9 @@ pub fn native_session_spawn(
         None => args,
     };
 
+    let pid_file = session_dir(&app, &id)?.join("pid");
+    stop_stale_cli(&pid_file, &binary);
+
     let pid = crate::pty::spawn_pty(
         app.clone(),
         &host,
@@ -188,6 +191,9 @@ pub fn native_session_spawn(
             env_remove,
         },
     )?;
+
+    // Lets the next launch find this CLI if MonoCode dies without stopping it.
+    let _ = std::fs::write(&pid_file, pid.to_string());
 
     let start_watcher = {
         let mut inner = sessions.lock();
@@ -401,6 +407,50 @@ fn claude_transcript_exists(config_dir: &Path, conversation_id: &str) -> bool {
         .any(|entry| entry.path().join(&file).is_file())
 }
 
+/// Stop a CLI that an earlier MonoCode started for this session but never
+/// stopped (it crashed or was killed). Its terminal is gone, yet it would
+/// keep holding the conversation alongside the one about to start.
+fn stop_stale_cli(pid_file: &Path, binary: &Path) {
+    let Ok(raw) = std::fs::read_to_string(pid_file) else {
+        return;
+    };
+    let _ = std::fs::remove_file(pid_file);
+    let Some(pid) = parse_pid(&raw) else {
+        return;
+    };
+    // The pid may since belong to an unrelated process: only stop it when it
+    // is still running this provider's CLI.
+    if running_command(pid).is_some_and(|command| command_runs(&command, binary)) {
+        crate::pty::terminate(pid);
+    }
+}
+
+fn parse_pid(raw: &str) -> Option<u32> {
+    raw.trim().parse::<u32>().ok().filter(|pid| *pid > 1)
+}
+
+fn command_runs(command: &str, binary: &Path) -> bool {
+    binary
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| command.contains(name))
+}
+
+#[cfg(unix)]
+fn running_command(pid: u32) -> Option<String> {
+    let output = std::process::Command::new("ps")
+        .args(["-o", "command=", "-p", &pid.to_string()])
+        .output()
+        .ok()?;
+    let command = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    (output.status.success() && !command.is_empty()).then_some(command)
+}
+
+#[cfg(not(unix))]
+fn running_command(_pid: u32) -> Option<String> {
+    None
+}
+
 fn session_dir(app: &AppHandle, id: &str) -> Result<PathBuf, String> {
     let dir = app
         .path()
@@ -495,6 +545,16 @@ mod tests {
             vec!["--prompt", " -x"]
         );
         assert!(with_initial_prompt("antigravity", Vec::new(), "hi").is_empty());
+    }
+
+    #[test]
+    fn stale_cli_records_only_match_the_providers_binary() {
+        assert_eq!(parse_pid(" 4242\n"), Some(4242));
+        assert_eq!(parse_pid("1"), None);
+        assert_eq!(parse_pid("nope"), None);
+        let claude = Path::new("/opt/bin/claude");
+        assert!(command_runs("/opt/bin/claude --session-id x", claude));
+        assert!(!command_runs("/usr/bin/vim notes.md", claude));
     }
 
     #[test]

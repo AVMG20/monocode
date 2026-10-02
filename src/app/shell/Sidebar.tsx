@@ -1,4 +1,5 @@
 import { NO_BRANCH_LABEL } from "../../features/source-control/model/worktrees";
+import { nativeSessionLabel } from "../../features/sessions/model/nativeSession";
 import {
   SHOW_FILES,
   SHOW_SOURCE_CONTROL,
@@ -56,7 +57,6 @@ import {
 } from "../../platform/tauri/fs";
 import { IS_MAC, MOD } from "../../platform/tauri/platform";
 import { copyText } from "../../platform/tauri/clipboard";
-import { resolveModel } from "../../features/sessions/model/models";
 import type { OpenFileFn } from "../../features/search/model/search";
 import { sessionDisplayTitle } from "../../features/sessions/model/session";
 import { nextUnseenFinishedSessions } from "../../features/sessions/model/sessionDone";
@@ -2517,20 +2517,22 @@ function CompactProjectRail({
           active={searchActive}
           onClick={action(searchActive, onSearch)}
         />
-        <CompactRailAction
-          label={inboxUnseen ? "Inbox, new items" : "Inbox"}
-          icon={Inbox}
-          active={inboxActive}
-          dot={inboxUnseen}
-          onClick={action(inboxActive, onOpenInbox)}
-          onOpenContextMenu={(x, y) => {
-            inboxTrigger.current =
-              document.activeElement instanceof HTMLElement
-                ? document.activeElement
-                : null;
-            setInboxMenu({ x, y });
-          }}
-        />
+        {onOpenInbox ? (
+          <CompactRailAction
+            label={inboxUnseen ? "Inbox, new items" : "Inbox"}
+            icon={Inbox}
+            active={inboxActive}
+            dot={inboxUnseen}
+            onClick={action(inboxActive, onOpenInbox)}
+            onOpenContextMenu={(x, y) => {
+              inboxTrigger.current =
+                document.activeElement instanceof HTMLElement
+                  ? document.activeElement
+                  : null;
+              setInboxMenu({ x, y });
+            }}
+          />
+        ) : null}
         {onOpenNotes ? (
           <CompactRailAction
             label="Notes"
@@ -3013,7 +3015,7 @@ const SessionCard = memo(function SessionCard({
   const model =
     compact && !orchestrationExpanded
       ? null
-      : resolveModel(session.harness, session.model).name;
+      : nativeSessionLabel(session.harness, session.providerAccountId);
   const statusClass = needsApproval
     ? "text-amber-400"
     : busy

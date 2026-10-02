@@ -1,5 +1,10 @@
 import type { NativeProviderId } from "../../../platform/tauri/nativeSession";
 import {
+  providerAccountLabel,
+  providerAccounts,
+  supportsProviderAccounts,
+} from "../../providers/model/providerAccounts";
+import {
   HARNESS_LABEL,
   HARNESS_TITLE,
   canReplaceSessionTitle,
@@ -18,6 +23,20 @@ export const NATIVE_PROVIDERS: readonly NativeProviderId[] = [
 
 export function isNativeProvider(id: HarnessId): id is NativeProviderId {
   return (NATIVE_PROVIDERS as readonly string[]).includes(id);
+}
+
+/**
+ * How a session card names the agent: the CLI, plus the profile when there
+ * is more than one to choose from (e.g. "Claude Code · Work").
+ */
+export function nativeSessionLabel(
+  harness: HarnessId,
+  accountId: string | undefined,
+): string {
+  const title = HARNESS_TITLE[harness];
+  if (!supportsProviderAccounts(harness)) return title;
+  if (providerAccounts(harness).length < 2) return title;
+  return `${title} · ${providerAccountLabel(harness, accountId)}`;
 }
 
 /** Session fields a native terminal pane may change. */

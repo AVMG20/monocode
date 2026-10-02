@@ -112,6 +112,9 @@ export function summaryFromSession(
     title: session.title,
     draft: !!sessionDraftBlock(session),
     providerSessionId: session.providerSessionId,
+    ...(session.providerAccountId
+      ? { providerAccountId: session.providerAccountId }
+      : {}),
     worktreeCwd: session.worktreeCwd,
     worktreeRemoved: session.worktreeRemoved,
     ...(session.linkedWorkItem
@@ -183,9 +186,16 @@ export function historyWithLiveSessions(
       const stored = rows[storedIndex];
       const draft = !!sessionDraftBlock(session);
       const automationId = session.automationId || stored.automationId;
-      if (!!stored.draft !== draft || stored.automationId !== automationId) {
+      if (
+        !!stored.draft !== draft ||
+        stored.automationId !== automationId ||
+        stored.harness !== session.harness ||
+        stored.providerAccountId !== session.providerAccountId
+      ) {
         rows[storedIndex] = {
           ...stored,
+          harness: session.harness,
+          providerAccountId: session.providerAccountId,
           draft: draft || undefined,
           ...(automationId ? { automationId } : {}),
         };

@@ -141,6 +141,8 @@ pub struct SessionSummary {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider_session_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_account_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub branch: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub worktree_cwd: Option<String>,
@@ -1130,7 +1132,9 @@ fn upsert_session(conn: &Connection, session: &SessionUpsert) -> rusqlite::Resul
         .map(str::trim)
         .filter(|value| !value.is_empty());
 
-    let has_user_message = has_user_block(&session.blocks);
+    // Native CLI sessions keep their conversation in the provider's own
+    // transcript, so a bound provider conversation makes them listable too.
+    let has_user_message = has_user_block(&session.blocks) || provider_session_id.is_some();
     let is_draft = has_draft_block(&session.blocks);
 
     let existing: Option<(i64, i64, String, i64, i64)> = conn
@@ -1223,6 +1227,7 @@ fn upsert_session(conn: &Connection, session: &SessionUpsert) -> rusqlite::Resul
         runtime_mode: session.runtime_mode.clone(),
         title: session.title.clone(),
         provider_session_id: provider_session_id.map(str::to_owned),
+        provider_account_id: provider_account_id.map(str::to_owned),
         branch: branch.map(str::to_owned),
         worktree_cwd: worktree_cwd.map(str::to_owned),
         worktree_removed: session.worktree_removed,
@@ -1569,7 +1574,7 @@ fn list_by_project(conn: &Connection, cwd: &str) -> rusqlite::Result<Vec<Session
                 created_at, updated_at, branch, archived, pinned,
                 linked_work_item_json,
                 (SELECT summary FROM orchestration_sidebar WHERE lead_id = sessions.id), worktree_cwd,
-                worktree_removed, is_draft, automation_id
+                worktree_removed, is_draft, automation_id, provider_account_id
          FROM sessions
          WHERE cwd = ?1
            AND has_user_message = 1
@@ -1592,6 +1597,7 @@ fn list_by_project(conn: &Connection, cwd: &str) -> rusqlite::Result<Vec<Session
             runtime_mode: row.get(4)?,
             title: row.get(5)?,
             provider_session_id: row.get(6)?,
+            provider_account_id: nonempty(row.get(18)?),
             created_at: row.get(7)?,
             updated_at: row.get(8)?,
             branch: if row.get::<_, i64>(15)? != 0 {
@@ -1620,7 +1626,7 @@ fn list_linked(conn: &Connection) -> rusqlite::Result<Vec<SessionSummary>> {
                 created_at, updated_at, branch, archived, pinned,
                 linked_work_item_json,
                 (SELECT summary FROM orchestration_sidebar WHERE lead_id = sessions.id), worktree_cwd,
-                worktree_removed, is_draft, automation_id
+                worktree_removed, is_draft, automation_id, provider_account_id
          FROM sessions
          WHERE has_user_message = 1
            AND linked_work_item_json IS NOT NULL
@@ -1641,6 +1647,7 @@ fn list_linked(conn: &Connection) -> rusqlite::Result<Vec<SessionSummary>> {
             runtime_mode: row.get(4)?,
             title: row.get(5)?,
             provider_session_id: row.get(6)?,
+            provider_account_id: nonempty(row.get(18)?),
             created_at: row.get(7)?,
             updated_at: row.get(8)?,
             branch: nonempty(row.get(9)?),
@@ -2127,6 +2134,26 @@ mod tests {
     }
 
     #[test]
+    fn native_sessions_without_chat_turns_are_listed_with_their_profile() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        let mut native = sample("native", "/tmp/a", "claude");
+        native.harness = "claude".into();
+        native.blocks = json!([]);
+        native.provider_session_id = Some("9b3c1f0e-0000-4000-8000-000000000001".into());
+        native.provider_account_id = Some("work".into());
+        let mut unstarted = sample("unstarted", "/tmp/a", "claude");
+        unstarted.blocks = json!([]);
+        unstarted.provider_session_id = None;
+        upsert_session(&conn, &native).unwrap();
+        upsert_session(&conn, &unstarted).unwrap();
+        let rows = list_by_project(&conn, "/tmp/a").unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, "native");
+        assert_eq!(rows[0].provider_account_id.as_deref(), Some("work"));
+    }
+
+    #[test]
     fn worker_upserts_carry_ownership_before_the_run_is_saved() {
         let store = SessionStore::open_in_memory().unwrap();
         let conn = store.conn.lock().unwrap();
@@ -2233,6 +2260,8 @@ mod tests {
         let store = SessionStore::open_in_memory().unwrap();
         let conn = store.conn.lock().unwrap();
         let mut quiet = sample("s1", "/tmp/a", "Quiet");
+        // No provider conversation either: a bound one lists native sessions.
+        quiet.provider_session_id = None;
         quiet.blocks = json!([{ "id": "b1", "role": "assistant", "text": "hi" }]);
         upsert_session(&conn, &quiet).unwrap();
         assert!(list_by_project(&conn, "/tmp/a").unwrap().is_empty());
@@ -2493,6 +2522,7 @@ mod tests {
         upsert_session(&conn, &sample("s2", "/tmp/a", "A2")).unwrap();
         upsert_session(&conn, &sample("s3", "/tmp/b", "B1")).unwrap();
         let mut empty = sample("s4", "/tmp/a", "Empty");
+        empty.provider_session_id = None;
         empty.blocks = json!([]);
         upsert_session(&conn, &empty).unwrap();
         let listed = list_by_project(&conn, "/tmp/a").unwrap();
@@ -3379,6 +3409,7 @@ mod tests {
         let store = SessionStore::open_in_memory().unwrap();
         let conn = store.conn.lock().unwrap();
         let mut session = sample("s1", "/tmp/a", "Unrelated title");
+        session.provider_session_id = None;
         session.blocks = json!([
             { "id": "t1", "role": "tool", "text": "wrapper", "tool": {
                 "preview": { "output": "nested role: user needle" }

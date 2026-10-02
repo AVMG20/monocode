@@ -40,6 +40,8 @@ export type SessionSummary = {
   runtimeMode: RuntimeMode;
   title: string;
   providerSessionId?: string;
+  /** Named credential profile (e.g. work or home) the session runs under. */
+  providerAccountId?: string;
   branch?: string;
   worktreeCwd?: string;
   worktreeRemoved?: boolean;
@@ -978,6 +980,9 @@ function normalizeSummary(summary: SessionSummary): SessionSummary {
     runtimeMode: asRuntimeMode(summary.runtimeMode),
     ...(summary.providerSessionId
       ? { providerSessionId: summary.providerSessionId }
+      : {}),
+    ...(summary.providerAccountId
+      ? { providerAccountId: summary.providerAccountId }
       : {}),
     ...(summary.branch ? { branch: summary.branch } : {}),
     ...(summary.repo ? { repo: summary.repo } : {}),

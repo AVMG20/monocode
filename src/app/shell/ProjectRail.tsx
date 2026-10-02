@@ -370,22 +370,24 @@ export function ProjectRail({
               ariaLabel={`Search (${MOD}K)`}
             />
             <div className="mt-0.5" />
-            <RailAction
-              label="Inbox"
-              icon={Inbox}
-              onClick={onOpenInbox}
-              onOpenContextMenu={(x, y) => {
-                menuTrigger.current =
-                  document.activeElement instanceof HTMLElement
-                    ? document.activeElement
-                    : null;
-                projectMenu.close();
-                setInboxMenu({ x, y });
-              }}
-              active={inboxActive}
-              dot={inboxUnseen}
-              ariaLabel={inboxUnseen ? "Inbox, new items" : "Inbox"}
-            />
+            {onOpenInbox ? (
+              <RailAction
+                label="Inbox"
+                icon={Inbox}
+                onClick={onOpenInbox}
+                onOpenContextMenu={(x, y) => {
+                  menuTrigger.current =
+                    document.activeElement instanceof HTMLElement
+                      ? document.activeElement
+                      : null;
+                  projectMenu.close();
+                  setInboxMenu({ x, y });
+                }}
+                active={inboxActive}
+                dot={inboxUnseen}
+                ariaLabel={inboxUnseen ? "Inbox, new items" : "Inbox"}
+              />
+            ) : null}
             {notesEnabled ? (
               <RailAction
                 label="Notes"

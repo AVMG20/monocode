@@ -599,7 +599,7 @@ fn hangup(pid: u32) {
     }
 }
 
-fn terminate(pid: u32) {
+pub(crate) fn terminate(pid: u32) {
     if pid == 0 || pid == 1 {
         return;
     }
