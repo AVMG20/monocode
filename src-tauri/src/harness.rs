@@ -1043,26 +1043,43 @@ fn apply_provider_account(
     let Some(dir) = provider_account_dir(app, &account.provider, Some(&account.id))? else {
         return Ok(());
     };
-    match account.provider.as_str() {
-        "claude" => {
-            // Claude scopes both its ordinary config and its macOS Keychain
-            // credential to these exact strings. Setting both keeps profiles
-            // isolated on every supported platform.
-            cmd.env("CLAUDE_CONFIG_DIR", &dir)
-                .env("CLAUDE_SECURESTORAGE_CONFIG_DIR", &dir)
-                .env_remove("ANTHROPIC_API_KEY")
-                .env_remove("ANTHROPIC_AUTH_TOKEN")
-                .env_remove("CLAUDE_CODE_OAUTH_TOKEN");
-        }
-        "codex" => {
-            cmd.env("CODEX_HOME", &dir)
-                .env_remove("OPENAI_API_KEY")
-                .env_remove("CODEX_API_KEY")
-                .env_remove("CODEX_ACCESS_TOKEN");
-        }
-        _ => unreachable!("provider_account_dir validates the provider"),
+    let (set, remove) = provider_account_env(&account.provider, &dir);
+    for key in remove {
+        cmd.env_remove(key);
+    }
+    for (key, value) in set {
+        cmd.env(key, value);
     }
     Ok(())
+}
+
+/// Env a provider account profile at `dir` needs: vars to set, and ambient
+/// credentials to remove so they cannot override the profile.
+pub(crate) fn provider_account_env(
+    provider: &str,
+    dir: &Path,
+) -> (Vec<(&'static str, PathBuf)>, &'static [&'static str]) {
+    match provider {
+        // Claude scopes both its ordinary config and its macOS Keychain
+        // credential to these exact strings. Setting both keeps profiles
+        // isolated on every supported platform.
+        "claude" => (
+            vec![
+                ("CLAUDE_CONFIG_DIR", dir.to_path_buf()),
+                ("CLAUDE_SECURESTORAGE_CONFIG_DIR", dir.to_path_buf()),
+            ],
+            &[
+                "ANTHROPIC_API_KEY",
+                "ANTHROPIC_AUTH_TOKEN",
+                "CLAUDE_CODE_OAUTH_TOKEN",
+            ],
+        ),
+        "codex" => (
+            vec![("CODEX_HOME", dir.to_path_buf())],
+            &["OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN"],
+        ),
+        _ => unreachable!("provider_account_dir validates the provider"),
+    }
 }
 
 /// A child that stops draining stdin can block `write_all` for minutes, so the
@@ -1904,7 +1921,7 @@ fn resolve_cursor_agent() -> Option<PathBuf> {
     first_binary_matching(candidates, is_cursor_agent)
 }
 
-fn resolve_harness_binary_default(provider: &str) -> Option<PathBuf> {
+pub(crate) fn resolve_harness_binary_default(provider: &str) -> Option<PathBuf> {
     match provider {
         "claude" => resolve_claude(),
         "codex" => resolve_codex(),
@@ -1946,7 +1963,10 @@ fn configured_binary_fingerprint(path: &Path) -> Option<String> {
     }
 }
 
-fn resolve_harness_binary_override(provider: &str, binary_path: &str) -> Result<PathBuf, String> {
+pub(crate) fn resolve_harness_binary_override(
+    provider: &str,
+    binary_path: &str,
+) -> Result<PathBuf, String> {
     if provider == "antigravity" && cfg!(windows) {
         return Err("Antigravity ACP server overrides are not supported on Windows.".into());
     }
@@ -2592,7 +2612,7 @@ fn is_cursor_agent(path: &Path) -> bool {
 ///
 /// Reads the cached PATH rather than spawning a shell per lookup: six
 /// resolvers each asking `command -v` meant six shell startups per probe.
-fn which_via_login_shell(name: &str) -> Option<PathBuf> {
+pub(crate) fn which_via_login_shell(name: &str) -> Option<PathBuf> {
     which_in_path(&gui_search_path(), name)
 }
 

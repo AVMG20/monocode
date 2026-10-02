@@ -12,6 +12,7 @@ import {
   type QuickGitResult,
 } from "../model/quickGitPopup";
 import type { QuickWorkspace } from "../model/quickWorkspace";
+import { SHOW_SOURCE_CONTROL } from "../../../app/model/features";
 
 export function QuickWorkspaceControls({
   value,
@@ -28,6 +29,7 @@ export function QuickWorkspaceControls({
   onClose: () => void;
   onError?: (error: string) => void;
 }) {
+  if (!SHOW_SOURCE_CONTROL) return null;
   const [ready, setReady] = useState(false);
   const [open, setOpen] = useState<QuickGitKind | null>(null);
   const activeKind = useRef<QuickGitKind | null>(null);

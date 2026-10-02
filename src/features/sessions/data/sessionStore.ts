@@ -114,7 +114,10 @@ export function shouldPersistSession(session: Session): boolean {
     !session.inboxAsk &&
     !isRemoteProjectPath(session.cwd) &&
     session.cwd !== "~" &&
-    session.blocks.some((block) => block.role === "user")
+    // Native CLI sessions keep their transcript in the CLI; the provider
+    // conversation id is what makes them worth saving and resuming.
+    (!!session.providerSessionId ||
+      session.blocks.some((block) => block.role === "user"))
   );
 }
 

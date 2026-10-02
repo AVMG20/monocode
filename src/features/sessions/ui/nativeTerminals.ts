@@ -1,0 +1,365 @@
+import { Terminal } from "@xterm/xterm";
+import "@xterm/xterm/css/xterm.css";
+import {
+  killPty,
+  resizePty,
+  subscribePty,
+  writePty,
+} from "../../../platform/tauri/pty";
+import {
+  spawnNativeSession,
+  type NativeProviderId,
+} from "../../../platform/tauri/nativeSession";
+import { IS_MAC } from "../../../platform/tauri/platform";
+import { isLightScheme, SCHEME_CHANGE_EVENT } from "../../settings/model/appearance";
+import { isOscColorQuery, oscColorReply } from "../../terminal/model/terminalChrome";
+import {
+  isMacTerminalClearShortcut,
+  macTerminalShortcutData,
+} from "../../terminal/model/terminalKeys";
+import { fitTerminal } from "../../terminal/model/terminalLayout";
+import { monoFont, oscColors, terminalTheme } from "../../terminal/ui/TerminalView";
+import { setNativeSessionStatus } from "../model/nativeSessionStatus";
+
+/**
+ * Native CLI sessions: each MonoCode session tab runs the provider's own TUI
+ * (`claude`, `codex`, ...) in a PTY. The xterm instance lives here, outside
+ * React, so switching tabs or projects never kills or redraws the agent — a
+ * pane only borrows the terminal's DOM node while it is on screen. The
+ * process stops when the session leaves the app (see disposeNativeTerminal).
+ */
+
+export type NativeLaunch = {
+  cwd: string;
+  provider: NativeProviderId;
+  accountId?: string;
+  conversationId: string;
+};
+
+export type NativeTerminalState = { exited: boolean; error?: string };
+
+type Entry = {
+  id: string;
+  term: Terminal;
+  outer: HTMLDivElement;
+  host: HTMLDivElement;
+  state: NativeTerminalState;
+  listeners: Set<(state: NativeTerminalState) => void>;
+  onTitle?: (title: string) => void;
+  fit: () => void;
+  dispose: () => void;
+};
+
+const entries = new Map<string, Entry>();
+/** Sessions whose next spawn starts a new conversation rather than resuming. */
+const freshLaunches = new Set<string>();
+
+/** Mark that the next spawn for `id` is a brand-new conversation. */
+export function markFreshNativeLaunch(id: string): void {
+  freshLaunches.add(id);
+}
+
+function setState(entry: Entry, state: NativeTerminalState) {
+  entry.state = state;
+  for (const listener of entry.listeners) listener(state);
+}
+
+function createEntry(id: string, launch: NativeLaunch): Entry {
+  const outer = document.createElement("div");
+  outer.className =
+    "monocode-terminal monocode-native-session flex h-full w-full min-h-0 min-w-0 flex-col";
+  const host = document.createElement("div");
+  host.className = "monocode-terminal-host min-h-0 min-w-0 flex-1 overflow-hidden";
+  outer.appendChild(host);
+
+  const term = new Terminal({
+    cursorBlink: true,
+    fontFamily: monoFont(),
+    fontSize: 13,
+    lineHeight: 1,
+    letterSpacing: 0,
+    scrollback: 10000,
+    allowTransparency: true,
+    smoothScrollDuration: 0,
+    theme: terminalTheme(isLightScheme()),
+    macOptionIsMeta: IS_MAC,
+  });
+
+  let closed = false;
+  let spawned = false;
+  let resolveStart!: () => void;
+  let rejectStart!: (error: unknown) => void;
+  const starting = new Promise<void>((resolve, reject) => {
+    resolveStart = resolve;
+    rejectStart = reject;
+  });
+  void starting.catch(() => undefined);
+  const whenStarted = (fn: () => unknown) => {
+    void starting
+      .then(() => (closed ? undefined : fn()))
+      .catch(() => undefined);
+  };
+
+  const entry: Entry = {
+    id,
+    term,
+    outer,
+    host,
+    state: { exited: false },
+    listeners: new Set(),
+    fit: () => {},
+    dispose: () => {},
+  };
+
+  const onCopy = (event: ClipboardEvent) => {
+    const text = term.getSelection();
+    if (!text) return;
+    event.clipboardData?.setData("text/plain", text);
+    event.preventDefault();
+  };
+  const onPaste = (event: ClipboardEvent) => {
+    const text = event.clipboardData?.getData("text/plain");
+    if (!text) return;
+    event.preventDefault();
+    term.paste(text);
+  };
+  host.addEventListener("copy", onCopy);
+  host.addEventListener("paste", onPaste);
+
+  term.attachCustomKeyEventHandler((event) => {
+    // Shift+Enter inserts a newline in Claude Code / Codex, the same mapping
+    // their `/terminal-setup` installs in other terminals.
+    if (
+      event.key === "Enter" &&
+      event.shiftKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.altKey
+    ) {
+      if (event.type === "keydown") {
+        event.preventDefault();
+        whenStarted(() => writePty(id, "\x1b\r"));
+      }
+      return false;
+    }
+    const shortcutData = IS_MAC ? macTerminalShortcutData(event) : null;
+    if (shortcutData) {
+      if (event.type === "keydown") {
+        event.preventDefault();
+        event.stopPropagation();
+        term.input(shortcutData);
+      }
+      return false;
+    }
+    if (IS_MAC && isMacTerminalClearShortcut(event)) {
+      if (event.isComposing) return false;
+      if (event.type === "keydown") {
+        event.preventDefault();
+        term.clear();
+      }
+      return false;
+    }
+    const mod = event.metaKey || event.ctrlKey;
+    if (!mod || event.altKey) return true;
+    const key = event.key.toLowerCase();
+    if (key === "c") {
+      if (term.hasSelection()) return false;
+      if (event.metaKey && !event.ctrlKey) return false;
+      return true;
+    }
+    if (key === "v") {
+      // On macOS Ctrl+V reaches the CLI, which reads images from the clipboard
+      // itself; Cmd+V is a normal text paste.
+      if (IS_MAC && event.ctrlKey && !event.metaKey) return true;
+      return false;
+    }
+    return true;
+  });
+
+  const unsubscribe = subscribePty(
+    id,
+    (data) => term.write(data),
+    (code) => {
+      if (closed) return;
+      const status = code == null ? "" : ` (${code})`;
+      term.writeln(`\r\n\x1b[2m[session ended${status}]\x1b[0m`);
+      setNativeSessionStatus(id, null);
+      setState(entry, { exited: true });
+    },
+  );
+
+  const dataSub = term.onData((data) => whenStarted(() => writePty(id, data)));
+  const titleSub = term.onTitleChange((title) => entry.onTitle?.(title));
+
+  const replyOsc = (code: 10 | 11 | 12, hex: string) => {
+    const reply = oscColorReply(code, hex);
+    if (reply) whenStarted(() => writePty(id, reply));
+    return true;
+  };
+  const oscFg = term.parser.registerOscHandler(10, (data) =>
+    isOscColorQuery(data) ? replyOsc(10, oscColors().fg) : false,
+  );
+  const oscBg = term.parser.registerOscHandler(11, (data) =>
+    isOscColorQuery(data) ? replyOsc(11, oscColors().bg) : false,
+  );
+  const oscCursor = term.parser.registerOscHandler(12, (data) =>
+    isOscColorQuery(data) ? replyOsc(12, oscColors().cursor) : false,
+  );
+
+  const onSchemeChange = () => {
+    term.options.theme = terminalTheme(isLightScheme());
+  };
+  window.addEventListener(SCHEME_CHANGE_EVENT, onSchemeChange);
+
+  term.attachCustomWheelEventHandler(() => {
+    if (term.element?.classList.contains("enable-mouse-events")) return true;
+    return term.buffer.active.type !== "alternate";
+  });
+
+  let lastCols = 0;
+  let lastRows = 0;
+  const spawn = (cols: number, rows: number) => {
+    const fresh = freshLaunches.delete(id);
+    spawnNativeSession({
+      id,
+      cwd: launch.cwd,
+      cols,
+      rows,
+      provider: launch.provider,
+      accountId: launch.accountId,
+      conversationId: launch.conversationId,
+      resume: !fresh,
+    })
+      .then(() => {
+        if (closed) return;
+        spawned = true;
+        resolveStart();
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!closed) {
+          term.writeln(`\x1b[31m${message}\x1b[0m`);
+          setState(entry, { exited: true, error: message });
+        }
+        rejectStart(error);
+      });
+  };
+
+  entry.fit = () => {
+    if (closed || !host.isConnected) return;
+    const mode = term.buffer.active.type === "alternate" ? "tui" : "shell";
+    const next = fitTerminal(term, host, mode);
+    if (!next) return;
+    const { cols, rows } = next;
+    if (!spawned && lastCols === 0) {
+      lastCols = cols;
+      lastRows = rows;
+      spawn(cols, rows);
+      return;
+    }
+    if (cols === lastCols && rows === lastRows) return;
+    lastCols = cols;
+    lastRows = rows;
+    whenStarted(() =>
+      resizePty(id, cols, rows).catch(() => {
+        lastCols = 0;
+        lastRows = 0;
+      }),
+    );
+  };
+
+  let raf = 0;
+  const schedule = () => {
+    if (raf) return;
+    raf = requestAnimationFrame(() => {
+      raf = 0;
+      entry.fit();
+    });
+  };
+  const observer = new ResizeObserver(schedule);
+  observer.observe(host);
+  const bufferSub = term.buffer.onBufferChange(schedule);
+
+  entry.dispose = () => {
+    if (closed) return;
+    closed = true;
+    if (raf) cancelAnimationFrame(raf);
+    observer.disconnect();
+    host.removeEventListener("copy", onCopy);
+    host.removeEventListener("paste", onPaste);
+    window.removeEventListener(SCHEME_CHANGE_EVENT, onSchemeChange);
+    dataSub.dispose();
+    titleSub.dispose();
+    oscFg.dispose();
+    oscBg.dispose();
+    oscCursor.dispose();
+    bufferSub.dispose();
+    unsubscribe();
+    void starting.catch(() => undefined).then(() => killPty(id));
+    setNativeSessionStatus(id, null);
+    term.dispose();
+    outer.remove();
+  };
+
+  return entry;
+}
+
+/**
+ * Show the session's terminal inside `container`, starting the CLI on first
+ * use. Returns a detach function that keeps the process running.
+ */
+export function attachNativeTerminal(
+  id: string,
+  container: HTMLElement,
+  launch: NativeLaunch,
+  callbacks: {
+    onState: (state: NativeTerminalState) => void;
+    onTitle?: (title: string) => void;
+  },
+): () => void {
+  let entry = entries.get(id);
+  const created = !entry;
+  if (!entry) {
+    entry = createEntry(id, launch);
+    entries.set(id, entry);
+  }
+  const current = entry;
+  container.appendChild(current.outer);
+  if (created) current.term.open(current.host);
+  current.onTitle = callbacks.onTitle;
+  current.listeners.add(callbacks.onState);
+  callbacks.onState(current.state);
+  const frame = requestAnimationFrame(() => {
+    current.fit();
+    current.term.refresh(0, current.term.rows - 1);
+  });
+  return () => {
+    cancelAnimationFrame(frame);
+    current.listeners.delete(callbacks.onState);
+    if (current.onTitle === callbacks.onTitle) current.onTitle = undefined;
+    if (current.outer.parentElement === container) current.outer.remove();
+  };
+}
+
+export function focusNativeTerminal(id: string): void {
+  const entry = entries.get(id);
+  if (!entry) return;
+  entry.fit();
+  entry.term.focus();
+}
+
+export function hasNativeTerminal(id: string): boolean {
+  return entries.has(id);
+}
+
+/** Stop the CLI and forget its terminal; the next attach starts it again. */
+export function disposeNativeTerminal(id: string): void {
+  const entry = entries.get(id);
+  if (!entry) return;
+  entries.delete(id);
+  entry.dispose();
+}
+
+export function nativeTerminalIds(): string[] {
+  return [...entries.keys()];
+}

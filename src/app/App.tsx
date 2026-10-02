@@ -1,5 +1,10 @@
 import { acceptQuickLaunch } from "./model/quickLaunchSession";
 import {
+  SHOW_FILES,
+  SHOW_SOURCE_CONTROL,
+  sidebarTabEnabled,
+} from "./model/features";
+import {
   cancelScheduledFlush,
   scheduleHarnessFlush,
   type ScheduledFlush,
@@ -542,6 +547,16 @@ import {
 } from "../features/sessions/model/secondOpinion";
 
 import { PaneTree } from "../features/workspace/ui/PaneTree";
+import type { NativeSessionPatch } from "../features/sessions/model/nativeSession";
+import {
+  nativeStatusesSnapshot,
+  refreshNativeSessionStatuses,
+  subscribeNativeStatuses,
+} from "../features/sessions/model/nativeSessionStatus";
+import {
+  disposeNativeTerminal,
+  nativeTerminalIds,
+} from "../features/sessions/ui/nativeTerminals";
 import { SessionPane } from "../features/sessions/ui/SessionPane";
 import { SessionSurface } from "../features/sessions/ui/SessionSurface";
 import { ProjectTerminalDock } from "../features/terminal/ui/ProjectTerminalDock";
@@ -1525,11 +1540,15 @@ function Workspace({
     project: pathKey(sidebarCwd),
     tab: loadProjectSidebarTab(sidebarCwd),
   }));
-  const sidebarTab =
+  const selectedSidebarTab =
     sidebarTabSelection.project === pathKey(sidebarCwd)
       ? sidebarTabSelection.tab
       : loadProjectSidebarTab(sidebarCwd);
+  const sidebarTab: SidebarTabId = sidebarTabEnabled(selectedSidebarTab)
+    ? selectedSidebarTab
+    : "sessions";
   const setSidebarTab = useCallback((tab: SidebarTabId, project?: string) => {
+    if (!sidebarTabEnabled(tab)) tab = "sessions";
     const cwd = project ?? sidebarCwdRef.current;
     saveProjectSidebarTab(cwd, tab);
     setSidebarTabSelection({
@@ -1574,16 +1593,21 @@ function Workspace({
     Boolean(sidebarCwd) && sidebarCwd !== "~",
   );
 
+  const nativeStatuses = useSyncExternalStore(
+    subscribeNativeStatuses,
+    nativeStatusesSnapshot,
+    nativeStatusesSnapshot,
+  );
   const nextBusySessionIds = useMemo(() => {
     const ids = new Set<string>();
     for (const session of sessions) {
-      if (sessionWorking(session)) {
+      if (sessionWorking(session) || nativeStatuses.get(session.id) === "running") {
         ids.add(session.id);
         if (session.orchestrationLeadId) ids.add(session.orchestrationLeadId);
       }
     }
     return ids;
-  }, [sessions]);
+  }, [sessions, nativeStatuses]);
   const busySessionIdsRef = useRef(nextBusySessionIds);
   if (!setsEqual(busySessionIdsRef.current, nextBusySessionIds)) {
     busySessionIdsRef.current = nextBusySessionIds;
@@ -1683,13 +1707,16 @@ function Workspace({
   const nextApprovalSessionIds = useMemo(() => {
     const ids = new Set<string>();
     for (const session of sessions) {
-      if (sessionNeedsInput(session)) {
+      if (
+        sessionNeedsInput(session) ||
+        nativeStatuses.get(session.id) === "waiting"
+      ) {
         ids.add(session.id);
         if (session.orchestrationLeadId) ids.add(session.orchestrationLeadId);
       }
     }
     return ids;
-  }, [sessions]);
+  }, [sessions, nativeStatuses]);
   const approvalSessionIdsRef = useRef(nextApprovalSessionIds);
   if (!setsEqual(approvalSessionIdsRef.current, nextApprovalSessionIds)) {
     approvalSessionIdsRef.current = nextApprovalSessionIds;
@@ -2620,6 +2647,42 @@ function Workspace({
     }
     onOpenTerminal(gitCwd);
   }, [gitCwd, focusProjectTerminal, onOpenTerminal, projectCwd]);
+
+  const onNativeSessionPatch = useCallback(
+    (sessionId: string, patch: NativeSessionPatch) => {
+      const current = sessionsRef.current.find(
+        (session) => session.id === sessionId,
+      );
+      if (!current) return;
+      const next: Session = { ...current, ...patch };
+      if (
+        patch.harness &&
+        patch.harness !== current.harness &&
+        !patch.title &&
+        canReplaceSessionTitle(current.title, current.harness, "")
+      ) {
+        next.title = HARNESS_LABEL[patch.harness];
+      }
+      setSessions((prev) =>
+        prev.map((session) => (session.id === sessionId ? next : session)),
+      );
+      persistSession(next);
+    },
+    [persistSession],
+  );
+
+  // Native CLI sessions keep running while their tab is open; stop the CLI
+  // once the session leaves the workspace (closed, archived or deleted).
+  useEffect(() => {
+    const live = new Set(sessions.map((session) => session.id));
+    for (const id of nativeTerminalIds()) {
+      if (!live.has(id)) disposeNativeTerminal(id);
+    }
+  }, [sessions]);
+
+  useEffect(() => {
+    void refreshNativeSessionStatuses(nativeTerminalIds());
+  }, []);
 
   const onNewTerminalInSession = useCallback(
     (sessionId: string) => {
@@ -3576,6 +3639,7 @@ function Workspace({
       changeKind?: GitFileDiffKind,
       pin = false,
     ) => {
+      if (!SHOW_SOURCE_CONTROL) return;
       void (async () => {
         const diffCwd = session?.cwd ?? gitCwdRef.current;
         const diffProjectCwd = session
@@ -3631,6 +3695,7 @@ function Workspace({
 
   /** Stack one section's working-tree changes in one review, whatever the diff-view setting. */
   const onOpenAllChanges = useCallback((kind: GitFileDiffKind) => {
+    if (!SHOW_SOURCE_CONTROL) return;
     setTabs((prev) =>
       prev.map((tab) =>
         tab.id === activeTabId
@@ -3649,6 +3714,7 @@ function Workspace({
 
   const onOpenCommit = useCallback(
     (commit: GitHistoryCommit, pin?: boolean) => {
+      if (!SHOW_SOURCE_CONTROL) return;
       setTabs((prev) =>
         prev.map((tab) =>
           tab.id === activeTabId
@@ -3672,6 +3738,7 @@ function Workspace({
   );
 
   const onShowSourceControl = useCallback(() => {
+    if (!SHOW_SOURCE_CONTROL) return;
     setSidebarTab("changes");
   }, []);
 
@@ -5629,6 +5696,8 @@ function Workspace({
         } catch (error) {
           console.warn("Could not open file in PhpStorm", error);
         }
+        // The built-in editor is hidden in this build.
+        if (!SHOW_FILES) return;
         const tab = tabsRef.current.find(
           (entry) => entry.id === activeTabIdRef.current,
         );
@@ -9651,6 +9720,7 @@ function Workspace({
   }, []);
 
   const onGoToFile = useCallback(() => {
+    if (!SHOW_FILES) return;
     setSearchViewOpen(false);
     setInboxViewOpen(false);
     setNotesViewOpen(false);
@@ -9660,6 +9730,8 @@ function Workspace({
     setFilePickerOpen(true);
   }, []);
   const onOpenCommandPalette = useCallback(() => {
+    // The palette shares the Go to File picker, which is hidden with files.
+    if (!SHOW_FILES) return;
     setSearchViewOpen(false);
     setInboxViewOpen(false);
     setNotesViewOpen(false);
@@ -9676,6 +9748,7 @@ function Workspace({
   }, []);
 
   const onFindInProject = useCallback(() => {
+    if (!SHOW_FILES) return;
     setSearchViewOpen(false);
     setInboxViewOpen(false);
     setNotesViewOpen(false);
@@ -10648,6 +10721,7 @@ function Workspace({
     onBtwStop,
     onBtwModelChange,
     onNewTerminal: onNewTerminalInSession,
+    onNativeSessionPatch,
   };
 
   const chromeSurfaceOpen =
@@ -10685,7 +10759,7 @@ function Workspace({
       onDeleteTab={onDeleteTitleTab}
       onReorder={onReorderTabs}
       onPlaceOnPane={onPlaceTabOnPane}
-      onGoToFile={onGoToFile}
+      onGoToFile={SHOW_FILES ? onGoToFile : undefined}
       onPinFile={onPinFile}
       recents={recents}
       onSelectProject={onSelectProject}
@@ -10781,7 +10855,7 @@ function Workspace({
               onOpenInboxItem={onOpenLinkedWorkItem}
               onOpenNotes={notesEnabled ? onOpenNotes : undefined}
               onOpenAutomations={onOpenAutomations}
-              onGoToFile={onGoToFile}
+              onGoToFile={SHOW_FILES ? onGoToFile : undefined}
               searchActive={searchViewOpen}
               inboxActive={inboxViewOpen}
               notesActive={notesViewOpen}
@@ -10837,17 +10911,19 @@ function Workspace({
                     onNew={onNew}
                     onNewTerminal={onNewTerminal}
                     onToggleTerminal={onToggleProjectTerminal}
-                    onGoToFile={onGoToFile}
+                    onGoToFile={SHOW_FILES ? onGoToFile : undefined}
                     onToggleSidebar={onToggleSidebar}
                     onToggleSessionSidebar={onToggleSessionSidebar}
-                    onShowSourceControl={onToggleChanges}
+                    onShowSourceControl={
+                      SHOW_SOURCE_CONTROL ? onToggleChanges : undefined
+                    }
                     onCloseCurrentTab={
                       activeTabId ? () => onCloseTab(activeTabId) : undefined
                     }
                     onCloseOtherTabs={onCloseOtherTabs}
                     onCloseAllTabs={onCloseAllTabs}
                     onPickProject={pickProject}
-                    onFindInProject={onFindInProject}
+                    onFindInProject={SHOW_FILES ? onFindInProject : undefined}
                     onSearch={onOpenSearch}
                     onOpenInbox={onOpenInbox}
                     onOpenNotes={notesEnabled ? onOpenNotes : undefined}
@@ -11148,7 +11224,7 @@ function Workspace({
             </div>
           </div>
 
-          {filePickerOpen ? (
+          {SHOW_FILES && filePickerOpen ? (
             <FilePicker
               key={filePickerResetToken}
               open

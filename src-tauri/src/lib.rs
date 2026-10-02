@@ -23,6 +23,7 @@ mod macos;
 mod macos_background;
 mod mcp;
 mod menu;
+mod native_session;
 mod notes;
 mod notifications;
 mod pasteboard;
@@ -226,6 +227,7 @@ pub fn run() {
         )
         .manage(harness::HarnessHost::new())
         .manage(pty::PtyHost::new())
+        .manage(native_session::NativeSessions::default())
         .manage(remote::RemoteConnections::default())
         .manage(window_transfer::WindowTransferState::new())
         .setup(|app| {
@@ -461,6 +463,9 @@ pub fn run() {
             pty::pty_status,
             pty::pty_kill,
             pty::pty_kill_all,
+            native_session::native_session_providers,
+            native_session::native_session_spawn,
+            native_session::native_session_status,
             session_store::session_upsert,
             session_store::session_list_by_project,
             session_store::session_rebase_project,

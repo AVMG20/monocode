@@ -99,7 +99,7 @@ const ANSI_LIGHT = {
   brightWhite: "#ffffff",
 };
 
-function terminalTheme(light: boolean) {
+export function terminalTheme(light: boolean) {
   return {
     background: "#00000000",
     foreground: cssColor("var(--color-content)", light ? "#2e2e2e" : "#e8eef2"),
@@ -113,14 +113,14 @@ function terminalTheme(light: boolean) {
   };
 }
 
-function monoFont(): string {
+export function monoFont(): string {
   const fromCss = getComputedStyle(document.documentElement)
     .getPropertyValue("--font-mono")
     .trim();
   return fromCss || "ui-monospace, SFMono-Regular, Menlo, Monaco, monospace";
 }
 
-function oscColors() {
+export function oscColors() {
   const light = isLightScheme();
   return {
     fg: cssHexColor(

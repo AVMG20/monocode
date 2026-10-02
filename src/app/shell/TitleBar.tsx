@@ -870,9 +870,14 @@ function TitleBarComponent({
             ) : null}
             {railClosed && !projectless ? (
               <>
-                <IconButton label={`Go to File (${MOD}P)`} onClick={onGoToFile}>
-                  <Search className="size-3.5" strokeWidth={1.75} />
-                </IconButton>
+                {onGoToFile ? (
+                  <IconButton
+                    label={`Go to File (${MOD}P)`}
+                    onClick={onGoToFile}
+                  >
+                    <Search className="size-3.5" strokeWidth={1.75} />
+                  </IconButton>
+                ) : null}
                 <IconButton label={`New session (${MOD}T)`} onClick={onNew}>
                   <Plus className="size-3.5" strokeWidth={1.75} />
                 </IconButton>

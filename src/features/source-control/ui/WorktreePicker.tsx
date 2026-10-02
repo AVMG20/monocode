@@ -16,6 +16,7 @@ import {
   Search,
   Settings,
 } from "../../../shared/ui/icons";
+import { SHOW_SOURCE_CONTROL } from "../../../app/model/features";
 
 export function WorktreePicker({
   cwd,
@@ -38,6 +39,7 @@ export function WorktreePicker({
   onManage?: () => void;
   onClose?: () => void;
 }) {
+  if (!SHOW_SOURCE_CONTROL) return null;
   const [open, setOpen] = useState(false);
   const [branchPicker, setBranchPicker] = useState(false);
   const [creating, setCreating] = useState(false);

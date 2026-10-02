@@ -6,6 +6,7 @@ import {
 } from "../../features/files/ui/ExplorerMenu";
 import { ALT, MOD, SHIFT } from "../../platform/tauri/platform";
 import { runUpdateFlow } from "../model/updater";
+import { SHOW_FILES } from "../model/features";
 import {
   keybindingShortcutLabel,
   loadAutosave,
@@ -255,13 +256,18 @@ export function MenuBar({
             shortcut: shortcut("App: New Window", `${MOD}${SHIFT}N`),
           },
           { kind: "sep" },
-          {
-            kind: "item",
-            id: "toggle_autosave",
-            label: "Autosave",
-            checked: autosave,
-          },
-          { kind: "sep" },
+          // Autosave only applies to the built-in file editor.
+          ...(SHOW_FILES
+            ? [
+                {
+                  kind: "item" as const,
+                  id: "toggle_autosave",
+                  label: "Autosave",
+                  checked: autosave,
+                },
+                { kind: "sep" as const },
+              ]
+            : []),
           {
             kind: "item",
             id: "open_project",
@@ -274,18 +280,26 @@ export function MenuBar({
             label: "Search…",
             shortcut: shortcut("App: Search", `${MOD}K`),
           },
-          {
-            kind: "item",
-            id: "go_to_file",
-            label: "Go to File…",
-            shortcut: shortcut("App: Go to File", `${MOD}P`),
-          },
-          {
-            kind: "item",
-            id: "find_in_project",
-            label: "Find in Files…",
-            shortcut: shortcut("App: Find in Files", `${MOD}${SHIFT}F`),
-          },
+          ...(onGoToFile
+            ? [
+                {
+                  kind: "item" as const,
+                  id: "go_to_file",
+                  label: "Go to File…",
+                  shortcut: shortcut("App: Go to File", `${MOD}P`),
+                },
+              ]
+            : []),
+          ...(onFindInProject
+            ? [
+                {
+                  kind: "item" as const,
+                  id: "find_in_project",
+                  label: "Find in Files…",
+                  shortcut: shortcut("App: Find in Files", `${MOD}${SHIFT}F`),
+                },
+              ]
+            : []),
           { kind: "sep" },
           {
             kind: "item",
@@ -345,7 +359,15 @@ export function MenuBar({
             label: "Switch Model…",
             shortcut: shortcut("App: Switch Model", `${MOD}.`),
           },
-          { kind: "item", id: "toggle_diff", label: "Toggle Changes" },
+          ...(onShowSourceControl
+            ? [
+                {
+                  kind: "item" as const,
+                  id: "toggle_diff",
+                  label: "Toggle Changes",
+                },
+              ]
+            : []),
           { kind: "sep" },
           {
             kind: "item",

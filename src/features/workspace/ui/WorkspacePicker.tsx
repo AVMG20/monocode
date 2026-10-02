@@ -31,6 +31,7 @@ import {
   keybindingShortcutLabel,
   keybindingShortcutTokens,
 } from "../../settings/model/settings";
+import { SHOW_SOURCE_CONTROL } from "../../../app/model/features";
 
 export const WORKSPACE_MODE_SHORTCUT = `${MOD}${SHIFT}G`;
 const WORKSPACE_SURFACES =
@@ -46,6 +47,7 @@ export function isWorkspaceModeShortcut(event: {
   altKey: boolean;
   shiftKey: boolean;
 }): boolean {
+  if (!SHOW_SOURCE_CONTROL) return false;
   return keybindingPressed(
     "Composer: Toggle Workspace",
     event,
@@ -83,6 +85,7 @@ export function WorkspacePicker({
   onOpenChange?: (open: boolean) => void;
   popoverSide?: "top" | "bottom";
 }) {
+  if (!SHOW_SOURCE_CONTROL) return null;
   const [modeOpen, setModeOpen] = useState(false);
   const [baseOpen, setBaseOpen] = useState(false);
   const reportMode = useCallback((open: boolean) => setModeOpen(open), []);
@@ -133,6 +136,7 @@ export function WorkspacePicker({
 
 /** A started conversation owns its working copy; only its branch stays mutable. */
 export function WorkspaceIdentity({ worktree }: { worktree: boolean }) {
+  if (!SHOW_SOURCE_CONTROL) return null;
   const Icon = worktree ? FolderTree : Folder;
   const label = worktree ? "Worktree" : "Current checkout";
   return (

@@ -287,6 +287,7 @@ import { ProjectMascot } from "../../projects/ui/ProjectMascot";
 import {
   filterKeybindings,
   currentKeybindings,
+  keybindingVisible,
   loadClaudeHooks,
   loadCloseToTray,
   loadCollapsedProjectRailMode,
@@ -325,6 +326,7 @@ import {
   searchSettings,
   settingsSectionDescription,
   settingsSectionLabel,
+  settingVisible,
   COLLAPSED_PROJECT_RAIL_MODE_DEFAULT,
   type CollapsedProjectRailMode,
   type DiffViewer,
@@ -362,6 +364,7 @@ import {
 import { SkillsPage } from "../../skills/ui/SkillsPage";
 import { ProjectNotificationSettings } from "../../notifications/ui/ProjectNotificationSettings";
 import { WorktreesPage } from "../../source-control/ui/WorktreesPage";
+import { SHOW_SOURCE_CONTROL } from "../../../app/model/features";
 import {
   removeWorktree,
   type RemoveWorktree,
@@ -556,7 +559,7 @@ export function SettingsView({
               {section === "providers" ? (
                 <ProvidersPage cwd={cwd} recents={recents} />
               ) : null}
-              {section === "worktrees" ? (
+              {SHOW_SOURCE_CONTROL && section === "worktrees" ? (
                 <WorktreesPage
                   cwd={cwd}
                   recents={recents}
@@ -844,21 +847,23 @@ function GeneralPage({
         title="Workspace"
         description="How project navigation and workspace tabs behave."
       >
-        <Row
-          id="file-tabs"
-          label="File tabs"
-          description="Open files beside the active chat, or give each file a normal tab in the top bar. Top-bar files can still be combined into split panes."
-        >
-          <Segmented
+        {settingVisible("file-tabs") ? (
+          <Row
+            id="file-tabs"
             label="File tabs"
-            value={fileTabMode}
-            options={[
-              { value: "pane", label: "Beside chat" },
-              { value: "workspace", label: "Top bar" },
-            ]}
-            onChange={onFileTabMode}
-          />
-        </Row>
+            description="Open files beside the active chat, or give each file a normal tab in the top bar. Top-bar files can still be combined into split panes."
+          >
+            <Segmented
+              label="File tabs"
+              value={fileTabMode}
+              options={[
+                { value: "pane", label: "Beside chat" },
+                { value: "workspace", label: "Top bar" },
+              ]}
+              onChange={onFileTabMode}
+            />
+          </Row>
+        ) : null}
         <Row
           id="tab-animations"
           label="Tab animations"
@@ -1064,43 +1069,47 @@ function ChatPage() {
         </Row>
       </Group>
 
-      <Group
-        title="Editor"
-        description="What happens when you save a file in the workspace editor."
-      >
-        <Row
-          id="format-on-save"
-          label="Format on save"
-          description="Run Prettier on supported files before writing. Off keeps the text you typed, including quote style."
+      {settingVisible("format-on-save") ? (
+        <Group
+          title="Editor"
+          description="What happens when you save a file in the workspace editor."
         >
-          <Toggle
+          <Row
+            id="format-on-save"
             label="Format on save"
-            on={formatOnSave}
-            onChange={onFormatOnSave}
-          />
-        </Row>
-      </Group>
+            description="Run Prettier on supported files before writing. Off keeps the text you typed, including quote style."
+          >
+            <Toggle
+              label="Format on save"
+              on={formatOnSave}
+              onChange={onFormatOnSave}
+            />
+          </Row>
+        </Group>
+      ) : null}
 
-      <Group
-        title="Code review"
-        description="Where a turn's changes open when you go to read them."
-      >
-        <Row
-          id="diff-view"
-          label="Diff view"
-          description="Editor keeps working-tree changes in the file. Unified stacks every changed file in one review, with sticky headers and collapsed unchanged lines."
+      {settingVisible("diff-view") ? (
+        <Group
+          title="Code review"
+          description="Where a turn's changes open when you go to read them."
         >
-          <Segmented
+          <Row
+            id="diff-view"
             label="Diff view"
-            value={diffViewer}
-            options={[
-              { value: "editor", label: "Editor" },
-              { value: "unified", label: "Unified" },
-            ]}
-            onChange={onDiffViewer}
-          />
-        </Row>
-      </Group>
+            description="Editor keeps working-tree changes in the file. Unified stacks every changed file in one review, with sticky headers and collapsed unchanged lines."
+          >
+            <Segmented
+              label="Diff view"
+              value={diffViewer}
+              options={[
+                { value: "editor", label: "Editor" },
+                { value: "unified", label: "Unified" },
+              ]}
+              onChange={onDiffViewer}
+            />
+          </Row>
+        </Group>
+      ) : null}
 
       <Group
         title="Extras"
@@ -2239,17 +2248,19 @@ function AppearancePage({ appearance }: { appearance: AppearanceSettings }) {
             onChange={(value) => appearance.onUiScale(Number(value))}
           />
         </Row>
-        <Row
-          id="show-excluded-files"
-          label="Show excluded files"
-          description="Show files and folders Git excludes, such as build output and dependencies, in the explorer."
-        >
-          <Toggle
+        {settingVisible("show-excluded-files") ? (
+          <Row
+            id="show-excluded-files"
             label="Show excluded files"
-            on={appearance.showExcludedFiles}
-            onChange={appearance.onShowExcludedFiles}
-          />
-        </Row>
+            description="Show files and folders Git excludes, such as build output and dependencies, in the explorer."
+          >
+            <Toggle
+              label="Show excluded files"
+              on={appearance.showExcludedFiles}
+              onChange={appearance.onShowExcludedFiles}
+            />
+          </Row>
+        ) : null}
       </Group>
     </>
   );
@@ -2670,7 +2681,11 @@ function KeybindingsPage() {
     [],
   );
   const rows = useMemo(
-    () => filterKeybindings(currentKeybindings(), query),
+    () =>
+      filterKeybindings(
+        currentKeybindings().filter((row) => keybindingVisible(row.command)),
+        query,
+      ),
     [query, overrides],
   );
 

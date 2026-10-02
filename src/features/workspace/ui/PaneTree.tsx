@@ -30,6 +30,7 @@ import {
   type PaneEdge,
 } from "../model/layout";
 import {
+  isRemoteProjectPath,
   sameProjectPath,
   type RecentProject,
 } from "../../projects/model/recents";
@@ -49,6 +50,8 @@ import {
 } from "../../sessions/model/session";
 import { FilePane } from "../../files/ui/FilePane";
 import { SessionPane } from "../../sessions/ui/SessionPane";
+import { NativeSessionPane } from "../../sessions/ui/NativeSessionPane";
+import type { NativeSessionPatch } from "../../sessions/model/nativeSession";
 import type { TranscriptPool } from "../../sessions/ui/TranscriptPool";
 import type { SessionFolderTarget } from "../../sessions/model/sessionFolders";
 import type { Worktree } from "../../source-control/model/worktrees";
@@ -185,6 +188,8 @@ type Shared = {
     position: TitleTabDropPosition,
   ) => void;
   onNewTerminal: (sessionId: string) => void;
+  /** Native CLI sessions report launch details and terminal titles here. */
+  onNativeSessionPatch: (sessionId: string, patch: NativeSessionPatch) => void;
   onTerminalMetaChange?: (fileId: string, patch: TerminalMetaPatch) => void;
   transcriptPool?: TranscriptPool;
 };
@@ -273,6 +278,7 @@ function PaneTreeComponent({
   onDetachPane,
   onNewTerminal,
   onTerminalMetaChange,
+  onNativeSessionPatch,
   transcriptPool,
 }: Props) {
   const treeRef = useRef<HTMLDivElement>(null);
@@ -456,6 +462,14 @@ function PaneTreeComponent({
                 editorNavigation={editorNavigation}
                 onPaneDragStart={onPaneDragStart}
                 onTerminalMetaChange={onTerminalMetaChange}
+              />
+            ) : session && !isRemoteProjectPath(session.cwd) ? (
+              <NativeSessionPane
+                session={session}
+                visible={visible}
+                focused={focusedId === session.id}
+                onFocus={onFocus}
+                onPatch={onNativeSessionPatch}
               />
             ) : session ? (
               <SessionPane

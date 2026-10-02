@@ -14,8 +14,51 @@ import {
   shortcutTokens,
 } from "../../quick-composer/model/quickComposerShortcut";
 import { readFlag, writeFlag } from "./storageFlags";
+import { SHOW_FILES, SHOW_SOURCE_CONTROL } from "../../../app/model/features";
 
 const SECTION_KEY = "monocode.settingsSection";
+
+/** Settings pages for surfaces this build hides (see app/model/features). */
+const HIDDEN_SETTINGS_SECTIONS = new Set<string>(
+  SHOW_SOURCE_CONTROL ? [] : ["worktrees"],
+);
+
+/** Individual settings rows for hidden surfaces. */
+const HIDDEN_SETTING_IDS = new Set<string>([
+  ...(SHOW_FILES ? [] : ["file-tabs", "format-on-save", "show-excluded-files"]),
+  ...(SHOW_SOURCE_CONTROL ? [] : ["project-worktrees", "diff-view"]),
+]);
+
+/** Whether a settings row (its `data-setting-id`) is shown in this build. */
+export function settingVisible(id: string): boolean {
+  return !HIDDEN_SETTING_IDS.has(id);
+}
+
+/** Shortcuts whose surfaces are hidden; they are no-ops and stay out of Keybindings. */
+const HIDDEN_KEYBINDINGS = new Set<string>([
+  ...(SHOW_FILES
+    ? []
+    : [
+        "App: Go to File",
+        "App: Command Palette",
+        "App: Find in Files",
+        "Editor: Find",
+        "Editor: Replace",
+      ]),
+  ...(SHOW_SOURCE_CONTROL ? [] : ["Composer: Toggle Workspace"]),
+]);
+
+export function keybindingVisible(command: string): boolean {
+  return !HIDDEN_KEYBINDINGS.has(command);
+}
+
+function visibleSections(sections: SettingsSection[]): SettingsSection[] {
+  return sections.filter((section) => !HIDDEN_SETTINGS_SECTIONS.has(section.id));
+}
+
+function visibleEntries(entries: SettingsEntry[]): SettingsEntry[] {
+  return entries.filter((entry) => settingVisible(entry.id));
+}
 
 export type SettingsSectionId =
   | "general"
@@ -48,7 +91,7 @@ export type SettingsSection = {
   keywords?: string;
 };
 
-export const SETTINGS_SECTIONS: SettingsSection[] = [
+export const SETTINGS_SECTIONS: SettingsSection[] = visibleSections([
   {
     id: "general",
     group: "app",
@@ -137,7 +180,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     description: "Manage additional worktrees for each project.",
     keywords: "git branch worktree working copy project create delete",
   },
-];
+]);
 
 export function settingsSectionsByGroup(): {
   id: SettingsGroupId;
@@ -161,7 +204,7 @@ export type SettingsEntry = {
   keywords?: string;
 };
 
-export const SETTINGS_INDEX: SettingsEntry[] = [
+export const SETTINGS_INDEX: SettingsEntry[] = visibleEntries([
   {
     id: "remote-machines",
     section: "connections",
@@ -431,7 +474,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     label: "Show archived in the sidebar",
     keywords: "hidden conversations list",
   },
-];
+]);
 
 export type SettingsSearchResult = {
   section: SettingsSectionId;

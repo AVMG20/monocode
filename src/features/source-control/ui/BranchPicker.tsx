@@ -22,6 +22,7 @@ import { CreateBranchDialog } from "./CreateBranchDialog";
 import { GitPickerTrigger } from "./GitPickerTrigger";
 import { Popover } from "../../../shared/ui/Popover";
 import { SwitchBranchDialog } from "./SwitchBranchDialog";
+import { SHOW_SOURCE_CONTROL } from "../../../app/model/features";
 
 type Props = {
   cwd: string;
@@ -61,6 +62,7 @@ export function BranchPicker({
   onOpenChange,
   popoverSide = "top",
 }: Props) {
+  if (!SHOW_SOURCE_CONTROL) return null;
   const [open, setOpen] = useState(initialOpen);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
