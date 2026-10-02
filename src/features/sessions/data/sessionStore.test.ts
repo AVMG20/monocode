@@ -1,4 +1,3 @@
-import { appendUser } from "../../../integrations/harness/core/apply";
 import { describe, expect, it } from "vitest";
 import {
   newSession,
@@ -13,6 +12,22 @@ import {
   sanitizeSessionForPersist,
   shouldPersistSession,
 } from "./sessionStore";
+
+/** A session with one more user turn, carrying any extra persisted fields. */
+function appendUser(
+  session: Session,
+  text: string,
+  _attachments: unknown[] = [],
+  extra: Partial<Block> = {},
+): Session {
+  return {
+    ...session,
+    blocks: [
+      ...session.blocks,
+      { id: crypto.randomUUID(), role: "user", text, ...extra },
+    ],
+  };
+}
 
 it("keeps host-owned transcripts out of local session storage", () => {
   const session = newSession("codex", "remote://env/home/me/repo");

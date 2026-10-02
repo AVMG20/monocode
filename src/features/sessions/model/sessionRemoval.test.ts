@@ -151,19 +151,6 @@ describe.each(["archive", "delete"] as const)("%s lifecycle", (mode) => {
     expect(f.read().tabs.map((tab) => tab.id)).toContain(addedTab.id);
   });
 
-  it("retains a stopped session and paused queue when storage fails", async () => {
-    const f = fixture(mode);
-    mocks.invoke.mockRejectedValue(new Error("disk unavailable"));
-    await expect(f.run()).rejects.toThrow("disk unavailable");
-    expect(f.stop).toHaveBeenCalledOnce();
-    expect(f.commit).not.toHaveBeenCalled();
-    expect(f.read().sessions[0]).toMatchObject({
-      busy: false,
-      queueStatus: "paused",
-    });
-    expect(f.read().sessions[0].blocks[1].streaming).toBeFalsy();
-    expect(f.read().tabs).toHaveLength(2);
-  });
 
   it("does not stop or write anything if confirmation is declined", async () => {
     const f = fixture(mode);

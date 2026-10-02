@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { ask } from "@tauri-apps/plugin-dialog";
-import { forgetHarnessSession } from "../../integrations/harness/core/registry";
 import { killAllChildren } from "../../integrations/harness/core/child";
 import { newSession } from "../../features/sessions/model/session";
 import { newTab } from "../../features/workspace/model/layout";
@@ -41,11 +40,6 @@ vi.mock("../../features/sessions/data/sessionStore", async (importOriginal) => {
     getSession: vi.fn().mockResolvedValue(null),
   };
 });
-vi.mock("../../integrations/harness/core/registry", () => ({
-  bindHarnessSession: vi.fn(),
-  isLiveHarness: vi.fn(),
-  forgetHarnessSession: vi.fn().mockResolvedValue(undefined),
-}));
 vi.mock("../../integrations/harness/core/child", () => ({
   killAllChildren: vi.fn().mockResolvedValue(undefined),
 }));
@@ -244,7 +238,7 @@ describe("closing a busy window", () => {
     try {
       await closeBusyWindow();
       expect(ask).toHaveBeenCalled();
-      expect(forgetHarnessSession).toHaveBeenCalledWith("cursor", session.id);
+      expect(invoke).toHaveBeenCalledWith("pty_kill", { id: session.id });
       expect(killAllChildren).not.toHaveBeenCalled();
       expect(invoke).toHaveBeenCalledWith("destroy_window");
       expect(
@@ -262,7 +256,6 @@ describe("closing a busy window", () => {
     vi.mocked(ask).mockResolvedValue(false);
     try {
       await closeBusyWindow();
-      expect(forgetHarnessSession).not.toHaveBeenCalled();
       expect(killAllChildren).not.toHaveBeenCalled();
       expect(invoke).not.toHaveBeenCalled();
     } finally {

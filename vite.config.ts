@@ -13,11 +13,8 @@ export default defineConfig(async ({ mode }) => {
     clearScreen: false,
     build: {
       rollupOptions: {
-        // The quick composer panel loads its own page so it does not boot the
-        // whole workspace.
         input: {
           main: "index.html",
-          quickComposer: "quick-composer.html",
         },
       },
     },

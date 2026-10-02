@@ -4,7 +4,6 @@ import {
   SHOW_SOURCE_CONTROL,
   sidebarTabEnabled,
 } from "../model/features";
-import { OrchestrationSidebarAgents } from "../../features/orchestration/ui/OrchestrationSidebarAgents";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   Archive,
@@ -3358,12 +3357,6 @@ const SessionCard = memo(function SessionCard({
             ) : null}
           </span>
         </div>
-        {orchestrationExpanded ? (
-          <OrchestrationSidebarAgents
-            leadId={session.id}
-            summary={orchestration!}
-          />
-        ) : null}
         <span className="relative mt-1 flex items-center gap-2">
           {gitLabel ? (
             <span

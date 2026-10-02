@@ -1,18 +1,6 @@
 import type { HarnessId } from "../../../features/sessions/model/session";
 import { HARNESSES } from "../../../features/sessions/model/session";
-import {
-  resolveAntigravityBinary,
-  resolveClaudeBinary,
-  resolveCodexBinary,
-  resolveCursorBinary,
-  resolveFxBinary,
-  resolveGrokBinary,
-  resolveHermesBinary,
-  resolveOmpBinary,
-  resolveOpenCodeBinary,
-  resolvePiBinary,
-} from "./child";
-import { isLiveHarness } from "./registry";
+import { listNativeProviders } from "../../../platform/tauri/nativeSession";
 import {
   emitHarnessAvailability,
   harnessAvailabilityProbedAt,
@@ -50,7 +38,7 @@ const CLI: Record<HarnessId, { name: string; install?: string }> = {
     install:
       "Install from hermes-agent.nousresearch.com, then run hermes model",
   },
-  antigravity: { name: "Antigravity ACP server (agy_acp_server.par)" },
+  antigravity: { name: "Antigravity CLI (agy)" },
 };
 
 let inflight: Promise<void> | null = null;
@@ -77,95 +65,17 @@ export function probeHarnessAvailability(
   if (!options?.force && lastProbe > 0 && Date.now() - lastProbe < PROBE_TTL_MS) {
     return Promise.resolve();
   }
-  inflight = Promise.all(
-    HARNESSES.map(async (id) => {
-      if (!isLiveHarness(id)) return [id, false] as const;
-      if (id === "cursor") {
-        try {
-          await resolveCursorBinary();
-          return [id, true] as const;
-        } catch {
-          return [id, false] as const;
-        }
+  // Sessions run the provider's own interactive CLI, so a provider counts as
+  // available exactly when MonoCode can launch that CLI in a terminal.
+  inflight = listNativeProviders()
+    .catch(() => [])
+    .then((providers) => {
+      const next = Object.fromEntries(
+        HARNESSES.map((id) => [id, false]),
+      ) as HarnessAvailability;
+      for (const provider of providers) {
+        if (provider.installed) next[provider.id] = true;
       }
-      if (id === "claude") {
-        try {
-          await resolveClaudeBinary();
-          return [id, true] as const;
-        } catch {
-          return [id, false] as const;
-        }
-      }
-      if (id === "codex") {
-        try {
-          await resolveCodexBinary();
-          return [id, true] as const;
-        } catch {
-          return [id, false] as const;
-        }
-      }
-      if (id === "opencode") {
-        try {
-          await resolveOpenCodeBinary();
-          return [id, true] as const;
-        } catch {
-          return [id, false] as const;
-        }
-      }
-      if (id === "pi") {
-        try {
-          await resolvePiBinary();
-          return [id, true] as const;
-        } catch {
-          return [id, false] as const;
-        }
-      }
-      if (id === "omp") {
-        try {
-          await resolveOmpBinary();
-          return [id, true] as const;
-        } catch {
-          return [id, false] as const;
-        }
-      }
-      if (id === "fx") {
-        try {
-          await resolveFxBinary();
-          return [id, true] as const;
-        } catch {
-          return [id, false] as const;
-        }
-      }
-      if (id === "grok") {
-        try {
-          await resolveGrokBinary();
-          return [id, true] as const;
-        } catch {
-          return [id, false] as const;
-        }
-      }
-      if (id === "hermes") {
-        try {
-          await resolveHermesBinary();
-          return [id, true] as const;
-        } catch {
-          return [id, false] as const;
-        }
-      }
-      if (id === "antigravity") {
-        try {
-          await resolveAntigravityBinary();
-          return [id, true] as const;
-        } catch {
-          return [id, false] as const;
-        }
-      }
-      return [id, false] as const;
-    }),
-  )
-    .then((entries) => {
-      const next = {} as HarnessAvailability;
-      for (const [id, ok] of entries) next[id] = ok;
       setHarnessAvailability(next);
       emitHarnessAvailability();
     })

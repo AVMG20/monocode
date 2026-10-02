@@ -11,7 +11,6 @@ import {
   isHarnessAvailable,
   probeHarnessAvailability,
 } from "../../../integrations/harness/core/availability";
-import { refreshHarnessCatalogs } from "../../../integrations/harness/core/registry";
 
 /** Where the model picker gets its models and provider availability. The
  * default is this computer's catalog; a remote session supplies its host's. */
@@ -33,9 +32,8 @@ export const LOCAL_MODEL_SOURCE: ModelSource = {
   find: findModel,
   available: isHarnessAvailable,
   probed: hasProbedHarnessAvailability,
-  refresh: (harnesses) => {
+  refresh: () => {
     void probeHarnessAvailability();
-    void refreshHarnessCatalogs(harnesses);
   },
 };
 

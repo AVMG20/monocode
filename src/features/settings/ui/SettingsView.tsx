@@ -165,8 +165,7 @@ import {
   compareSemver,
   MINIMUM_OPENCODE_VERSION,
   parseOpenCodeVersion,
-} from "../../../integrations/harness/providers/opencode/opencodeProtocol";
-import { refreshHarnessCatalogs } from "../../../integrations/harness/core/registry";
+} from "../../providers/model/cliVersions";
 import { loginHarness } from "../../../integrations/harness/core/auth";
 import {
   defaultModelId,
@@ -301,8 +300,6 @@ import {
   loadModelControls,
   loadNotesEnabled,
   loadKeybindingOverrides,
-  loadQuickComposerEnabled,
-  loadQuickComposerShortcut,
   loadTabAnimationsEnabled,
   saveClaudeHooks,
   saveCloseToTray,
@@ -317,9 +314,6 @@ import {
   saveModelControls,
   saveNotesEnabled,
   saveKeybindingOverride,
-  validateKeybindingShortcut,
-  saveQuickComposerEnabled,
-  saveQuickComposerShortcut,
   subscribeKeybindings,
   type KeybindingOverride,
   saveTabAnimationsEnabled,
@@ -337,14 +331,7 @@ import {
   type SettingsSectionId,
 } from "../model/settings";
 import { loadSoundsEnabled, playCue, saveSoundsEnabled } from "../model/sounds";
-import { setQuickComposerShortcut } from "../../quick-composer/model/quickComposer";
-import {
-  isGlobalShortcut,
-  QUICK_COMPOSER_DEFAULT_SHORTCUT,
-  quickComposerShortcutLabel,
-  quickComposerShortcutPreview,
-  shortcutFromKeyEvent,
-} from "../../quick-composer/model/quickComposerShortcut";
+import { shortcutPreview, shortcutFromKeyEvent } from "../model/shortcutLabels";
 import {
   cachedNotificationPermission,
   loadNotificationsEnabled,
@@ -738,12 +725,6 @@ function GeneralPage({
     loadTabAnimationsEnabled,
   );
   const [closeToTray, setCloseToTray] = useState(loadCloseToTray);
-  const [quickComposerEnabled, setQuickComposerEnabled] = useState(
-    loadQuickComposerEnabled,
-  );
-  const [quickComposerError, setQuickComposerError] = useState<string | null>(
-    null,
-  );
 
   // The user may flip the switch in System Settings and come back: re-read
   // the OS state whenever the window regains focus while the toggle is on.
@@ -774,16 +755,6 @@ function GeneralPage({
     setNotesEnabled(next);
   };
 
-  const onQuickComposerEnabled = (next: boolean) => {
-    saveQuickComposerEnabled(next);
-    setQuickComposerEnabled(next);
-    setQuickComposerError(null);
-    void setQuickComposerShortcut(next).catch((error: unknown) => {
-      // Another app already owns the combination. Leave the switch where the
-      // user put it so the next launch tries again, but say why it is dead.
-      setQuickComposerError(String(error));
-    });
-  };
 
   const onLiveAgentsEnabled = (next: boolean) => {
     saveLiveAgentsEnabled(next);
@@ -882,24 +853,6 @@ function GeneralPage({
         >
           <Toggle label="Notes" on={notesEnabled} onChange={onNotesEnabled} />
         </Row>
-        {IS_MAC && (
-          <Row
-            id="quick-composer"
-            label="Quick composer"
-            description={`Press ${quickComposerShortcutLabel(loadQuickComposerShortcut())} in any app to float a prompt over it and start a session without switching to MonoCode. Change the shortcut in Keybindings. Return starts it in the background; ⌘Return starts it and brings the session forward.`}
-          >
-            {quickComposerError ? (
-              <span className="text-[12px] text-content/45">
-                {quickComposerError}
-              </span>
-            ) : null}
-            <Toggle
-              label="Quick composer"
-              on={quickComposerEnabled}
-              onChange={onQuickComposerEnabled}
-            />
-          </Row>
-        )}
         <Row
           id="working-agents"
           label="Working agents"
@@ -2515,7 +2468,7 @@ function ShortcutEditor({
         shiftKey: event.shiftKey || held.current.shiftKey,
       };
       setPreview(
-        quickComposerShortcutPreview(
+        shortcutPreview(
           modifiers,
           modifier ? undefined : event.code,
           event.key,
@@ -2538,7 +2491,7 @@ function ShortcutEditor({
         shiftKey: event.shiftKey || held.current.shiftKey,
       };
       modifiers[modifier] = false;
-      setPreview(quickComposerShortcutPreview(modifiers));
+      setPreview(shortcutPreview(modifiers));
     };
     window.addEventListener("keydown", onKeyDown, true);
     window.addEventListener("keyup", onKeyUp, true);
@@ -2603,49 +2556,6 @@ function ShortcutEditor({
   );
 }
 
-function QuickComposerShortcutEditor() {
-  const [shortcut, setShortcut] = useState(loadQuickComposerShortcut);
-  const [enabled, setEnabled] = useState(loadQuickComposerEnabled);
-  const apply = async (next: string) => {
-    if (!isGlobalShortcut(next))
-      throw new Error("Quick Composer needs ⌘ or Ctrl as a global hotkey");
-    // Validate before the native call: a rejected chord must not leave the OS
-    // holding a registered global hotkey that settings does not know about.
-    validateKeybindingShortcut("App: Quick Composer", next);
-    // Recording while the feature is off must not silently switch it back on.
-    if (enabled) await setQuickComposerShortcut(true, next);
-    saveQuickComposerShortcut(next);
-    setShortcut(next);
-  };
-  const reset = async () => {
-    // Reset restores the whole default state, including the enabled flag.
-    validateKeybindingShortcut(
-      "App: Quick Composer",
-      QUICK_COMPOSER_DEFAULT_SHORTCUT,
-    );
-    await setQuickComposerShortcut(true, QUICK_COMPOSER_DEFAULT_SHORTCUT);
-    saveQuickComposerEnabled(true);
-    saveQuickComposerShortcut(QUICK_COMPOSER_DEFAULT_SHORTCUT);
-    setShortcut(QUICK_COMPOSER_DEFAULT_SHORTCUT);
-    setEnabled(true);
-  };
-  return (
-    <ShortcutEditor
-      name="quick composer"
-      display={enabled ? quickComposerShortcutLabel(shortcut) : null}
-      resetVisible={
-        enabled !== true || shortcut !== QUICK_COMPOSER_DEFAULT_SHORTCUT
-      }
-      onApply={apply}
-      onDisable={async () => {
-        await setQuickComposerShortcut(false);
-        saveQuickComposerEnabled(false);
-        setEnabled(false);
-      }}
-      onReset={reset}
-    />
-  );
-}
 
 function KeybindingShortcutEditor({
   command,
@@ -2741,16 +2651,12 @@ function KeybindingsPage() {
               >
                 {row.command}
               </span>
-              {row.command === "App: Quick Composer" ? (
-                <QuickComposerShortcutEditor />
-              ) : (
-                <KeybindingShortcutEditor
-                  command={row.command}
-                  display={disabled ? null : row.keys}
-                  modified={Boolean(override)}
-                  onSave={save}
-                />
-              )}
+              <KeybindingShortcutEditor
+                command={row.command}
+                display={disabled ? null : row.keys}
+                modified={Boolean(override)}
+                onSave={save}
+              />
               <span className="w-28 shrink-0 font-mono text-[11px] text-content/40">
                 {row.when}
               </span>
@@ -3672,11 +3578,6 @@ function ProviderRow({
   const available = isHarnessAvailable(harness);
   const current =
     models.length > 0 ? resolveModel(harness, selectedModel) : null;
-
-  useEffect(() => {
-    if (!available || models.length > 0) return;
-    void refreshHarnessCatalogs([harness]);
-  }, [available, harness, models.length]);
 
   return (
     <Row

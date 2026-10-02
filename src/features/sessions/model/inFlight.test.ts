@@ -99,52 +99,6 @@ describe("inFlightRefs", () => {
 });
 
 describe("markTurnInterrupted", () => {
-  it("seals the stream, cancels open tools, and appends a system note", () => {
-    const interrupted = markTurnInterrupted(
-      chat("/tmp/a", {
-        busy: true,
-        blocks: [
-          { id: "u1", role: "user", text: "hello", startedAt: 1_000 },
-          { id: "a1", role: "assistant", text: "Working", streaming: true },
-          {
-            id: "t1",
-            role: "tool",
-            text: "edit",
-            streaming: true,
-            tool: { status: "running", title: "edit" },
-          },
-          {
-            id: "p1",
-            role: "approval",
-            text: "allow?",
-            approval: { requestId: 7 },
-          },
-        ],
-      }),
-    );
-
-    expect(interrupted.busy).toBe(false);
-    expect(interrupted.blocks).toEqual([
-      expect.objectContaining({
-        id: "u1",
-        durationMs: expect.any(Number),
-      }),
-      expect.objectContaining({
-        id: "a1",
-        streaming: false,
-        text: "Working",
-      }),
-      expect.objectContaining({
-        id: "t1",
-        streaming: false,
-        tool: expect.objectContaining({ status: "cancelled" }),
-      }),
-      expect.objectContaining({
-        role: "system",
-        text: INTERRUPT_MESSAGE,
-      }),
-    ]);
-  });
 
   it("does not append the interrupt note twice for the same turn", () => {
     const once = markTurnInterrupted(chat("/tmp/a", { busy: true }));

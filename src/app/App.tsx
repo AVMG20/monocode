@@ -1,25 +1,13 @@
-import { acceptQuickLaunch } from "./model/quickLaunchSession";
 import {
   SHOW_FILES,
   SHOW_SOURCE_CONTROL,
   sidebarTabEnabled,
 } from "./model/features";
-import { cancelScheduledFlush, type ScheduledFlush } from "./model/harnessFlush";
-import { type AppSessionPlacement } from "../features/agent-app/model/agentApp";
 import { submitWithSettlement } from "./model/managedSubmission";
 import { type SubmissionAcceptance } from "./model/submissionAcceptance";
-import type { CiRepairRequest } from "../features/inbox/model/ciRepair";
 import { invoke } from "@tauri-apps/api/core";
-import { orchestrator, type ControlOutcome } from "../features/orchestration/model/orchestration";
-import { type OrchestrationProposal } from "../features/orchestration/model/orchestrationPlan";
-import {
-  attachOrchestrationWorkers,
-  consolidateOrchestrationTabs,
-  releaseOrchestrationWorker,
-} from "../features/orchestration/model/orchestrationWorkspace";
-import { type OrchestrationWorkerDetail } from "../features/orchestration/ui/OrchestrationActions";
+import type { ControlOutcome } from "./model/managedSubmission";
 import { flushSync } from "react-dom";
-import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ask, message } from "@tauri-apps/plugin-dialog";
 import {
@@ -36,7 +24,6 @@ import {
 import { Sidebar } from "./shell/Sidebar";
 import { HarnessUpdateNotice } from "../features/providers/ui/HarnessUpdateNotice";
 import { WhatsNewDialog } from "./shell/WhatsNewDialog";
-import { ProviderSignInDialog } from "../features/sessions/ui/ProviderSignInDialog";
 import { TitleBar, type Tab as TitleTab } from "./shell/TitleBar";
 import { MenuBar } from "./shell/MenuBar";
 import { FilePicker } from "../features/files/ui/FilePicker";
@@ -77,7 +64,6 @@ import {
 } from "../features/settings/model/uiScale";
 import { resolveZoomKeybinding } from "../features/settings/model/zoomKeybinding";
 import { resolveAppShortcut } from "../features/settings/model/appShortcuts";
-import { runUpdateFlow } from "./model/updater";
 import {
   basename,
   openFileInExternalEditor,
@@ -114,7 +100,6 @@ import {
   nextTerminalTitle,
   openChangesTab,
   openCommitTab,
-  newAgentTab,
   openEditorTab,
   openSessionChangesTab,
   pinEditorFile,
@@ -175,24 +160,7 @@ import {
   terminalTabLabel,
   type TerminalMetaPatch,
 } from "../features/terminal/model/terminalTab";
-import {
-  applyHarnessEvents,
-  bindHarnessSession,
-  cancelHarnessTurn,
-  forgetHarnessSession,
-  isLiveHarness,
-  latestTurnNeedsHarnessLogin,
-  probeHarnessAvailability,
-  refreshHarnessCatalogs,
-  registerBuiltinHarnesses,
-  startHarnessBridge,
-  stopHarnessTextPrompts,
-  stopStreaming,
-  pickTextHarness,
-  type HarnessEvent,
-} from "../integrations/harness";
-import { supportsHarnessLogin } from "../integrations/harness/core/authSupport";
-import { sessionChildHarnesses, type HandoffComposerCard } from "../features/sessions/model/handoff";
+import { probeHarnessAvailability } from "../integrations/harness/core/availability";
 
 import {
   flushSessionCheckpoint,
@@ -203,7 +171,6 @@ import {
   type EditorNavigationTarget,
   type OpenFileFn,
 } from "../features/search/model/search";
-import { mergeModelSettings, resolveModel } from "../features/sessions/model/models";
 
 import {
   displayPath,
@@ -260,15 +227,10 @@ import {
   newSession,
   retargetSessionToProject,
   sessionDisplayTitle,
-  sessionDraftBlock,
   sessionWorkCwd,
-  titleFromPrompt,
   type Attachment,
-  type ComposerTurnOptions,
   type HarnessId,
   type LinkedWorkItem,
-  type PlanBuildTarget,
-  type SecondOpinionMeta,
   type Session,
   type UsageLimit,
 } from "../features/sessions/model/session";
@@ -300,7 +262,6 @@ import { ReminderNotices } from "../features/sessions/ui/ReminderNotices";
 import { nextUnseenFinishedSessions } from "../features/sessions/model/sessionDone";
 import {
   loadNotificationsEnabled,
-  NOTIFICATION_CLICK_EVENT,
   probeNotificationPermission,
   setWindowFocused,
 } from "../features/notifications/model/notifications";
@@ -336,8 +297,6 @@ import {
   type Automation,
   type AutomationRun,
 } from "../features/automations/model/automations";
-import { useQuickComposerLaunches } from "../features/quick-composer/hooks/useQuickComposerLaunches";
-import type { QuickLaunch } from "../features/quick-composer/model/quickComposer";
 import { claimInboxAutomationRuns } from "../features/automations/model/automationEvents";
 
 import { PaneTree } from "../features/workspace/ui/PaneTree";
@@ -374,7 +333,6 @@ import {
   remoteTabCwd,
   remoteSessionFor,
 } from "../features/connections/model/connections";
-import { remoteSessionActions } from "../features/connections/model/remoteSessionActions";
 import { remotePath, remoteProjectFor } from "../features/connections/model/remoteProjects";
 import { AddRemoteProjectDialog } from "../features/connections/ui/AddRemoteProjectDialog";
 import { githubWorkItemThread } from "../features/inbox/model/githubTasks";
@@ -399,17 +357,12 @@ import {
   keybindingPressed,
   matchCustomKeybinding,
   saveSettingsSection,
-  saveAutosave,
   subscribeLiveAgentsEnabled,
   subscribeNotesEnabled,
   type CollapsedProjectRailMode,
   type SettingsSectionId,
-  type FollowUpBehavior,
 } from "../features/settings/model/settings";
-import {
-  handleEditorFindKey,
-  openFindInActiveEditor,
-} from "../features/files/editor/editorSearch";
+import { handleEditorFindKey } from "../features/files/editor/editorSearch";
 
 import {
   mergeHistorySummary,
@@ -419,8 +372,6 @@ import {
   summaryFromSession,
 } from "../features/sessions/data/sessionHistory";
 import {
-  CONTINUE_PROMPT,
-  canAutoContinue,
   inFlightRefs,
   inFlightSnapshotKey,
   shouldWriteInFlightSnapshot,
@@ -440,7 +391,6 @@ import {
 } from "../features/workspace/model/workspaceSnapshot";
 import type { InstalledUpdate } from "./model/updateNotice";
 import {
-  bindResumedSessions,
   closeBusyWindow,
   closeCurrentWindow,
   confirmReload,
@@ -493,25 +443,10 @@ const AutomationsView = lazySurface(
 /** How long a hidden idle session stays attached after it leaves every tab. */
 const SESSION_DETACH_DELAY_MS = 250;
 
-type SubmitOptions = ComposerTurnOptions & {
-  ciRepair?: CiRepairRequest;
-  /** Saved alongside the user turn; does not replace the submitted prompt. */
-  ciContext?: string;
-  secondOpinion?: SecondOpinionMeta;
-  followUpBehavior?: FollowUpBehavior;
-  noteCard?: NoteComposerCard;
-  handoffCard?: HandoffComposerCard;
-  queuedMessageId?: string;
-  planBlockId?: string;
-  buildTarget?: PlanBuildTarget;
-  managed?: boolean;
-  orchestrationRetry?: OrchestrationProposal;
-  appRequestId?: string;
+type SubmitOptions = {
   onSettled?: (outcome: ControlOutcome) => void;
   /** Generate a fresh title even when this is not the session's first turn. */
   refreshTitle?: boolean;
-  /** Internal guard for the retry after resolving a renamed project. */
-  projectLocationReady?: boolean;
 };
 
 type Submit = (
@@ -577,7 +512,6 @@ function titleTabsEqual(a: TitleTab[], b: TitleTab[]): boolean {
 }
 
 // Register capabilities before composer hooks choose their discovery strategy.
-registerBuiltinHarnesses();
 
 type AppProps = {
   windowTransfer?: WindowTransferPayload | null;
@@ -668,15 +602,6 @@ function Workspace({
   const [automationsViewOpen, setAutomationsViewOpen] = useState(false);
   // Set while the lead's tab is still opening; the agent tab lands on the
   // commit that brings it in.
-  const [workerDetailRequest, setWorkerDetailRequest] = useState<{
-    leadId: string;
-    workers: OrchestrationWorkerDetail[];
-  } | null>(null);
-  const orchestrationRuns = useSyncExternalStore(
-    orchestrator.subscribe,
-    orchestrator.snapshot,
-    orchestrator.snapshot,
-  );
   const notesEnabled = useSyncExternalStore(
     subscribeNotesEnabled,
     loadNotesEnabled,
@@ -697,25 +622,6 @@ function Workspace({
   });
   const [updateNotice, setUpdateNotice] = useState(installedUpdate);
   const [whatsNewVersion, setWhatsNewVersion] = useState<string | null>(null);
-  const [providerSignInRequest, setProviderSignInRequest] = useState<{
-    key: string;
-    sessionId: string;
-    harness: HarnessId;
-  } | null>(null);
-  const seenProviderSignInRequestsRef = useRef<Set<string> | null>(null);
-  const seenProviderSignInRequests =
-    seenProviderSignInRequestsRef.current ??
-    (seenProviderSignInRequestsRef.current = new Set(
-      sessions.flatMap((session) => {
-        if (
-          !supportsHarnessLogin(session.harness) ||
-          !latestTurnNeedsHarnessLogin(session.blocks)
-        ) {
-          return [];
-        }
-        return [providerSignInRequestKey(session)];
-      }),
-    ));
   const [settingsSection, setSettingsSection] =
     useState<SettingsSectionId>(loadSettingsSection);
   const [settingsAnchor, setSettingsAnchor] = useState<SettingsAnchor | null>(
@@ -752,9 +658,6 @@ function Workspace({
    * ref: `sidebarCwd` is derived during render, so the frame that first shows
    * a new project must already know the listing has not arrived yet.
    */
-  const btwRequestsRef = useRef(
-    new Map<string, { sessionId: string; controller: AbortController }>(),
-  );
   const [loadedProjects, setLoadedProjects] = useState<ReadonlySet<string>>(
     () =>
       bootHistoryCwd
@@ -810,26 +713,6 @@ function Workspace({
   const whatsNewVersionRef = useRef(whatsNewVersion);
   whatsNewVersionRef.current = whatsNewVersion;
   useEffect(() => {
-    const liveSessionIds = new Set(sessions.map((session) => session.id));
-    for (const [key, request] of btwRequestsRef.current) {
-      if (liveSessionIds.has(request.sessionId)) continue;
-      request.controller.abort();
-      btwRequestsRef.current.delete(key);
-    }
-  }, [sessions]);
-
-  useEffect(
-    () => () => {
-      for (const request of btwRequestsRef.current.values()) {
-        request.controller.abort();
-      }
-      btwRequestsRef.current.clear();
-      void stopHarnessTextPrompts();
-    },
-    [],
-  );
-
-  useEffect(() => {
     if (!notesEnabled) setNotesViewOpen(false);
   }, [notesEnabled]);
 
@@ -881,10 +764,6 @@ function Workspace({
   const sessionLoadEpochs = useRef(new Map<string, number>());
   const openingSessionIds = useRef(new Set<string>());
   const activeSessionPrefetch = useRef<Promise<Session | null> | null>(null);
-  // Tokens arrive many times per frame; apply them once so React/markdown aren't
-  // recomputed for every delta.
-  const harnessQueued = useRef(new Map<string, HarnessEvent[]>());
-  const harnessFlush = useRef<ScheduledFlush | null>(null);
   const skipForgetSessionIds = useRef(new Set<string>());
   const importedSessionsApplied = useRef(false);
   const submitAfterProjectSyncRef = useRef<Submit>(() => false);
@@ -911,47 +790,15 @@ function Workspace({
     }
   }, [windowTransfer, resumed]);
 
-  const flushHarnessEvents = useCallback(() => {
-    cancelScheduledFlush(harnessFlush.current);
-    harnessFlush.current = null;
-    const batches = harnessQueued.current;
-    if (batches.size === 0) return;
-    harnessQueued.current = new Map();
-    const prev = sessionsRef.current;
-    const next = prev.map((session) => {
-      const events = batches.get(session.id);
-      return events ? applyHarnessEvents(session, events) : session;
-    });
-    if (!next.some((session, index) => session !== prev[index])) return;
-    sessionsRef.current = next;
-    syncDockBadge(next);
-    setSessions(next);
-  }, []);
-
   const stopSessionForRemoval = useCallback(
     async (sessionId: string): Promise<Session | undefined> => {
-      await orchestrator.stopForSession(sessionId);
-      const open = sessionsRef.current.find(
-        (session) => session.id === sessionId,
-      );
-      if (!open?.busy) return open;
-
-      turnGen.current.set(sessionId, (turnGen.current.get(sessionId) ?? 0) + 1);
-      flushHarnessEvents();
-      await Promise.all(
-        sessionChildHarnesses(open).map((harness) =>
-          cancelHarnessTurn(harness, sessionId).catch(() => undefined),
-        ),
-      );
-      flushHarnessEvents();
+      disposeNativeTerminal(sessionId);
       return sessionsRef.current.find((session) => session.id === sessionId);
     },
-    [flushHarnessEvents],
+    [],
   );
 
   useEffect(() => {
-    if (resumed?.sessions.length) bindResumedSessions(resumed.sessions);
-    const stopBridge = startHarnessBridge();
     const reap = () => {
       if (isAppQuitting()) return;
       void persistQuitState(
@@ -976,38 +823,11 @@ function Workspace({
     return () => {
       window.removeEventListener("pagehide", reap);
       window.removeEventListener("beforeunload", reap);
-      stopBridge();
-      cancelScheduledFlush(harnessFlush.current);
-      harnessFlush.current = null;
     };
   }, [resumed, readProjectReturnMemory]);
 
   useEffect(() => {
     void probeHarnessAvailability();
-    // Only the harnesses already in this window. Probing every installed CLI
-    // at boot left unused agents (especially Pi) running in the background.
-    const harnesses = [
-      ...new Set(sessionsRef.current.map((session) => session.harness)),
-    ];
-    void refreshHarnessCatalogs(harnesses).then(() => {
-      setSessions((prev) =>
-        prev.map((session) => {
-          if (!isLiveHarness(session.harness)) return session;
-          const resolved = resolveModel(session.harness, session.model);
-          const modelSettings = mergeModelSettings(
-            resolved,
-            session.modelSettings,
-          );
-          if (
-            resolved.id === session.model &&
-            sameSettings(modelSettings, session.modelSettings)
-          ) {
-            return session;
-          }
-          return { ...session, model: resolved.id, modelSettings };
-        }),
-      );
-    });
   }, []);
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
@@ -1145,18 +965,6 @@ function Workspace({
   }
   const busySessionIds = busySessionIdsRef.current;
 
-  /** Probe the active session's harness for its live model catalog whenever
-   * the active harness changes. Catalogs load lazily (probing spawns a CLI
-   * process) and the boot refresh runs before restored sessions land, so a
-   * fresh session would otherwise show only the built-in fallback model
-   * until the picker happened to be opened. Idempotent: refreshHarnessCatalogs
-   * dedupes via hasLiveCatalog and its inflight map. */
-  const activeHarness = active?.harness;
-  useEffect(() => {
-    if (!activeHarness || !isLiveHarness(activeHarness)) return;
-    void refreshHarnessCatalogs([activeHarness]);
-  }, [activeHarness]);
-
   const usageProviders = useMemo(() => {
     if (
       active?.harness === "claude" ||
@@ -1174,7 +982,6 @@ function Workspace({
       harness: active.harness,
       model: active.model,
       busy: active.busy,
-      authRequired: latestTurnNeedsHarnessLogin(active.blocks),
       providerAccountId:
         active.providerAccountId ??
         (active.blocks.some((block) => block.role === "user")
@@ -1182,36 +989,6 @@ function Workspace({
           : undefined),
     };
   }, [active?.id, active?.harness, active?.model, active?.busy, active?.blocks, active?.providerAccountId]);
-  const activeProviderSignInRequest = useMemo(() => {
-    if (
-      !active ||
-      !supportsHarnessLogin(active.harness) ||
-      !latestTurnNeedsHarnessLogin(active.blocks)
-    ) {
-      return null;
-    }
-    return {
-      key: providerSignInRequestKey(active),
-      sessionId: active.id,
-      harness: active.harness,
-    };
-  }, [active]);
-  useEffect(() => {
-    if (!activeProviderSignInRequest) return;
-    if (seenProviderSignInRequests.has(activeProviderSignInRequest.key)) {
-      return;
-    }
-    seenProviderSignInRequests.add(activeProviderSignInRequest.key);
-    setProviderSignInRequest(activeProviderSignInRequest);
-  }, [activeProviderSignInRequest, seenProviderSignInRequests]);
-  useEffect(() => {
-    if (
-      providerSignInRequest &&
-      active?.id !== providerSignInRequest.sessionId
-    ) {
-      setProviderSignInRequest(null);
-    }
-  }, [active?.id, providerSignInRequest]);
   const runningTerminals = useMemo(() => {
     const files: FilePaneTab[] = [];
     const dock = findProjectTerminal(projectTerminals, projectCwd);
@@ -1302,7 +1079,6 @@ function Workspace({
       .onFocusChanged(({ payload: focused }) => {
         setWindowFocused(focused);
         if (focused) {
-          flushHarnessEvents();
           syncDockBadge(sessionsRef.current);
           if (
             document.activeElement === document.body &&
@@ -1325,29 +1101,26 @@ function Workspace({
     return () => {
       unlisten?.();
     };
-  }, [flushHarnessEvents]);
+  }, []);
 
   useEffect(() => {
     const onVisible = () => {
       // Flush on hiding too: WebKit can suspend a pending animation frame,
       // leaving the last output stranded until another event or activation.
-      flushHarnessEvents();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [flushHarnessEvents]);
+  }, []);
 
   useLayoutEffect(() => {
     // A newly selected chat catches up before paint, even if its output was
     // waiting on the background cadence. Draft/composer input stays immediate.
-    flushHarnessEvents();
   }, [
     activeTabId,
     searchViewOpen,
     notesViewOpen,
     automationsViewOpen,
     settingsOpen,
-    flushHarnessEvents,
   ]);
 
   useEffect(() => {
@@ -1359,7 +1132,6 @@ function Workspace({
       () => projectCwdRef.current,
       () => projectTerminalsRef.current,
       readProjectReturnMemory,
-      flushHarnessEvents,
       () => lastDockSideRef.current,
     );
     void getCurrentWindow()
@@ -1369,7 +1141,6 @@ function Workspace({
         event.preventDefault();
         const toTray = loadCloseToTray();
         if (hasInFlightSessions(sessionsRef.current)) {
-          flushHarnessEvents();
           if (!toTray && !IS_MAC) {
             void closeBusyWindow();
             return;
@@ -1399,7 +1170,7 @@ function Workspace({
       releaseQuit();
       unlistenClose?.();
     };
-  }, [flushHarnessEvents, readProjectReturnMemory]);
+  }, [readProjectReturnMemory]);
 
   const refreshHistory = useCallback(async (cwd: string) => {
     if (!cwd || cwd === "~") return;
@@ -1611,28 +1382,14 @@ function Workspace({
   // then parks it and resumes on the next prompt.
   // Dropping a session re-renders the whole app, so it waits until a switch
   // has painted, and a burst of switches pays for it once.
-  const detachInputs = useRef({ orchestrationRuns, liveAgentsEnabled });
-  detachInputs.current = { orchestrationRuns, liveAgentsEnabled };
+  const detachInputs = useRef({ liveAgentsEnabled });
+  detachInputs.current = { liveAgentsEnabled };
   const detachTimer = useRef<number | null>(null);
   const detachIdleSessions = useCallback(() => {
     detachTimer.current = null;
     const sessions = sessionsRef.current;
-    const { orchestrationRuns, liveAgentsEnabled } = detachInputs.current;
+    const { liveAgentsEnabled } = detachInputs.current;
     const visibleIds = openSessionIds(tabsRef.current);
-    // Internal workers stay attached to the lead, even while idle between
-    // turns. They must not be discarded merely because they have no tab.
-    for (const session of sessions) {
-      if (
-        session.orchestrationLeadId &&
-        (visibleIds.has(session.orchestrationLeadId) ||
-          orchestrationRuns.some(
-            (run) =>
-              run.leadId === session.orchestrationLeadId &&
-              ["active", "paused"].includes(run.status),
-          ))
-      )
-        visibleIds.add(session.id);
-    }
     for (const sessionId of visibleIds) {
       openingSessionIds.current.delete(sessionId);
       loadedSessionCache.current.delete(sessionId);
@@ -1652,9 +1409,6 @@ function Workspace({
         rememberLoadedSession(loadedSessionCache.current, session);
       }
       persistSession(session);
-      for (const harness of sessionChildHarnesses(session)) {
-        void forgetHarnessSession(harness, session.id);
-      }
     }
     setSessions((prev) =>
       prev.filter(
@@ -1678,7 +1432,6 @@ function Workspace({
     sessions,
     tabs,
     liveAgentsEnabled,
-    orchestrationRuns,
     detachIdleSessions,
   ]);
 
@@ -2020,7 +1773,6 @@ function Workspace({
         occupying && isBlankSession(occupying) ? occupying.id : undefined;
       if (occupyPaneId && occupying) {
         lastPersisted.current.delete(occupyPaneId);
-        void forgetHarnessSession(occupying.harness, occupyPaneId);
         setSessions((prev) =>
           prev.filter((session) => session.id !== occupyPaneId),
         );
@@ -3236,10 +2988,6 @@ function Workspace({
     if (!paneId || paneId === session.id) return false;
 
     lastPersisted.current.delete(paneId);
-    {
-      const blank = sessionsRef.current.find((entry) => entry.id === paneId);
-      if (blank) void forgetHarnessSession(blank.harness, paneId);
-    }
     setSessions((prev) => {
       const next = prev.filter((entry) => entry.id !== paneId);
       return next.some((entry) => entry.id === session.id)
@@ -3327,20 +3075,6 @@ function Workspace({
         (session) => session.id === sessionId,
       );
       if (appeared) return appeared;
-      if (
-        !restored.worktreeRemoved &&
-        restored.providerSessionId &&
-        isLiveHarness(restored.harness)
-      ) {
-        bindHarnessSession(
-          restored.harness,
-          restored.id,
-          restored.providerSessionId,
-          sessionWorkCwd(restored),
-          restored.providerAccountId,
-          restored.blocks,
-        );
-      }
       lastPersisted.current.set(restored.id, persistFingerprint(restored));
       if (!sessionsRef.current.some((session) => session.id === restored.id)) {
         const next = [...sessionsRef.current, restored];
@@ -3462,9 +3196,7 @@ function Workspace({
     async (sessionId: string) => {
       let session = await ensureOpenSession(sessionId);
       if (!session || session.inboxAsk) return;
-      const parentId =
-        session.orchestrationLeadId ??
-        orchestrator.forSession(sessionId)?.leadId;
+      const parentId = session.orchestrationLeadId;
       if (parentId && parentId !== sessionId) {
         session = await ensureOpenSession(parentId);
         if (!session) return;
@@ -3559,10 +3291,6 @@ function Workspace({
 
       if (replaceTarget) {
         lastPersisted.current.delete(targetId);
-        const blank = sessionsRef.current.find(
-          (entry) => entry.id === targetId,
-        );
-        if (blank) void forgetHarnessSession(blank.harness, targetId);
       }
 
       const result = applyPlaceSessionOnPane({
@@ -3613,7 +3341,6 @@ function Workspace({
 
       if (blankTarget) {
         lastPersisted.current.delete(blankTarget.id);
-        void forgetHarnessSession(blankTarget.harness, blankTarget.id);
       }
       sessionsRef.current = result.sessions;
       tabsRef.current = result.tabs;
@@ -3733,13 +3460,10 @@ function Workspace({
           if (!session) continue;
           await flushSessionCheckpoint(id);
           forgottenIds.add(id);
-          for (const harness of sessionChildHarnesses(session)) {
-            await forgetHarnessSession(harness, id);
-          }
           const latest = sessionsRef.current.find((entry) => entry.id === id);
           if (!latest) continue;
           const stopped = {
-            ...stopStreaming(latest),
+            ...latest,
             busy: false,
             queueStatus: "paused" as const,
             pendingQuestion: undefined,
@@ -3776,25 +3500,6 @@ function Workspace({
         setHistory((current) => current.map(patchSummary));
         for (const id of affected) notifyReviewChanged(id);
       } catch (error) {
-        // Removal may fail after idle agent processes were stopped. Rebind
-        // their saved threads so the unchanged working copy can still resume.
-        const kept = sessionsRef.current.filter(
-          (session) => forgottenIds.has(session.id) && !session.worktreeRemoved,
-        );
-        bindResumedSessions(kept);
-        for (const session of kept) {
-          const pending = session.pendingSwitch;
-          if (pending?.fromProviderSessionId) {
-            bindHarnessSession(
-              pending.from,
-              session.id,
-              pending.fromProviderSessionId,
-              sessionWorkCwd(session),
-              pending.fromProviderAccountId,
-              session.blocks,
-            );
-          }
-        }
         throw error;
       } finally {
         removingWorktreePaths.current.delete(path);
@@ -3895,36 +3600,6 @@ function Workspace({
                 );
                 sessionsRef.current = next;
                 setSessions(next);
-                return;
-              }
-
-              if (change.type === "orchestrationReleased") {
-                const released = sessionsRef.current.map((session) =>
-                  releaseOrchestrationWorker(session, change.leadId),
-                );
-                sessionsRef.current = released;
-                setSessions(released);
-                for (const [id, cached] of loadedSessionCache.current) {
-                  if (
-                    releaseOrchestrationWorker(cached, change.leadId) !== cached
-                  )
-                    invalidateLoadedSession(id);
-                }
-                // Pending reads may still carry the deleted lead's ownership.
-                for (const id of sessionLoads.current.keys()) {
-                  invalidateLoadedSession(id);
-                }
-                for (const [id, pending] of pendingPersist.current) {
-                  pendingPersist.current.set(
-                    id,
-                    releaseOrchestrationWorker(pending, change.leadId),
-                  );
-                }
-                const releaseSummary = (entry: SessionSummary) =>
-                  entry.orchestrationLeadId === change.leadId
-                    ? { ...entry, orchestrationLeadId: undefined }
-                    : entry;
-                setHistory((current) => current.map(releaseSummary));
                 return;
               }
 
@@ -4462,12 +4137,6 @@ function Workspace({
               session.id,
               (turnGen.current.get(session.id) ?? 0) + 1,
             );
-            for (const id of sessionChildHarnesses(session)) {
-              void cancelHarnessTurn(id, session.id);
-            }
-          }
-          for (const id of sessionChildHarnesses(session)) {
-            void forgetHarnessSession(id, session.id);
           }
           lastPersisted.current.delete(session.id);
         }
@@ -4480,9 +4149,6 @@ function Workspace({
           }
           persistSession(session);
           pendingPersist.current.delete(session.id);
-          for (const id of sessionChildHarnesses(session)) {
-            void forgetHarnessSession(id, session.id);
-          }
         }
       }
 
@@ -4742,62 +4408,6 @@ function Workspace({
     );
   }, []);
 
-  const onSaveDraft = useCallback(
-    (
-      sessionId: string,
-      text: string,
-      attachments: Attachment[] = [],
-      appRequestId?: string,
-    ) => {
-      const current = sessionsRef.current.find(
-        (session) => session.id === sessionId,
-      );
-      if (current && remoteProjectFor(current.cwd))
-        return !!remoteSessionActions(sessionId)?.saveDraft(text, attachments);
-      if (
-        !current ||
-        current.busy ||
-        sessionDraftBlock(current) ||
-        current.inboxAsk ||
-        current.worktreeRemoved ||
-        (!text.trim() && attachments.length === 0)
-      ) {
-        return false;
-      }
-      const placeholderTitle = canReplaceSessionTitle(
-        current.title,
-        current.harness,
-        HARNESS_LABEL[current.harness],
-      );
-      const title = placeholderTitle
-        ? titleFromPrompt(text, current.harness, attachments)
-        : current.title;
-      setSessions((prev) =>
-        prev.map((session) =>
-          session.id === sessionId && !sessionDraftBlock(session)
-            ? {
-                ...session,
-                title,
-                blocks: [
-                  ...session.blocks,
-                  {
-                    id: crypto.randomUUID(),
-                    role: "user",
-                    text,
-                    ...(attachments.length > 0 ? { attachments } : {}),
-                    draft: true,
-                    ...(appRequestId ? { appRequestId } : {}),
-                  },
-                ],
-              }
-            : session,
-        ),
-      );
-      return true;
-    },
-    [],
-  );
-
   /**
    * Hand a prompt to a session's native CLI. A running CLI gets it typed in;
    * otherwise the session launches (or resumes) with it as the first prompt.
@@ -4853,18 +4463,6 @@ function Workspace({
     [onNativeSessionPatch],
   );
   submitAfterProjectSyncRef.current = submitSession;
-  // Interactive callers use the immediate result to clear their composer. The
-  // queued-launch receiver uses submitSession to await the actual acceptance.
-  const onSubmit = useCallback(
-    (...args: Parameters<Submit>): boolean => {
-      const result = submitSession(...args);
-      if (typeof result === "boolean") return result;
-      // Deferred errors have already been displayed by submitAfterProjectSync.
-      void result.catch(() => undefined);
-      return true;
-    },
-    [submitSession],
-  );
 
   const automationSessionReservations = useRef(new Set<string>());
   const automationRecoveryRef = useRef<Promise<void> | null>(null);
@@ -5020,68 +4618,6 @@ function Workspace({
     [appendTab, focusOpenSession, submitSession],
   );
 
-  const launchQuickSession = useCallback(
-    (launch: QuickLaunch, deliveryId: string, placement?: AppSessionPlacement) =>
-      acceptQuickLaunch(launch, deliveryId, {
-        getSessions: () => sessionsRef.current,
-        updateSessions: (update) => {
-          sessionsRef.current = update(sessionsRef.current);
-          // Compose with submission's queued transcript updates.
-          setSessions(update);
-        },
-        appendTab,
-        placeSession: (sessionId, target, cwd) => {
-          const anchor = sessionsRef.current.find(
-            (session) => session.id === target.besideSessionId,
-          );
-          const tab = tabsRef.current.find((entry) =>
-            leafIds(entry.layout).includes(target.besideSessionId),
-          );
-          if (!anchor || !sameProjectPath(anchor.cwd, cwd) || !tab)
-            throw new Error("The target session must be open in this project");
-          const nextTabs = tabsRef.current.map((entry) =>
-            entry.id === tab.id
-              ? {
-                  ...entry,
-                  layout: splitPane(
-                    entry.layout,
-                    target.besideSessionId,
-                    target.direction,
-                    sessionId,
-                  ),
-                  focusedId: launch.reveal ? sessionId : entry.focusedId,
-                  diffFocused: launch.reveal ? false : entry.diffFocused,
-                }
-              : entry,
-          );
-          tabsRef.current = nextTabs;
-          setTabs(nextTabs);
-          return tab.id;
-        },
-        setProjectCwd,
-        setRecents,
-        revealTab: (id, cwd) => {
-          setActiveTabId(id);
-          setSearchViewOpen(false);
-          setNotesViewOpen(false);
-          setAutomationsViewOpen(false);
-          setSidebarTab("sessions", cwd);
-        },
-        submit: submitSession,
-        saveDraft: (id, prompt, attachments, requestId) =>
-          flushSync(() =>
-            onSaveDraft(id, prompt, attachments, requestId),
-          ),
-      }, placement),
-    [appendTab, submitSession, onSaveDraft],
-  );
-  useQuickComposerLaunches(launchQuickSession);
-  const launchQuickSessionRef = useRef(launchQuickSession);
-  launchQuickSessionRef.current = launchQuickSession;
-  const submitSessionRef = useRef(submitSession);
-  submitSessionRef.current = submitSession;
-  const saveDraftRef = useRef(onSaveDraft);
-  saveDraftRef.current = onSaveDraft;
   const ensureOpenSessionRef = useRef(ensureOpenSession);
   ensureOpenSessionRef.current = ensureOpenSession;
 
@@ -5191,107 +4727,12 @@ function Workspace({
     }
   }, [sessions]);
 
-  const autoContinueKey = sessions
-    .filter(
-      (session) => canAutoContinue(session) && isLiveHarness(session.harness),
-    )
-    .map((session) => session.id)
-    .join("\n");
-
-  useEffect(() => {
-    if (!autoContinueKey) return;
-    const ids = autoContinueKey.split("\n");
-    // Delay past React StrictMode's dev remount so Continue is not claimed
-    // against a discarded tree (sessionStorage also survives Vite reloads).
-    const timer = window.setTimeout(() => {
-      for (const id of ids) {
-        const session = sessionsRef.current.find((entry) => entry.id === id);
-        if (
-          !session ||
-          !canAutoContinue(session) ||
-          !isLiveHarness(session.harness)
-        ) {
-          continue;
-        }
-        onSubmit(id, CONTINUE_PROMPT);
-      }
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [autoContinueKey, onSubmit]);
-
   const onOpenApprovalSession = useCallback(
     (sessionId: string) => {
-      const parentId =
-        sessionsRef.current.find((session) => session.id === sessionId)
-          ?.orchestrationLeadId ?? orchestrator.forSession(sessionId)?.leadId;
-      if (parentId && parentId !== sessionId) {
-        if (!focusOpenSession(parentId)) void onSelectHistorySession(parentId);
-      } else if (!focusOpenSession(sessionId)) {
-        void onSelectHistorySession(sessionId);
-      }
+      if (!focusOpenSession(sessionId)) void onSelectHistorySession(sessionId);
     },
     [focusOpenSession, onSelectHistorySession],
   );
-
-  useEffect(() => {
-    setSessions((prev) => attachOrchestrationWorkers(prev, orchestrationRuns));
-  }, [orchestrationRuns]);
-
-  useEffect(() => {
-    const next = consolidateOrchestrationTabs(
-      tabs,
-      activeTabId,
-      orchestrationRuns,
-    );
-    if (next.tabs !== tabs) setTabs(next.tabs);
-    if (next.activeTabId !== activeTabId) setActiveTabId(next.activeTabId);
-  }, [tabs, activeTabId, orchestrationRuns]);
-
-  useEffect(() => {
-    orchestrator.sync();
-  }, [sessions]);
-
-  useEffect(() => {
-    if (!workerDetailRequest) return;
-    const { leadId, workers } = workerDetailRequest;
-    const tab = tabs.find((entry) => leafIds(entry.layout).includes(leadId));
-    if (!tab) {
-      // Still opening: this runs again on the commit that lands the lead. If
-      // the lead never arrived at all, drop the request rather than let it
-      // fire against some later tab change.
-      if (!sessionsRef.current.some((entry) => entry.id === leadId)) {
-        setWorkerDetailRequest(null);
-      }
-      return;
-    }
-    setWorkerDetailRequest(null);
-    // Every agent of a run shares one pane, the way files do: `openEditorTab`
-    // focuses an open tab, adds to the pane already beside the lead, or splits
-    // one off when there is none.
-    const cwd =
-      sessionsRef.current.find((entry) => entry.id === leadId)?.cwd ??
-      projectCwdRef.current;
-    const files = workers.map((worker) =>
-      newAgentTab(worker.title, cwd, {
-        sessionId: worker.sessionId,
-        leadId,
-        harness: worker.harness,
-      }),
-    );
-    setTabs((prev) =>
-      prev.map((entry) => {
-        if (entry.id !== tab.id) return entry;
-        const opened = files.reduce(
-          (next, file) => openEditorTab(next, file),
-          entry,
-        );
-        // Leave the first worker focused so View agents lands on the start
-        // of the run rather than the last tab added.
-        return files[0] ? openEditorTab(opened, files[0]) : opened;
-      }),
-    );
-    setActiveTabId(tab.id);
-  }, [tabs, workerDetailRequest]);
 
   const onSelectLiveAgent = useCallback(
     (sessionId: string) => {
@@ -5336,9 +4777,8 @@ function Workspace({
             ? { repo: projectName(sidebarCwd) }
             : {}),
         },
-        orchestrationRuns,
       ),
-    [history, projectBranches, sessions, sidebarCwd, orchestrationRuns],
+    [history, projectBranches, sessions, sidebarCwd],
   );
   const {
     unseen: inboxUnseen,
@@ -6047,117 +5487,6 @@ function Workspace({
     return () => window.removeEventListener("keydown", onKey, true);
   }, [run]);
 
-  useEffect(() => {
-    const unlisten: Array<Promise<() => void>> = [
-      listen("new_tab", () => run("new", actions.current.onNewTabInFocus)),
-      listen("close_other_tabs", () =>
-        run("close-others", actions.current.onCloseOtherTabs),
-      ),
-      listen("close_all_tabs", () =>
-        run("close-all", actions.current.onCloseAllTabs),
-      ),
-      listen("close_tab", () => run("close", actions.current.onCloseInFocus)),
-      listen<boolean>("toggle_autosave", ({ payload }) => {
-        const saved = saveAutosave(payload);
-        if (saved !== payload && IS_MAC) {
-          void invoke("autosave_set_enabled", { enabled: saved });
-        }
-      }),
-      listen("next_tab", () => run("next", actions.current.onNext)),
-      listen("prev_tab", () => run("prev", actions.current.onPrev)),
-      listen("back_tab", () => run("back", actions.current.onVisitBack)),
-      listen("forward_tab", () =>
-        run("forward", actions.current.onVisitForward),
-      ),
-      listen("split_right", () =>
-        run("split-right", () => actions.current.onSplit("right")),
-      ),
-      listen("split_down", () =>
-        run("split-down", () => actions.current.onSplit("down")),
-      ),
-      listen("new_terminal", () =>
-        run("new-terminal", actions.current.onNewTerminal),
-      ),
-      listen("new_terminal_tab", () =>
-        run("new-terminal-tab", actions.current.onNewTerminalTab),
-      ),
-      listen("toggle_terminal", () =>
-        run("toggle-terminal", actions.current.onToggleProjectTerminal),
-      ),
-      listen("focus_left", () =>
-        run("focus-left", () => actions.current.onFocusDir("left")),
-      ),
-      listen("focus_right", () =>
-        run("focus-right", () => actions.current.onFocusDir("right")),
-      ),
-      listen("focus_up", () =>
-        run("focus-up", () => actions.current.onFocusDir("up")),
-      ),
-      listen("focus_down", () =>
-        run("focus-down", () => actions.current.onFocusDir("down")),
-      ),
-      listen("toggle_sidebar", () =>
-        run("toggle_sidebar", actions.current.onToggleSidebar),
-      ),
-      listen("toggle_session_sidebar", () =>
-        run("toggle_session_sidebar", actions.current.onToggleSessionSidebar),
-      ),
-      listen("open_project", () => {
-        void actions.current.pickProject();
-      }),
-      listen("go_to_file", () => run("go_to_file", actions.current.onGoToFile)),
-      listen("open_command_palette", () =>
-        run("open_command_palette", actions.current.onOpenCommandPalette),
-      ),
-      listen("reload", () => run("reload", actions.current.onReload)),
-      listen("open_search", () => actions.current.onOpenSearch()),
-      listen("open_inbox", () => actions.current.onOpenInbox()),
-      listen("open_notes", () => actions.current.onOpenNotes()),
-      listen("open_settings", () => actions.current.openSettings()),
-      listen("check_for_updates", () => {
-        void runUpdateFlow(true);
-      }),
-      listen("sidebar_opacity", () => {
-        actions.current.openSettings("appearance");
-      }),
-      listen("find_in_project", () => actions.current.onFindInProject()),
-      listen("find", () => {
-        openFindInActiveEditor();
-      }),
-      listen("open_model_picker", () => {
-        window.dispatchEvent(new Event("open_model_picker"));
-      }),
-      // Every window hears the click; only the one holding the session acts.
-      listen<string>(NOTIFICATION_CLICK_EVENT, ({ payload: sessionId }) => {
-        if (!sessionsRef.current.some((s) => s.id === sessionId)) return;
-        const win = getCurrentWindow();
-        // Windows leaves a minimized window minimized when it is only focused.
-        void win
-          .unminimize()
-          .then(() => win.setFocus())
-          .catch(() => {});
-        actions.current.onOpenApprovalSession(sessionId);
-      }),
-      listen("zoom_in", () => {
-        const next = zoomInUiScale(loadUiScale());
-        saveUiScale(next);
-        void applyUiScale(next);
-      }),
-      listen("zoom_out", () => {
-        const next = zoomOutUiScale(loadUiScale());
-        saveUiScale(next);
-        void applyUiScale(next);
-      }),
-      listen("zoom_reset", () => {
-        saveUiScale(UI_SCALE_DEFAULT);
-        void applyUiScale(UI_SCALE_DEFAULT);
-      }),
-    ];
-    return () => {
-      void Promise.all(unlisten).then((fns) => fns.forEach((fn) => fn()));
-    };
-  }, [run]);
-
   const dockGridRef = useRef<HTMLDivElement>(null);
   const dockDragSize = useRef<number | null>(null);
   const paintDockSize = useCallback((size: number) => {
@@ -6304,7 +5633,6 @@ function Workspace({
               selectedCommitSha={
                 activeTab ? selectedCommitSha(activeTab) : undefined
               }
-              textHarness={pickTextHarness(active?.harness)}
               recents={recents}
               busyProjectPaths={sessions.flatMap((session) =>
                 sessionWorking(session) && session.cwd ? [session.cwd] : [],
@@ -6658,13 +5986,6 @@ function Workspace({
               }}
             />
           ) : null}
-          {providerSignInRequest ? (
-            <ProviderSignInDialog
-              key={providerSignInRequest.key}
-              harness={providerSignInRequest.harness}
-              onClose={() => setProviderSignInRequest(null)}
-            />
-          ) : null}
         </div>
     </>
   );
@@ -6688,11 +6009,6 @@ function lastUserBlockId(session: Session): string | undefined {
     if (session.blocks[i]?.role === "user") return session.blocks[i]?.id;
   }
   return undefined;
-}
-
-function providerSignInRequestKey(session: Session): string {
-  const lastBlockId = session.blocks[session.blocks.length - 1]?.id;
-  return `${session.id}:${lastUserBlockId(session) ?? lastBlockId ?? "auth"}`;
 }
 
 function selectedChangePath(
@@ -6884,15 +6200,3 @@ function dropOpenFiles(
   return { ...tab, layout, focusedId, editorPanes };
 }
 
-function sameSettings(
-  a: Record<string, string> | undefined,
-  b: Record<string, string> | undefined,
-): boolean {
-  const left = a ?? {};
-  const right = b ?? {};
-  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
-  for (const key of keys) {
-    if (left[key] !== right[key]) return false;
-  }
-  return true;
-}

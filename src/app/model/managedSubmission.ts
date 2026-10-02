@@ -1,5 +1,11 @@
-import type { ControlOutcome } from "../../features/orchestration/model/orchestration";
 import type { SubmissionAcceptance } from "./submissionAcceptance";
+
+/** How a submitted agent turn ended. */
+export type ControlOutcome = {
+  status: "completed" | "failed" | "cancelled";
+  text: string;
+  error?: string;
+};
 
 /** Await acceptance and guarantee one terminal callback, including rejection
  * before a turn exists. Successful acceptance does not wait for the agent. */

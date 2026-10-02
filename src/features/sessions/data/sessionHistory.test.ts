@@ -54,55 +54,7 @@ describe("historyWithLiveSessions", () => {
     })),
   };
 
-  it("groups live and already-saved workers under their lead before adoption effects run", () => {
-    const sessions = ["lead", "worker-a", "worker-b"].map((id) => ({
-      ...newSession("codex", run.cwd),
-      id,
-      blocks: [{ id: "u", role: "user" as const, text: "Build" }],
-      busy: id !== "lead",
-    }));
-    const rows = historyWithLiveSessions(
-      [
-        summary("lead", run.cwd),
-        summary("worker-a", run.cwd),
-        summary("unrelated", run.cwd),
-      ],
-      sessions,
-      run.cwd,
-      undefined,
-      [run],
-    );
-    expect(rows.map((row) => row.id).sort()).toEqual(["lead", "unrelated"]);
-    expect(rows.find((row) => row.id === "lead")?.orchestration).toMatchObject({
-      live: true,
-      status: "active",
-      tasks: [{ sessionId: "worker-a" }, { sessionId: "worker-b" }],
-    });
-  });
 
-  it("keeps ownership after restart, cache merges, and replacement runs", () => {
-    const history: SessionSummary[] = [
-      {
-        ...summary("lead", run.cwd),
-        orchestration: { status: "paused", tasks: run.tasks },
-      },
-      summary("worker-a", run.cwd),
-      { ...summary("older-worker", run.cwd), orchestrationLeadId: "lead" },
-    ];
-    const merged = mergeHistorySummary(history, summary("lead", run.cwd, 2));
-    const rows = historyWithLiveSessions(merged, [], run.cwd);
-    expect(rows.map((row) => row.id)).toEqual(["lead"]);
-    expect(rows[0].orchestration?.tasks).toHaveLength(2);
-    const replacement = historyWithLiveSessions(
-      merged,
-      [],
-      run.cwd,
-      undefined,
-      [{ ...run, tasks: [] }],
-    );
-    expect(replacement.map((row) => row.id)).toEqual(["lead"]);
-    expect(replacement[0].orchestration?.tasks).toEqual([]);
-  });
 
   it("does not inject an internal worker without a loaded run", () => {
     const worker = {

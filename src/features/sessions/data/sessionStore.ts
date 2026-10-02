@@ -1,18 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { titleFromToolInput } from "../../../integrations/harness/core/preview";
-import { recoverCursorSubagents } from "../../../integrations/harness/providers/cursor/cursorSubagents";
 import { persistableAttachment } from "../model/attachments";
 import type { ContextUsage } from "../model/contextUsage";
 import { isRemoteProjectPath, normalizeProjectPath } from "../../projects/model/recents";
-import {
-  claudeShellCommands,
-  ompActiveAssistantTexts,
-  ompSessionInterjections,
-} from "../../../platform/tauri/fs";
-import {
-  backfillOmpInterjections,
-  ompStatusSplitTexts,
-} from "../model/ompInterjections";
 import type {
   AgentRunMeta,
   AgentStep,
@@ -360,56 +350,9 @@ export async function getSession(sessionId: string): Promise<Session | null> {
   const record = await invoke<SessionRecord | null>("session_get", {
     sessionId,
   });
-  if (!record) return null;
-  const session = recordToSession(record);
-  if (session.harness === "claude" && session.providerSessionId) {
-    const toolIds = session.blocks.flatMap((block) =>
-      block.role === "tool" &&
-      block.tool?.kind === "execute" &&
-      block.text.trim() === "Shell" &&
-      block.tool.callId
-        ? [block.tool.callId]
-        : [],
-    );
-    if (toolIds.length) {
-      try {
-        const commands = await claudeShellCommands(
-          session.providerSessionId,
-          session.providerAccountId,
-          toolIds,
-        );
-        const blocks = backfillClaudeShellCommands(session.blocks, commands);
-        if (blocks !== session.blocks) {
-          session.blocks = blocks;
-          await upsertSession(session);
-        }
-      } catch {
-        // A missing or unreadable Claude transcript must not block the session.
-      }
-    }
-  }
-  if (session.harness !== "omp" || !session.providerSessionId) {
-    return recoverCursorSubagents(session);
-  }
-  try {
-    const anchors = await ompSessionInterjections(session.providerSessionId);
-    // Missing source order must not prevent the existing anchored repair.
-    const source = ompStatusSplitTexts(session.blocks).length
-      ? await ompActiveAssistantTexts(session.providerSessionId).catch(() => [])
-      : [];
-    const blocks = backfillOmpInterjections(session.blocks, anchors, source);
-    if (blocks !== session.blocks) {
-      session.blocks = blocks;
-      // Persist before exposing the restored session to a new live turn.
-      // Re-reading the source on later loads allows partial repairs to retry;
-      // deterministic IDs ensure already repaired transcripts are not written.
-      await upsertSession(session);
-    }
-  } catch {
-    // Source logs may be absent/unreadable. Even a failed write must not stop
-    // restore; the recovered in-memory boundaries can still be displayed.
-  }
-  return session;
+  // The conversation itself lives in the provider's CLI transcript; the
+  // record keeps the session's metadata and any legacy chat blocks.
+  return record ? recordToSession(record) : null;
 }
 
 export function backfillClaudeShellCommands(

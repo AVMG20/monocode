@@ -7,12 +7,10 @@ import {
 } from "../../../platform/tauri/platform";
 import {
   canonicalShortcut,
-  isGlobalShortcut,
-  QUICK_COMPOSER_DEFAULT_SHORTCUT,
-  quickComposerShortcutLabel,
+  shortcutLabel,
   shortcutFromKeyEvent,
   shortcutTokens,
-} from "../../quick-composer/model/quickComposerShortcut";
+} from "./shortcutLabels";
 import { readFlag, writeFlag } from "./storageFlags";
 import { SHOW_FILES, SHOW_SOURCE_CONTROL } from "../../../app/model/features";
 
@@ -247,16 +245,6 @@ export const SETTINGS_INDEX: SettingsEntry[] = visibleEntries([
     label: "Notes",
     keywords: "notebook markdown rail scratchpad",
   },
-  ...(IS_MAC
-    ? [
-        {
-          id: "quick-composer",
-          section: "general" as const,
-          label: "Quick composer",
-          keywords: "spotlight global shortcut hotkey floating prompt anywhere",
-        },
-      ]
-    : []),
   {
     id: "working-agents",
     section: "general",
@@ -786,42 +774,6 @@ export function subscribeNotesEnabled(onStoreChange: () => void) {
     window.removeEventListener(NOTES_ENABLED_CHANGE_EVENT, onStoreChange);
 }
 
-const QUICK_COMPOSER_ENABLED_KEY = "monocode.quickComposerEnabled";
-const QUICK_COMPOSER_SHORTCUT_KEY = "monocode.quickComposerShortcut";
-
-export const QUICK_COMPOSER_ENABLED_DEFAULT = true;
-
-export function loadQuickComposerEnabled(): boolean {
-  return readFlag(QUICK_COMPOSER_ENABLED_KEY) ?? QUICK_COMPOSER_ENABLED_DEFAULT;
-}
-
-export function saveQuickComposerEnabled(value: boolean) {
-  writeFlag(QUICK_COMPOSER_ENABLED_KEY, value);
-}
-
-export function loadQuickComposerShortcut(): string {
-  try {
-    const value = localStorage.getItem(QUICK_COMPOSER_SHORTCUT_KEY);
-    return value && isGlobalShortcut(value)
-      ? value
-      : QUICK_COMPOSER_DEFAULT_SHORTCUT;
-  } catch {
-    return QUICK_COMPOSER_DEFAULT_SHORTCUT;
-  }
-}
-
-export function saveQuickComposerShortcut(value: string) {
-  if (!isGlobalShortcut(value)) return;
-  // Same conflict rules as every other row, so the separately stored Quick
-  // Composer chord cannot claim a combination another command already owns.
-  const shortcut = validateKeybindingShortcut(QUICK_COMPOSER_COMMAND, value);
-  try {
-    localStorage.setItem(QUICK_COMPOSER_SHORTCUT_KEY, shortcut);
-  } catch {
-    // private mode / quota
-  }
-}
-
 const LIVE_AGENTS_ENABLED_KEY = "monocode.liveAgentsEnabled";
 
 export const LIVE_AGENTS_ENABLED_DEFAULT = true;
@@ -1012,15 +964,6 @@ export const KEYBINDINGS: KeybindingRow[] = [
   { command: "App: Find in Files", keys: `${MOD}${SHIFT}F`, when: "Always" },
   { command: "App: Open Project", keys: `${MOD}O`, when: "Always" },
   { command: "App: New Window", keys: `${MOD}${SHIFT}N`, when: "Always" },
-  ...(IS_MAC
-    ? [
-        {
-          command: "App: Quick Composer",
-          keys: `${MOD}${SHIFT}Space`,
-          when: "Anywhere",
-        },
-      ]
-    : []),
   { command: "App: Toggle Sidebar", keys: `${MOD}B`, when: "Always" },
   {
     command: "App: Toggle Session Sidebar",
@@ -1149,7 +1092,6 @@ const DISPLAY_MODIFIERS: [string, string][] = IS_MAC
       ["Shift+", "Shift"],
     ];
 
-const QUICK_COMPOSER_COMMAND = "App: Quick Composer";
 const ACTIVATE_RANGE_COMMAND = "Tab: Activate 1–8";
 
 /**
@@ -1183,16 +1125,11 @@ function defaultShortcutsFor(command: string): string[] {
   return [];
 }
 
-/** Chord to owning command, covering defaults, live overrides and Quick Composer. */
+/** Chord to owning command, covering defaults and live overrides. */
 function shortcutOwners(): Map<string, string> {
   const owners = new Map<string, string>();
   for (const row of KEYBINDINGS) {
-    // The Quick Composer chord is stored separately from the table.
-    const chords =
-      row.command === QUICK_COMPOSER_COMMAND
-        ? [loadQuickComposerShortcut()]
-        : defaultShortcutsFor(row.command);
-    for (const chord of chords) owners.set(chord, row.command);
+    for (const chord of defaultShortcutsFor(row.command)) owners.set(chord, row.command);
   }
   for (const [command, override] of Object.entries(loadKeybindingOverrides())) {
     if (override.shortcut) owners.set(override.shortcut, command);
@@ -1335,7 +1272,7 @@ export function keybindingShortcutLabel(
   const override = loadKeybindingOverrides()[command];
   if (override?.disabled) return null;
   return override?.shortcut
-    ? quickComposerShortcutLabel(override.shortcut)
+    ? shortcutLabel(override.shortcut)
     : fallback;
 }
 
@@ -1364,21 +1301,13 @@ export function subscribeKeybindings(onStoreChange: () => void) {
 export function currentKeybindings(): KeybindingRow[] {
   const overrides = loadKeybindingOverrides();
   return KEYBINDINGS.map((row) => {
-    if (row.command === "App: Quick Composer") {
-      return {
-        ...row,
-        keys: loadQuickComposerEnabled()
-          ? quickComposerShortcutLabel(loadQuickComposerShortcut())
-          : "Disabled",
-      };
-    }
     const override = overrides[row.command];
     return {
       ...row,
       keys: override?.disabled
         ? "Disabled"
         : override?.shortcut
-          ? quickComposerShortcutLabel(override.shortcut)
+          ? shortcutLabel(override.shortcut)
           : row.keys,
     };
   });

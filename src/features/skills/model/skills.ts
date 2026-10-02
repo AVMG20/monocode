@@ -11,7 +11,15 @@ import { joinPath } from "../../../shared/lib/paths";
 import { isLocalProject, normalizeProjectPath } from "../../projects/model/recents";
 import { isMarkdownBlockquotePosition } from "../../sessions/model/quoteDraft";
 import type { HarnessId } from "../../sessions/model/session";
-import { getHarness } from "../../../integrations/harness/core/registry";
+import type { NativeCommandProvider } from "../../../integrations/harness/core/nativeCommands";
+
+/**
+ * Native command catalogs came from the removed chat runtime. Sessions now
+ * run the provider's own CLI, which lists its own slash commands.
+ */
+function nativeCommands(_harness: HarnessId): NativeCommandProvider | undefined {
+  return undefined;
+}
 import type { NativeCommand } from "../../../integrations/harness/core/nativeCommands";
 import {
   CREATE_SKILL_BODY,
@@ -139,12 +147,12 @@ type CatalogEntry = {
 const catalogEntries = new Map<string, CatalogEntry>();
 
 export function skillCatalogKey(context: SkillCatalogContext): string {
-  const sessionScoped = !!getHarness(context.harness)?.commands?.subscribe;
+  const sessionScoped = !!nativeCommands(context.harness)?.subscribe;
   return `${context.harness}\0${normalizeProjectPath(context.cwd)}${sessionScoped && context.sessionId ? `\0${context.sessionId}` : ""}`;
 }
 
 export function hasNativeCommands(harness: HarnessId): boolean {
-  return !!getHarness(harness)?.commands;
+  return !!nativeCommands(harness);
 }
 
 export function isNativeCommandPrompt(
@@ -152,7 +160,7 @@ export function isNativeCommandPrompt(
   harness: HarnessId,
 ): boolean {
   return (
-    getHarness(harness)?.commands?.rawSlashCommands === true &&
+    nativeCommands(harness)?.rawSlashCommands === true &&
     /^\s*\/[^\s/\\]+(?=\s|$)/.test(text)
   );
 }
@@ -163,7 +171,7 @@ export function subscribeSkills(
   onSkills: (skills: Skill[]) => void,
 ): () => void {
   return (
-    getHarness(context.harness)?.commands?.subscribe?.(context, (commands) => {
+    nativeCommands(context.harness)?.subscribe?.(context, (commands) => {
       const key = skillCatalogKey(context);
       const previous = catalogEntries.get(key);
       const skills: Skill[] = commands.map((command) => ({
@@ -303,7 +311,7 @@ function startCatalogLoad(
 }
 
 async function loadCatalog(context: SkillCatalogContext): Promise<Skill[]> {
-  const provider = getHarness(context.harness)?.commands;
+  const provider = nativeCommands(context.harness);
   if (provider) {
     const commands = await provider.discover(context);
     return commands.map((command): NativeSkill => ({

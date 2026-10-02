@@ -4,7 +4,7 @@ import type { HarnessId } from "../../sessions/model/session";
 import {
   compareSemver,
   parseOpenCodeVersion,
-} from "../../../integrations/harness/providers/opencode/opencodeProtocol";
+} from "./cliVersions";
 
 /**
  * Harnesses with an npm version feed and a self-updater MonoCode can run.

@@ -54,11 +54,6 @@ describe("composer skill catalog policies", () => {
     ).toEqual([cachedSkill]);
   });
 
-  it("preserves filesystem refresh while Pi uses its TTL", () => {
-    expect(pickerSkillLoadOptions("pi")).toBeUndefined();
-    expect(pickerSkillLoadOptions("omp")).toBeUndefined();
-    expect(pickerSkillLoadOptions("claude")).toEqual({ refresh: true });
-  });
 
   it("does not reuse a context token after A to B to A", () => {
     const firstA = nextComposerSkillContextToken(null, "pi\0/a");

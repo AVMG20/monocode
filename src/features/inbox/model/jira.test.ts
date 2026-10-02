@@ -19,7 +19,6 @@ import {
   inboxItemStatus,
   inboxStartDraft,
 } from "./githubTasks";
-import { inboxTrackerDescription } from "./inboxContext";
 import {
   clearPendingInboxSelfActivity,
   consumeInboxSelfActivity,
@@ -129,22 +128,6 @@ describe("Jira inbox", () => {
     expect(result.errors).toEqual({ jira: "Jira settings are invalid" });
   });
 
-  it("provides Jira description and identifier to sessions", async () => {
-    const description = await inboxTrackerDescription(issue);
-    expect(invoke).toHaveBeenCalledWith("jira_issue_details", {
-      key: "ENG-42",
-    });
-    expect(inboxStartDraft(issue, description)).toContain("ENG-42 Fix auth");
-    expect(inboxStartDraft(issue, description)).toContain("Reproduction steps");
-    vi.mocked(invoke).mockClear();
-    expect(await inboxTrackerDescription(issue, "Provided description")).toBe(
-      "Provided description",
-    );
-    expect(invoke).not.toHaveBeenCalled();
-    await expect(
-      inboxTrackerDescription({ ...issue, identifier: "" }),
-    ).rejects.toThrow("Missing Jira issue key");
-  });
 
   it("invalidates comments and suppresses notifications for the author's own comment", async () => {
     await jiraIssueThread(issue.identifier);
