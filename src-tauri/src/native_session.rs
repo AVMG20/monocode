@@ -56,6 +56,8 @@ struct Tracked {
     pid: u32,
     /// Written by Claude's hooks. Providers without hooks stay `idle`.
     status_file: Option<PathBuf>,
+    /// Lets a later launch stop this CLI if the app dies; removed on exit.
+    pid_file: PathBuf,
     last: String,
 }
 
@@ -110,6 +112,13 @@ pub fn native_session_spawn(
 ) -> Result<NativeSpawnResult, String> {
     if !PROVIDERS.contains(&provider.as_str()) {
         return Err(format!("Unsupported native session provider: {provider}"));
+    }
+    // Never fall back to another folder (the PTY would use the home
+    // directory): an agent must only run where its session lives.
+    if !crate::fs::expand_home(&cwd).is_dir() {
+        return Err(format!(
+            "This session's folder no longer exists: {cwd}. Reopen the project from its new location."
+        ));
     }
     let binary = resolve_binary(&harness, &provider)?
         .ok_or_else(|| not_installed_message(&provider).to_string())?;
@@ -168,14 +177,26 @@ pub fn native_session_spawn(
     };
 
     let initial_prompt = initial_prompt.filter(|prompt| !prompt.trim().is_empty());
-    let prompt_delivered = initial_prompt.is_some() && provider != "antigravity";
+    let prompt_delivered = initial_prompt.is_some() && takes_prompt_argument(&provider, resume);
     let args = match initial_prompt {
-        Some(prompt) => with_initial_prompt(&provider, args, &prompt),
-        None => args,
+        Some(prompt) if prompt_delivered => with_initial_prompt(&provider, args, &prompt),
+        _ => args,
     };
 
     let pid_file = session_dir(&app, &id)?.join("pid");
-    stop_stale_cli(&pid_file, &binary);
+    // Claude's command line names this session's own settings file; other
+    // CLIs can only be matched by their binary.
+    let marker = status_file
+        .as_ref()
+        .and_then(|status| status.parent())
+        .map(|dir| dir.join("settings.json").to_string_lossy().into_owned())
+        .unwrap_or_else(|| {
+            binary
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        });
+    stop_stale_cli(&pid_file, &marker);
 
     let pid = crate::pty::spawn_pty(
         app.clone(),
@@ -197,11 +218,17 @@ pub fn native_session_spawn(
 
     let start_watcher = {
         let mut inner = sessions.lock();
+        // A newer spawn for this id may have replaced ours while it ran;
+        // tracking this one would report the live session as exited.
+        if host.pid_of(&id) != Some(pid) {
+            return Err("The session was restarted while it was starting.".into());
+        }
         inner.tracked.insert(
             id.clone(),
             Tracked {
                 pid,
                 status_file,
+                pid_file: pid_file.clone(),
                 last: STATUS_IDLE.into(),
             },
         );
@@ -265,6 +292,7 @@ fn watch_statuses(app: AppHandle) {
             let mut inner = sessions.lock();
             inner.tracked.retain(|id, tracked| {
                 if host.pid_of(id) != Some(tracked.pid) {
+                    remove_pid_file(&tracked.pid_file, tracked.pid);
                     events.push((id.clone(), STATUS_EXITED.to_string()));
                     return false;
                 }
@@ -352,11 +380,33 @@ fn not_installed_message(provider: &str) -> &'static str {
 
 fn simple_args(provider: &str, resume: bool) -> Vec<String> {
     let args: &[&str] = match (provider, resume) {
-        ("codex", true) => &["resume", "--last"],
+        // The picker lists this folder's conversations. `--last` would pick
+        // whichever ran most recently, which may belong to another tab.
+        ("codex", true) => &["resume"],
         ("opencode", true) => &["--continue"],
         _ => &[],
     };
     args.iter().map(|arg| (*arg).to_string()).collect()
+}
+
+/// Whether the CLI gets its first prompt as an argument. Otherwise the app
+/// types it into the TUI once it is up.
+///
+/// - Antigravity has no prompt argument.
+/// - `codex resume` opens a session picker, where a positional prompt would
+///   be read as a session id.
+/// - On Windows the CLIs are usually `.cmd` shims run through `cmd.exe`,
+///   which does not honour argument quoting: free text there could run
+///   commands, and newlines cut it short.
+fn takes_prompt_argument(provider: &str, resume: bool) -> bool {
+    if cfg!(windows) {
+        return false;
+    }
+    match provider {
+        "antigravity" => false,
+        "codex" => !resume,
+        _ => true,
+    }
 }
 
 /// Hand the CLI its first prompt on the command line, so it starts working at
@@ -410,7 +460,7 @@ fn claude_transcript_exists(config_dir: &Path, conversation_id: &str) -> bool {
 /// Stop a CLI that an earlier MonoCode started for this session but never
 /// stopped (it crashed or was killed). Its terminal is gone, yet it would
 /// keep holding the conversation alongside the one about to start.
-fn stop_stale_cli(pid_file: &Path, binary: &Path) {
+fn stop_stale_cli(pid_file: &Path, marker: &str) {
     let Ok(raw) = std::fs::read_to_string(pid_file) else {
         return;
     };
@@ -420,8 +470,18 @@ fn stop_stale_cli(pid_file: &Path, binary: &Path) {
     };
     // The pid may since belong to an unrelated process: only stop it when it
     // is still running this provider's CLI.
-    if running_command(pid).is_some_and(|command| command_runs(&command, binary)) {
+    if running_command(pid).is_some_and(|command| command_runs(&command, marker)) {
         crate::pty::terminate(pid);
+    }
+}
+
+/// Forget an exited CLI, unless a newer one already took over the file.
+fn remove_pid_file(pid_file: &Path, pid: u32) {
+    let recorded = std::fs::read_to_string(pid_file)
+        .ok()
+        .and_then(|raw| parse_pid(&raw));
+    if recorded == Some(pid) {
+        let _ = std::fs::remove_file(pid_file);
     }
 }
 
@@ -429,11 +489,8 @@ fn parse_pid(raw: &str) -> Option<u32> {
     raw.trim().parse::<u32>().ok().filter(|pid| *pid > 1)
 }
 
-fn command_runs(command: &str, binary: &Path) -> bool {
-    binary
-        .file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| command.contains(name))
+fn command_runs(command: &str, marker: &str) -> bool {
+    !marker.is_empty() && command.contains(marker)
 }
 
 #[cfg(unix)]
@@ -501,20 +558,27 @@ fn hook_command(word: &str, path: &Path) -> String {
 }
 
 fn claude_hook_settings(status_file: &Path) -> serde_json::Value {
-    let entry = |matcher: &str, word: &str| {
-        serde_json::json!([{
+    let matcher = |matcher: &str, word: &str| {
+        serde_json::json!({
             "matcher": matcher,
             "hooks": [{ "type": "command", "command": hook_command(word, status_file) }],
-        }])
+        })
     };
+    let entry = |word: &str| serde_json::json!([matcher("", word)]);
     serde_json::json!({
         "hooks": {
-            "SessionStart": entry("", STATUS_IDLE),
-            "UserPromptSubmit": entry("", STATUS_RUNNING),
-            "PreToolUse": entry("", STATUS_RUNNING),
-            "PostToolUse": entry("", STATUS_RUNNING),
-            "Notification": entry("permission_prompt|elicitation_dialog", STATUS_WAITING),
-            "Stop": entry("", STATUS_IDLE),
+            "SessionStart": entry(STATUS_IDLE),
+            "UserPromptSubmit": entry(STATUS_RUNNING),
+            "PreToolUse": entry(STATUS_RUNNING),
+            "PostToolUse": entry(STATUS_RUNNING),
+            "Notification": [
+                matcher("permission_prompt|elicitation_dialog", STATUS_WAITING),
+                // Claude has been waiting for a new prompt for a while. No Stop
+                // hook fires after an interrupt (Esc), so this resets a status
+                // that would otherwise stay "working".
+                matcher("idle_prompt", STATUS_IDLE),
+            ],
+            "Stop": entry(STATUS_IDLE),
         }
     })
 }
@@ -552,14 +616,20 @@ mod tests {
         assert_eq!(parse_pid(" 4242\n"), Some(4242));
         assert_eq!(parse_pid("1"), None);
         assert_eq!(parse_pid("nope"), None);
-        let claude = Path::new("/opt/bin/claude");
-        assert!(command_runs("/opt/bin/claude --session-id x", claude));
-        assert!(!command_runs("/usr/bin/vim notes.md", claude));
+        let settings = "/data/native-sessions/s1/settings.json";
+        assert!(command_runs(
+            "/opt/bin/claude --session-id x --settings /data/native-sessions/s1/settings.json",
+            settings,
+        ));
+        // The user's own claude, or another session's, is left alone.
+        assert!(!command_runs("/opt/bin/claude --session-id x", settings));
+        assert!(!command_runs("/usr/bin/vim notes.md", "claude"));
+        assert!(!command_runs("anything", ""));
     }
 
     #[test]
     fn simple_args_per_provider() {
-        assert_eq!(simple_args("codex", true), vec!["resume", "--last"]);
+        assert_eq!(simple_args("codex", true), vec!["resume"]);
         assert!(simple_args("codex", false).is_empty());
         assert_eq!(simple_args("opencode", true), vec!["--continue"]);
         assert!(simple_args("opencode", false).is_empty());

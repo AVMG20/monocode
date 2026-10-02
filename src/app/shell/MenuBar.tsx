@@ -189,9 +189,6 @@ export function MenuBar({
         case "toggle_session_sidebar":
           onToggleSessionSidebar();
           break;
-        case "open_model_picker":
-          window.dispatchEvent(new Event("open_model_picker"));
-          break;
         case "toggle_diff":
           onShowSourceControl?.();
           break;
@@ -351,12 +348,6 @@ export function MenuBar({
             id: "toggle_terminal",
             label: "Toggle Terminal",
             shortcut: shortcut("Terminal: Toggle Dock", `${MOD}J`),
-          },
-          {
-            kind: "item",
-            id: "open_model_picker",
-            label: "Switch Model…",
-            shortcut: shortcut("App: Switch Model", `${MOD}.`),
           },
           ...(onShowSourceControl
             ? [

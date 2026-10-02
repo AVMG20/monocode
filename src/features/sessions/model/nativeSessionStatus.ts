@@ -1,5 +1,4 @@
 import {
-  nativeSessionStatuses,
   subscribeNativeSessionStatus,
   type NativeSessionStatus,
 } from "../../../platform/tauri/nativeSession";
@@ -38,20 +37,6 @@ function ensureBridge() {
   );
 }
 
-/** Pull current statuses for sessions whose events fired before we listened. */
-export async function refreshNativeSessionStatuses(ids: string[]): Promise<void> {
-  if (!ids.length) return;
-  ensureBridge();
-  const current = await nativeSessionStatuses(ids).catch(() => null);
-  if (!current) return;
-  for (const [id, status] of Object.entries(current)) {
-    setNativeSessionStatus(
-      id,
-      status === "exited" ? null : (status as NativeSessionStatus),
-    );
-  }
-}
-
 export function subscribeNativeStatuses(listener: () => void): () => void {
   ensureBridge();
   listeners.add(listener);
@@ -82,36 +67,65 @@ export type NativeTurnOutcome = "completed" | "failed";
 
 /**
  * Call `settle` once the session's next agent turn ends: it reported
- * `running` and later `idle`, or the CLI went away. Providers without status
- * hooks never report `running`, so their turn settles after `fallbackMs`.
+ * `running` and later `idle`, or the CLI went away.
+ *
+ * - `hooks`: the CLI reports status (Claude Code). Without hooks a CLI never
+ *   reports `running`, so its turn is assumed done after `fallbackMs`.
+ * - `maxMs`: a turn still unsettled by then (a hook that never fired, e.g.
+ *   after an interrupt) settles as failed so nothing waits forever.
  */
 export function watchNativeTurn(
   id: string,
   settle: (outcome: NativeTurnOutcome) => void,
-  fallbackMs = 30_000,
+  {
+    hooks = false,
+    fallbackMs = 30_000,
+    maxMs = 6 * 60 * 60_000,
+  }: { hooks?: boolean; fallbackMs?: number; maxMs?: number } = {},
 ): () => void {
-  let sawRunning = statuses.get(id) === "running";
+  // A turn already in progress is not this prompt's turn: wait for it to
+  // end, then for the next one to start.
+  let busyBefore = statuses.get(id) === "running";
+  let sawRunning = false;
   let done = false;
+  const timers: ReturnType<typeof setTimeout>[] = [];
   const finish = (outcome: NativeTurnOutcome) => {
     if (done) return;
     done = true;
     listeners.delete(check);
-    clearTimeout(timer);
+    for (const timer of timers) clearTimeout(timer);
     settle(outcome);
   };
   const check = () => {
     const status = statuses.get(id);
+    if (busyBefore) {
+      if (status !== "running") busyBefore = false;
+      if (status === undefined) finish("failed");
+      return;
+    }
     if (status === "running" || status === "waiting") sawRunning = true;
     else if (sawRunning) finish(status === "idle" ? "completed" : "failed");
   };
-  const timer = setTimeout(() => {
-    if (!sawRunning) finish("completed");
-  }, fallbackMs);
+  if (!hooks) {
+    timers.push(
+      setTimeout(() => {
+        if (!sawRunning) finish("completed");
+      }, fallbackMs),
+    );
+  }
+  timers.push(setTimeout(() => finish("failed"), maxMs));
   ensureBridge();
   listeners.add(check);
   return () => {
     done = true;
     listeners.delete(check);
-    clearTimeout(timer);
+    for (const timer of timers) clearTimeout(timer);
   };
+}
+
+/** Native sessions whose CLI is waiting on the user. */
+export function nativeWaitingIds(map: NativeStatusMap = statuses): Set<string> {
+  return new Set(
+    [...map].flatMap(([id, status]) => (status === "waiting" ? [id] : [])),
+  );
 }

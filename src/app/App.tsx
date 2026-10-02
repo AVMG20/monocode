@@ -3,6 +3,15 @@ import {
   SHOW_SOURCE_CONTROL,
   sidebarTabEnabled,
 } from "./model/features";
+import { useNativeSessionAlerts } from "../features/notifications/hooks/useNativeSessionAlerts";
+import {
+  createWorktree,
+  temporaryWorktreeBranchName,
+} from "../features/source-control/model/worktrees";
+import { listen } from "@tauri-apps/api/event";
+import { runUpdateFlow } from "./model/updater";
+import { NOTIFICATION_CLICK_EVENT } from "../features/notifications/model/notifications";
+import { saveAutosave } from "../features/settings/model/settings";
 import type { NativeProviderId } from "../platform/tauri/nativeSession";
 import { submitWithSettlement } from "./model/managedSubmission";
 import { type SubmissionAcceptance } from "./model/submissionAcceptance";
@@ -302,7 +311,7 @@ import {
 } from "../features/sessions/model/nativeSession";
 import {
   nativeStatusesSnapshot,
-  refreshNativeSessionStatuses,
+  nativeWaitingIds,
   subscribeNativeStatuses,
   watchNativeTurn,
 } from "../features/sessions/model/nativeSessionStatus";
@@ -312,7 +321,7 @@ import {
   nativeLaunchPatch,
   nativeTerminalIds,
   startNativeTerminal,
-  sendToNativeTerminal,
+  deliverNativePrompt,
   setNativeInitialPrompt,
 } from "../features/sessions/ui/nativeTerminals";
 import { ProjectTerminalDock } from "../features/terminal/ui/ProjectTerminalDock";
@@ -1033,6 +1042,7 @@ function Workspace({
   activeSessionIdRef.current = activeSessionId;
 
   useInputNotifications(sessions, activeSessionId);
+  useNativeSessionAlerts(sessions, nativeStatuses, activeSessionId);
 
   // Cache the OS decision so a turn ending later can skip a denied banner.
   useEffect(() => {
@@ -1067,7 +1077,7 @@ function Workspace({
   const [reminderNoticesHeight, setReminderNoticesHeight] = useState(0);
 
   useEffect(() => {
-    syncDockBadge(sessions);
+    syncDockBadge(sessions, nativeWaitingIds());
   }, [sessions]);
 
   useEffect(() => {
@@ -1076,7 +1086,7 @@ function Workspace({
       .onFocusChanged(({ payload: focused }) => {
         setWindowFocused(focused);
         if (focused) {
-          syncDockBadge(sessionsRef.current);
+          syncDockBadge(sessionsRef.current, nativeWaitingIds());
           if (
             document.activeElement === document.body &&
             !projectTerminalFocusedRef.current &&
@@ -1396,6 +1406,7 @@ function Workspace({
       (session) =>
         !visibleIds.has(session.id) &&
         !session.busy &&
+        !nativeSessionLive(session.id) &&
         !openingSessionIds.current.has(session.id) &&
         !(keepUnseen && unseenFinishedRef.current.has(session.id)),
     );
@@ -1412,6 +1423,7 @@ function Workspace({
         (session) =>
           visibleIds.has(session.id) ||
           session.busy ||
+          nativeSessionLive(session.id) ||
           openingSessionIds.current.has(session.id) ||
           (keepUnseen && unseenFinishedRef.current.has(session.id)) ||
           skipForgetSessionIds.current.has(session.id),
@@ -1430,6 +1442,8 @@ function Workspace({
     tabs,
     liveAgentsEnabled,
     detachIdleSessions,
+    // A background CLI that finishes can now be detached.
+    nativeStatuses,
   ]);
 
   useEffect(
@@ -1847,9 +1861,6 @@ function Workspace({
     }
   }, [sessions]);
 
-  useEffect(() => {
-    void refreshNativeSessionStatuses(nativeTerminalIds());
-  }, []);
 
   const onNewTerminalInSession = useCallback(
     (sessionId: string) => {
@@ -4431,38 +4442,75 @@ function Workspace({
         .filter(Boolean)
         .join(" ");
       if (!prompt) return false;
+      // The CLI runs in the session's folder on this computer; never fall
+      // back to another directory when that folder is gone or remote.
+      if (current.worktreeRemoved || isRemoteProjectPath(current.cwd))
+        return false;
       if (options?.onSettled) {
         const onSettled = options.onSettled;
-        watchNativeTurn(sessionId, (outcome) =>
-          onSettled(
-            outcome === "completed"
-              ? { status: "completed", text: "" }
-              : { status: "failed", text: "", error: "The session ended" },
-          ),
+        watchNativeTurn(
+          sessionId,
+          (outcome) =>
+            onSettled(
+              outcome === "completed"
+                ? { status: "completed", text: "" }
+                : { status: "failed", text: "", error: "The session ended" },
+            ),
+          { hooks: current.harness === "claude" },
         );
       }
       // A chat-era session from another provider has a provider id but no
       // native CLI to resume, so it starts a new one.
       const native =
         !!current.providerSessionId && isNativeProvider(current.harness);
-      if (native && sendToNativeTerminal(sessionId, prompt)) return true;
-      let launched = current;
-      if (native) {
-        // Its CLI is not running: hand the prompt to the resumed one.
-        setNativeInitialPrompt(sessionId, prompt);
-      } else {
-        const patch = nativeLaunchPatch(current, prompt);
-        launched = { ...current, ...patch };
-        onNativeSessionPatch(sessionId, patch);
+      if (native && deliverNativePrompt(sessionId, prompt) !== "none")
+        return true;
+
+      const start = (session: Session) => {
+        let launched = session;
+        if (native) {
+          // No CLI is running: the resumed one starts with the prompt.
+          setNativeInitialPrompt(sessionId, prompt);
+        } else {
+          const patch = nativeLaunchPatch(session, prompt);
+          launched = { ...session, ...patch };
+          onNativeSessionPatch(sessionId, patch);
+        }
+        // Run it now even if its tab is in the background.
+        startNativeTerminal(sessionId, {
+          cwd: sessionWorkCwd(launched),
+          provider: launched.harness as NativeProviderId,
+          accountId: launched.providerAccountId,
+          conversationId: launched.providerSessionId!,
+        });
+        return true;
+      };
+
+      // Automations and new sessions can ask for a fresh worktree: create it
+      // first so the agent never runs in the main checkout by mistake.
+      if (!current.worktreeCwd && current.workspaceMode === "worktree") {
+        return createWorktree(
+          current.cwd,
+          temporaryWorktreeBranchName(),
+          current.worktreeBase || "HEAD",
+          false,
+        ).then((tree) => {
+          const placed: Session = {
+            ...(sessionsRef.current.find((s) => s.id === sessionId) ??
+              current),
+            worktreeCwd: tree.path,
+            branch: tree.branch ?? undefined,
+            workspaceMode: undefined,
+            worktreeBase: undefined,
+          };
+          sessionsRef.current = sessionsRef.current.map((s) =>
+            s.id === sessionId ? placed : s,
+          );
+          setSessions(sessionsRef.current);
+          return start(placed);
+        });
       }
-      // Run it now even if its tab is in the background.
-      startNativeTerminal(sessionId, {
-        cwd: sessionWorkCwd(launched),
-        provider: launched.harness as NativeProviderId,
-        accountId: launched.providerAccountId,
-        conversationId: launched.providerSessionId!,
-      });
-      return true;
+      return start(current);
     },
     [onNativeSessionPatch],
   );
@@ -4496,8 +4544,16 @@ function Workspace({
             ? sessionsRef.current.find(
                 (entry) =>
                   entry.id === automation.lastSessionId &&
-                  entry.harness === automation.harness &&
+                  entry.harness ===
+                    (isNativeProvider(automation.harness)
+                      ? automation.harness
+                      : "claude") &&
                   !entry.busy &&
+                  // A native CLI mid-turn is busy even though `busy` is
+                  // only set by the chat runtime.
+                  !["running", "waiting"].includes(
+                    nativeStatusesSnapshot().get(entry.id) ?? "",
+                  ) &&
                   !entry.worktreeRemoved &&
                   !automationSessionReservations.current.has(entry.id) &&
                   (automation.workspaceMode === "current"
@@ -5491,6 +5547,106 @@ function Workspace({
     return () => window.removeEventListener("keydown", onKey, true);
   }, [run]);
 
+  useEffect(() => {
+    const unlisten: Array<Promise<() => void>> = [
+      listen("new_tab", () => run("new", actions.current.onNewTabInFocus)),
+      listen("close_other_tabs", () =>
+        run("close-others", actions.current.onCloseOtherTabs),
+      ),
+      listen("close_all_tabs", () =>
+        run("close-all", actions.current.onCloseAllTabs),
+      ),
+      listen("close_tab", () => run("close", actions.current.onCloseInFocus)),
+      listen<boolean>("toggle_autosave", ({ payload }) => {
+        const saved = saveAutosave(payload);
+        if (saved !== payload && IS_MAC) {
+          void invoke("autosave_set_enabled", { enabled: saved });
+        }
+      }),
+      listen("next_tab", () => run("next", actions.current.onNext)),
+      listen("prev_tab", () => run("prev", actions.current.onPrev)),
+      listen("back_tab", () => run("back", actions.current.onVisitBack)),
+      listen("forward_tab", () =>
+        run("forward", actions.current.onVisitForward),
+      ),
+      listen("split_right", () =>
+        run("split-right", () => actions.current.onSplit("right")),
+      ),
+      listen("split_down", () =>
+        run("split-down", () => actions.current.onSplit("down")),
+      ),
+      listen("new_terminal", () =>
+        run("new-terminal", actions.current.onNewTerminal),
+      ),
+      listen("new_terminal_tab", () =>
+        run("new-terminal-tab", actions.current.onNewTerminalTab),
+      ),
+      listen("toggle_terminal", () =>
+        run("toggle-terminal", actions.current.onToggleProjectTerminal),
+      ),
+      listen("focus_left", () =>
+        run("focus-left", () => actions.current.onFocusDir("left")),
+      ),
+      listen("focus_right", () =>
+        run("focus-right", () => actions.current.onFocusDir("right")),
+      ),
+      listen("focus_up", () =>
+        run("focus-up", () => actions.current.onFocusDir("up")),
+      ),
+      listen("focus_down", () =>
+        run("focus-down", () => actions.current.onFocusDir("down")),
+      ),
+      listen("toggle_sidebar", () =>
+        run("toggle_sidebar", actions.current.onToggleSidebar),
+      ),
+      listen("toggle_session_sidebar", () =>
+        run("toggle_session_sidebar", actions.current.onToggleSessionSidebar),
+      ),
+      listen("open_project", () => {
+        void actions.current.pickProject();
+      }),
+      listen("reload", () => run("reload", actions.current.onReload)),
+      listen("open_search", () => actions.current.onOpenSearch()),
+      listen("open_notes", () => actions.current.onOpenNotes()),
+      listen("open_settings", () => actions.current.openSettings()),
+      listen("check_for_updates", () => {
+        void runUpdateFlow(true);
+      }),
+      listen("sidebar_opacity", () => {
+        actions.current.openSettings("appearance");
+      }),
+      // Every window hears the click; only the one holding the session acts.
+      listen<string>(NOTIFICATION_CLICK_EVENT, ({ payload: sessionId }) => {
+        if (!sessionsRef.current.some((s) => s.id === sessionId)) return;
+        const win = getCurrentWindow();
+        // Windows leaves a minimized window minimized when it is only focused.
+        void win
+          .unminimize()
+          .then(() => win.setFocus())
+          .catch(() => {});
+        actions.current.onOpenApprovalSession(sessionId);
+      }),
+      listen("zoom_in", () => {
+        const next = zoomInUiScale(loadUiScale());
+        saveUiScale(next);
+        void applyUiScale(next);
+      }),
+      listen("zoom_out", () => {
+        const next = zoomOutUiScale(loadUiScale());
+        saveUiScale(next);
+        void applyUiScale(next);
+      }),
+      listen("zoom_reset", () => {
+        saveUiScale(UI_SCALE_DEFAULT);
+        void applyUiScale(UI_SCALE_DEFAULT);
+      }),
+    ];
+    return () => {
+      void Promise.all(unlisten).then((fns) => fns.forEach((fn) => fn()));
+    };
+  }, [run]);
+
+
   const dockGridRef = useRef<HTMLDivElement>(null);
   const dockDragSize = useRef<number | null>(null);
   const paintDockSize = useCallback((size: number) => {
@@ -5994,6 +6150,15 @@ function Workspace({
     </>
   );
 }
+/**
+ * A native CLI that is mid-turn or waiting on the user. Like a busy chat it
+ * keeps running in the background when its tab closes.
+ */
+function nativeSessionLive(id: string): boolean {
+  const status = nativeStatusesSnapshot().get(id);
+  return status === "running" || status === "waiting";
+}
+
 function conversationTitle(session: Session): string {
   const hostId = isRemoteProjectPath(session.cwd)
     ? remoteSessionFor(session.id)

@@ -50,6 +50,8 @@ const HIDDEN_KEYBINDINGS = new Set<string>([
         "Editor: Replace",
       ]),
   ...(SHOW_SOURCE_CONTROL ? [] : ["Composer: Toggle Workspace"]),
+  // The model picker belonged to the chat composer; each CLI picks its model.
+  "App: Switch Model",
 ]);
 
 export function keybindingVisible(command: string): boolean {

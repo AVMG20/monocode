@@ -52,6 +52,8 @@ type Entry = {
   state: NativeTerminalState;
   /** The CLI process was spawned and accepts input. */
   started: boolean;
+  /** Prompts sent while the CLI was still starting; typed once it is up. */
+  pendingPrompts: string[];
   listeners: Set<(state: NativeTerminalState) => void>;
   onTitle?: (title: string) => void;
   fit: () => void;
@@ -71,18 +73,44 @@ export function setNativeInitialPrompt(id: string, prompt: string): void {
   initialPrompts.set(id, queued ? `${queued}\n\n${prompt}` : prompt);
 }
 
-/**
- * Send a prompt to a session whose CLI is already running, as a bracketed
- * paste followed by Enter. Returns false when no live CLI can take it.
- */
-export function sendToNativeTerminal(id: string, prompt: string): boolean {
-  const entry = entries.get(id);
-  if (!entry || entry.state.exited || !entry.started) return false;
-  void writePty(id, `\x1b[200~${prompt}\x1b[201~`)
+/** Strip escape sequences so pasted text cannot end the paste early. */
+function pasteSafe(prompt: string): string {
+  return prompt.replace(/\x1b/g, "");
+}
+
+function typePrompt(id: string, prompt: string) {
+  void writePty(id, `\x1b[200~${pasteSafe(prompt)}\x1b[201~`)
     .then(() => new Promise((resolve) => setTimeout(resolve, 60)))
     .then(() => writePty(id, "\r"))
     .catch(() => undefined);
-  return true;
+}
+
+/** Time a freshly spawned TUI gets to draw before a prompt is typed in. */
+const TUI_READY_MS = 1500;
+
+/**
+ * Hand a prompt to the session's CLI if one is running or starting:
+ * `"sent"` types it in now, `"queued"` types it once the CLI is up, and
+ * `"none"` means no live CLI (an exited one is cleared) so the caller must
+ * start one with the prompt.
+ */
+export function deliverNativePrompt(
+  id: string,
+  prompt: string,
+): "sent" | "queued" | "none" {
+  const entry = entries.get(id);
+  if (!entry) return "none";
+  if (entry.state.exited) {
+    entries.delete(id);
+    entry.dispose();
+    return "none";
+  }
+  if (!entry.started) {
+    entry.pendingPrompts.push(prompt);
+    return "queued";
+  }
+  typePrompt(id, prompt);
+  return "sent";
 }
 
 /**
@@ -162,6 +190,7 @@ function createEntry(id: string, launch: NativeLaunch): Entry {
     host,
     state: { exited: false },
     started: false,
+    pendingPrompts: [],
     listeners: new Set(),
     fit: () => {},
     dispose: () => {},
@@ -290,17 +319,33 @@ function createEntry(id: string, launch: NativeLaunch): Entry {
       initialPrompt,
     })
       .then((result) => {
-        if (closed) return;
+        if (closed) {
+          // Disposed while spawning: nothing will wait on `starting`, so stop
+          // the CLI that just came up instead of leaving it headless.
+          void killPty(id);
+          return;
+        }
         spawned = true;
         entry.started = true;
         resolveStart();
-        if (initialPrompt && !result.promptDelivered) {
-          // No prompt argument: give the TUI a moment to draw, then type it.
-          setTimeout(() => sendToNativeTerminal(id, initialPrompt), 1500);
+        const typed = [
+          ...(initialPrompt && !result.promptDelivered ? [initialPrompt] : []),
+          ...entry.pendingPrompts.splice(0),
+        ];
+        if (typed.length) {
+          // Give the TUI a moment to draw, then type what is waiting.
+          setTimeout(() => {
+            if (!closed) for (const prompt of typed) typePrompt(id, prompt);
+          }, TUI_READY_MS);
         }
       })
       .catch((error: unknown) => {
-        if (initialPrompt) setNativeInitialPrompt(id, initialPrompt);
+        if (fresh) freshLaunches.add(id);
+        for (const prompt of [
+          ...(initialPrompt ? [initialPrompt] : []),
+          ...entry.pendingPrompts.splice(0),
+        ])
+          setNativeInitialPrompt(id, prompt);
         const message = error instanceof Error ? error.message : String(error);
         if (!closed) {
           term.writeln(`\x1b[31m${message}\x1b[0m`);

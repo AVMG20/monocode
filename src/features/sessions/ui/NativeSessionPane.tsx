@@ -77,6 +77,14 @@ export function NativeSessionPane({
 }: Props) {
   const launched =
     !!session.providerSessionId && isNativeProvider(session.harness);
+  if (session.worktreeRemoved) {
+    return (
+      <div className="flex h-full items-center justify-center p-6 text-center text-[13px] text-content/50">
+        This session's worktree was removed, so its agent has no folder to run
+        in.
+      </div>
+    );
+  }
   if (isRemoteProjectPath(session.cwd)) {
     return (
       <div className="flex h-full items-center justify-center p-6 text-center text-[13px] text-content/50">
@@ -228,7 +236,11 @@ function NativeTerminalSurface({
               className="rounded-md bg-selection px-2.5 py-1 text-content hover:bg-selection-hover"
               onClick={restart}
             >
-              {state.error ? "Try again" : "Resume"}
+              {state.error
+                ? "Try again"
+                : session.harness === "antigravity"
+                  ? "Start again"
+                  : "Resume"}
             </button>
           </div>
         </div>
