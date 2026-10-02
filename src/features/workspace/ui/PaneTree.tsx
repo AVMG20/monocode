@@ -470,6 +470,7 @@ function PaneTreeComponent({
                 focused={focusedId === session.id}
                 onFocus={onFocus}
                 onPatch={onNativeSessionPatch}
+                onNewTerminal={onNewTerminal}
               />
             ) : session ? (
               <SessionPane

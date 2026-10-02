@@ -40,8 +40,10 @@ import {
   collectWorkspaceSnapshot,
   hydrateWorkspaceSnapshot,
   parseWorkspaceSnapshot,
+  withoutSnapshotFiles,
 } from "../../features/workspace/model/workspaceSnapshot";
 import { loadWindowTransfer } from "./windowTransferBootstrap";
+import { isHiddenSurfaceFile } from "./hiddenSurfaces";
 import type { WindowTransferPayload } from "./windowTransfer";
 import { lastProjectPath, normalizeProjectPath, sameProjectPath } from "../../features/projects/model/recents";
 import type { ProjectReturnMemory } from "../../features/projects/model/projectReturn";
@@ -277,7 +279,11 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
     listInFlightSessions().catch(() => []),
   ]);
   const interrupted = new Set(refs.map((ref) => ref.sessionId));
-  const snapshot = parseWorkspaceSnapshot(snapshotRaw);
+  const parsed = parseWorkspaceSnapshot(snapshotRaw);
+  // Saved layouts may hold editor or diff panes this build no longer shows.
+  const snapshot = parsed
+    ? withoutSnapshotFiles(parsed, isHiddenSurfaceFile)
+    : null;
 
   const ids = new Set<string>();
   if (snapshot) {

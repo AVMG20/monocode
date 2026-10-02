@@ -51,12 +51,15 @@ import {
   type SessionSummary,
 } from "../../sessions/data/sessionStore";
 
-const SCOPES: { id: SearchScope; label: string }[] = [
+const ALL_SCOPES: { id: SearchScope; label: string }[] = [
   { id: "all", label: "All" },
   { id: "conversations", label: "Conversations" },
   { id: "files", label: "Files" },
   { id: "projects", label: "Projects" },
-].filter((scope) => SHOW_FILES || scope.id !== "files");
+];
+const SCOPES = ALL_SCOPES.filter(
+  (scope) => SHOW_FILES || scope.id !== "files",
+);
 
 type Props = {
   open: boolean;

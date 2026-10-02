@@ -4,6 +4,7 @@ import {
   type NativeProviderId,
 } from "../../../platform/tauri/nativeSession";
 import {
+  providerAccountLabel,
   providerAccounts,
   selectProviderAccount,
   selectedProviderAccountId,
@@ -24,6 +25,8 @@ import {
   type NativeSessionPatch,
 } from "../model/nativeSession";
 import { HarnessIcon } from "./HarnessIcon";
+import { Terminal } from "../../../shared/ui/icons";
+
 import {
   attachNativeTerminal,
   disposeNativeTerminal,
@@ -38,6 +41,8 @@ type Props = {
   focused: boolean;
   onFocus: (sessionId: string) => void;
   onPatch: (sessionId: string, patch: NativeSessionPatch) => void;
+  /** Open an extra shell terminal below this session. */
+  onNewTerminal?: (sessionId: string) => void;
 };
 
 /**
@@ -51,6 +56,7 @@ export function NativeSessionPane({
   focused,
   onFocus,
   onPatch,
+  onNewTerminal,
 }: Props) {
   const launched =
     !!session.providerSessionId && isNativeProvider(session.harness);
@@ -59,6 +65,9 @@ export function NativeSessionPane({
       className="flex h-full min-h-0 w-full min-w-0 flex-col"
       onMouseDown={() => onFocus(session.id)}
     >
+      {launched ? (
+        <NativeSessionHeader session={session} onNewTerminal={onNewTerminal} />
+      ) : null}
       {launched ? (
         <NativeTerminalSurface
           session={session}
@@ -69,6 +78,51 @@ export function NativeSessionPane({
       ) : (
         <NativeSessionLauncher session={session} onPatch={onPatch} />
       )}
+    </div>
+  );
+}
+
+function NativeSessionHeader({
+  session,
+  onNewTerminal,
+}: {
+  session: Session;
+  onNewTerminal?: (sessionId: string) => void;
+}) {
+  const profileLabel = useSyncExternalStore(
+    subscribeProviderAccounts,
+    () =>
+      supportsProviderAccounts(session.harness)
+        ? providerAccountLabel(session.harness, session.providerAccountId)
+        : "",
+    () => "",
+  );
+  const multipleProfiles =
+    supportsProviderAccounts(session.harness) &&
+    providerAccounts(session.harness).length > 1;
+  return (
+    <div className="flex h-8 shrink-0 items-center gap-2 px-3 text-[12px] text-content/50">
+      <HarnessIcon harness={session.harness} className="size-3.5" />
+      <span className="truncate">{HARNESS_TITLE[session.harness]}</span>
+      {multipleProfiles ? (
+        <span className="truncate rounded-md bg-content/5 px-1.5 py-0.5 text-content/60">
+          {profileLabel}
+        </span>
+      ) : null}
+      <span className="flex-1" />
+      {onNewTerminal ? (
+        <button
+          type="button"
+          title="Open a terminal below this session"
+          aria-label="Open a terminal below this session"
+          className="flex items-center gap-1 rounded-md px-1.5 py-0.5 hover:bg-content/5 hover:text-content"
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={() => onNewTerminal(session.id)}
+        >
+          <Terminal className="size-3.5" />
+          <span>Terminal</span>
+        </button>
+      ) : null}
     </div>
   );
 }
