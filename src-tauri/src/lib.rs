@@ -5,9 +5,6 @@ mod automations;
 mod azure_devops;
 mod chat_background;
 mod checkpoint;
-mod control;
-pub mod control_cli;
-mod cursor_store;
 mod external_editor;
 mod fs;
 mod gitlab;
@@ -16,7 +13,6 @@ mod harness_updates;
 mod inbox_media;
 mod jira;
 mod linear;
-mod link_preview;
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
@@ -27,7 +23,6 @@ mod native_session;
 mod notes;
 mod notifications;
 mod pasteboard;
-mod pi_usage;
 mod project_logo;
 mod pty;
 mod rate_limits;
@@ -231,7 +226,6 @@ pub fn run() {
         .setup(|app| {
             harness::reap_orphaned_harness_processes();
             session_store::init(app.handle())?;
-            control::init(app.handle())?;
             reminders::init(app.handle());
             checkpoint::init(app.handle())?;
             menu::install(app.handle())?;
@@ -266,17 +260,6 @@ pub fn run() {
             remote::remote_ssh_poll,
             remote::remote_ssh_answer,
             remote::remote_ssh_cancel,
-            control::control_enable,
-            control::control_disable,
-            control::control_reply,
-            control::control_save,
-            control::control_load,
-            control::control_scopes,
-            control::control_write_path,
-            control::control_attach_worker,
-            control::control_authorize_turn,
-            control::control_turn_finished,
-            control::app_cli_path,
             default_cwd,
             home_dir,
             notifications::notification_permission,
@@ -376,7 +359,6 @@ pub fn run() {
             jira::jira_issue_details,
             jira::jira_issue_thread,
             jira::jira_issue_comment,
-            link_preview::fetch_link_preview,
             fs::git_branches,
             fs::git_checkout,
             fs::git_create_branch,
@@ -417,8 +399,6 @@ pub fn run() {
             skills::list_skills,
             search::search_project,
             search::cancel_project_search,
-            cursor_store::cursor_tool_calls,
-            cursor_store::cursor_subagent_runs,
             harness::harness_resolve_cursor,
             harness::harness_resolve_codex,
             harness::harness_resolve_opencode,
@@ -428,7 +408,6 @@ pub fn run() {
             harness::claude_mcp_list,
             mcp::mcp_discover,
             mcp::mcp_add,
-            harness::claude_mcp_add,
             harness::claude_mcp_remove,
             harness::mcp_provider_login,
             harness::harness_resolve_omp,
@@ -451,7 +430,6 @@ pub fn run() {
             harness_updates::harness_update,
             harness::provider_account_remove,
             account_identity::provider_account_identity,
-            pi_usage::fetch_pi_usage,
             rate_limits::fetch_claude_usage,
             rate_limits::fetch_opencode_go_usage,
             pty::pty_spawn,
@@ -549,7 +527,6 @@ pub fn run() {
             let other_window = window::workspace_windows(handle)
                 .iter()
                 .any(|window| window.label() != label);
-            control::window_closed(handle, &label);
             if !other_window {
                 reap_harness_children(handle);
             }

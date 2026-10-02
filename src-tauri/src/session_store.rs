@@ -1024,6 +1024,18 @@ fn remember_worker_from_blocks(
     Ok(())
 }
 
+#[cfg(test)]
+pub(crate) fn save_orchestration(
+    conn: &Connection,
+    lead: &str,
+    run: &Value,
+) -> rusqlite::Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    tx.execute("INSERT INTO orchestration_runs(lead_id, state) VALUES (?1, ?2) ON CONFLICT(lead_id) DO UPDATE SET state = excluded.state", params![lead, run.to_string()])?;
+    index_orchestration(&tx, lead, run)?;
+    tx.commit()
+}
+
 fn index_orchestration(conn: &Connection, lead: &str, run: &Value) -> rusqlite::Result<()> {
     let Some(tasks) = run["tasks"].as_array() else {
         return Ok(());
@@ -1042,17 +1054,6 @@ fn index_orchestration(conn: &Connection, lead: &str, run: &Value) -> rusqlite::
     let summary = serde_json::json!({ "status": run["status"], "tasks": summaries });
     conn.execute("INSERT INTO orchestration_sidebar(lead_id, summary) VALUES (?1, ?2) ON CONFLICT(lead_id) DO UPDATE SET summary = excluded.summary", params![lead, summary.to_string()])?;
     Ok(())
-}
-
-pub(crate) fn save_orchestration(
-    conn: &Connection,
-    lead: &str,
-    run: &Value,
-) -> rusqlite::Result<()> {
-    let tx = conn.unchecked_transaction()?;
-    tx.execute("INSERT INTO orchestration_runs(lead_id, state) VALUES (?1, ?2) ON CONFLICT(lead_id) DO UPDATE SET state = excluded.state", params![lead, run.to_string()])?;
-    index_orchestration(&tx, lead, run)?;
-    tx.commit()
 }
 
 fn worker_parent(conn: &Connection, id: &str) -> rusqlite::Result<Option<String>> {

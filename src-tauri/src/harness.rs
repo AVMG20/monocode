@@ -477,45 +477,6 @@ fn configured_ws_mcp_servers(cwd: &Path) -> Vec<String> {
     names
 }
 
-#[tauri::command]
-pub async fn claude_mcp_add(
-    host: State<'_, HarnessHost>,
-    cwd: String,
-    name: String,
-    config: String,
-    scope: String,
-) -> Result<(), String> {
-    if !valid_mcp_name(&name) {
-        return Err("Server name must use letters, numbers, hyphens, or underscores".into());
-    }
-    if !matches!(scope.as_str(), "local" | "project" | "user") {
-        return Err("Invalid MCP scope".into());
-    }
-    let value: serde_json::Value = serde_json::from_str(&config).map_err(|e| e.to_string())?;
-    if !value.is_object() {
-        return Err("Server configuration must be a JSON object".into());
-    }
-    let binary_path = host.runtime_binary_path("claude");
-    tauri::async_runtime::spawn_blocking(move || {
-        claude_mcp_command(
-            vec![
-                "mcp".into(),
-                "add-json".into(),
-                name,
-                config,
-                "--scope".into(),
-                scope,
-            ],
-            cwd,
-            Duration::from_secs(30),
-            binary_path.as_deref(),
-        )
-    })
-    .await
-    .map_err(|e| e.to_string())??;
-    Ok(())
-}
-
 pub(crate) fn add_mcp_via_cli(
     provider: &str,
     scope: &str,
@@ -857,8 +818,6 @@ pub fn harness_spawn(
         .stderr(Stdio::piped());
     prepare_child(&mut cmd, &command);
     apply_provider_account(&app, &mut cmd, account.as_ref())?;
-
-    crate::control::configure_child(&app, &session_id, &mut cmd);
 
     let mut child =
         spawn_managed(&mut cmd).map_err(|e| format!("Failed to start {command}: {e}"))?;
