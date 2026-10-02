@@ -597,11 +597,9 @@ describe("settings navigation", () => {
       "connections",
       "appearance",
       "keybindings",
-      "chat",
       "providers",
       "mcp",
       "skills",
-      "inbox",
       "archive",
       "worktrees",
     ]);
@@ -633,18 +631,17 @@ describe("settings search", () => {
     ]);
   });
 
-  it("finds a setting by a word that is not in its label", () => {
-    expect(searchSettings("steer")[0]).toMatchObject({
-      section: "chat",
-      sectionLabel: "Chat",
-      settingId: "follow-up",
-      label: "Follow-up behavior",
-    });
+  it("leaves the old chat and inbox settings out of search", () => {
+    expect(searchSettings("steer")).toEqual([]);
+    expect(searchSettings("jira")).toEqual([]);
+  });
 
-    expect(searchSettings("prettier")[0]).toMatchObject({
-      section: "chat",
-      settingId: "format-on-save",
-      label: "Format on save",
+  it("finds a setting by a word that is not in its label", () => {
+    expect(searchSettings("scratchpad")[0]).toMatchObject({
+      section: "general",
+      sectionLabel: "General",
+      settingId: "notes",
+      label: "Notes",
     });
   });
 

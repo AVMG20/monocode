@@ -3,6 +3,7 @@ import {
   SHOW_SOURCE_CONTROL,
   sidebarTabEnabled,
 } from "./model/features";
+import type { NativeProviderId } from "../platform/tauri/nativeSession";
 import { submitWithSettlement } from "./model/managedSubmission";
 import { type SubmissionAcceptance } from "./model/submissionAcceptance";
 import { invoke } from "@tauri-apps/api/core";
@@ -211,12 +212,7 @@ import {
   type AddToChatRequest,
 } from "../features/sessions/model/quoteDraft";
 import { createSessionRemover } from "../features/sessions/model/sessionRemoval";
-import {
-  DEFAULT_PROVIDER_ACCOUNT_ID,
-  selectedProviderAccountId,
-  supportsProviderAccounts,
-  type ProviderAccountProvider,
-} from "../features/providers/model/providerAccounts";
+import { DEFAULT_PROVIDER_ACCOUNT_ID, type ProviderAccountProvider } from "../features/providers/model/providerAccounts";
 import {
   HARNESS_LABEL,
   canReplaceSessionTitle,
@@ -288,7 +284,7 @@ import {
 import { warmNativeSkills } from "../features/skills/model/skills";
 import { nativeSkillContextForSession } from "../features/sessions/model/sessionSkills";
 import { loadSessionFolders, placeSessionInFolder, saveSessionFolders } from "../features/sessions/model/sessionFolders";
-import { ADD_NOTE_TO_CHAT_EVENT, loadNotes, type NoteComposerCard } from "../features/notes";
+import { ADD_NOTE_TO_CHAT_EVENT, composeNoteMessage, loadNotes, type NoteComposerCard } from "../features/notes";
 import {
   claimDueAutomations,
   listAutomations,
@@ -313,8 +309,9 @@ import {
 import {
   disposeNativeTerminal,
   focusNativeTerminal,
-  markFreshNativeLaunch,
+  nativeLaunchPatch,
   nativeTerminalIds,
+  startNativeTerminal,
   sendToNativeTerminal,
   setNativeInitialPrompt,
 } from "../features/sessions/ui/nativeTerminals";
@@ -1062,9 +1059,9 @@ function Workspace({
   const liveAgents = useMemo(
     () =>
       liveAgentsEnabled
-        ? liveAgentsFromSessions(sessions, unseenFinishedIds)
+        ? liveAgentsFromSessions(sessions, unseenFinishedIds, nativeStatuses)
         : [],
-    [liveAgentsEnabled, sessions, unseenFinishedIds],
+    [liveAgentsEnabled, sessions, unseenFinishedIds, nativeStatuses],
   );
 
   const [reminderNoticesHeight, setReminderNoticesHeight] = useState(0);
@@ -1642,10 +1639,14 @@ function Workspace({
         projectCwd;
       setSidebarTab("sessions", cwd);
       const title = card.title.trim();
-      const session = {
+      const draft = {
         ...newDefaultSession(cwd, sessionDefaults?.runtimeMode),
         ...(title ? { title } : {}),
-        noteCard: card,
+      };
+      // Start the session's CLI with the note as its first prompt.
+      const session = {
+        ...draft,
+        ...nativeLaunchPatch(draft, composeNoteMessage(card, "")),
       };
       const tab = newTab(session.id);
       setSessions((prev) => [...prev, session]);
@@ -4440,24 +4441,27 @@ function Workspace({
           ),
         );
       }
-      if (current.providerSessionId && sendToNativeTerminal(sessionId, prompt))
-        return true;
-      setNativeInitialPrompt(sessionId, prompt);
-      if (!current.providerSessionId) {
-        const harness = isNativeProvider(current.harness)
-          ? current.harness
-          : "claude";
-        const providerAccountId = supportsProviderAccounts(harness)
-          ? (current.providerAccountId ??
-            selectedProviderAccountId(harness, current.cwd))
-          : undefined;
-        markFreshNativeLaunch(sessionId);
-        onNativeSessionPatch(sessionId, {
-          harness,
-          providerAccountId,
-          providerSessionId: crypto.randomUUID(),
-        });
+      // A chat-era session from another provider has a provider id but no
+      // native CLI to resume, so it starts a new one.
+      const native =
+        !!current.providerSessionId && isNativeProvider(current.harness);
+      if (native && sendToNativeTerminal(sessionId, prompt)) return true;
+      let launched = current;
+      if (native) {
+        // Its CLI is not running: hand the prompt to the resumed one.
+        setNativeInitialPrompt(sessionId, prompt);
+      } else {
+        const patch = nativeLaunchPatch(current, prompt);
+        launched = { ...current, ...patch };
+        onNativeSessionPatch(sessionId, patch);
       }
+      // Run it now even if its tab is in the background.
+      startNativeTerminal(sessionId, {
+        cwd: sessionWorkCwd(launched),
+        provider: launched.harness as NativeProviderId,
+        accountId: launched.providerAccountId,
+        conversationId: launched.providerSessionId!,
+      });
       return true;
     },
     [onNativeSessionPatch],

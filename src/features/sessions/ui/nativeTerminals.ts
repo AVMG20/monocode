@@ -20,6 +20,12 @@ import {
 import { fitTerminal } from "../../terminal/model/terminalLayout";
 import { monoFont, oscColors, terminalTheme } from "../../terminal/ui/TerminalView";
 import { setNativeSessionStatus } from "../model/nativeSessionStatus";
+import { isNativeProvider } from "../model/nativeSession";
+import type { Session } from "../model/session";
+import {
+  selectedProviderAccountId,
+  supportsProviderAccounts,
+} from "../../providers/model/providerAccounts";
 
 /**
  * Native CLI sessions: each MonoCode session tab runs the provider's own TUI
@@ -77,6 +83,30 @@ export function sendToNativeTerminal(id: string, prompt: string): boolean {
     .then(() => writePty(id, "\r"))
     .catch(() => undefined);
   return true;
+}
+
+/**
+ * Session fields that launch `session` as a new native CLI conversation:
+ * its provider (Claude Code unless it already names a native CLI), the
+ * project's selected profile, and a fresh conversation id. `prompt`, when
+ * given, becomes the CLI's first prompt.
+ */
+export function nativeLaunchPatch(
+  session: Pick<Session, "id" | "harness" | "cwd" | "providerAccountId">,
+  prompt?: string,
+): Required<Pick<Session, "harness" | "providerSessionId">> &
+  Pick<Session, "providerAccountId"> {
+  const harness = isNativeProvider(session.harness) ? session.harness : "claude";
+  if (prompt) setNativeInitialPrompt(session.id, prompt);
+  markFreshNativeLaunch(session.id);
+  return {
+    harness,
+    providerAccountId: supportsProviderAccounts(harness)
+      ? (session.providerAccountId ??
+        selectedProviderAccountId(harness, session.cwd))
+      : undefined,
+    providerSessionId: crypto.randomUUID(),
+  };
 }
 
 /** Mark that the next spawn for `id` is a brand-new conversation. */
@@ -337,6 +367,40 @@ function createEntry(id: string, launch: NativeLaunch): Entry {
   };
 
   return entry;
+}
+
+let parking: HTMLDivElement | null = null;
+
+/** Off-screen home for terminals started before their pane is shown. */
+function parkingLot(): HTMLDivElement {
+  if (parking?.isConnected) return parking;
+  parking = document.createElement("div");
+  parking.setAttribute("aria-hidden", "true");
+  Object.assign(parking.style, {
+    position: "fixed",
+    left: "-20000px",
+    top: "0",
+    width: "1200px",
+    height: "800px",
+    visibility: "hidden",
+    pointerEvents: "none",
+  });
+  document.body.appendChild(parking);
+  return parking;
+}
+
+/**
+ * Start the session's CLI now, even though no pane shows it yet (an
+ * automation or a prompt sent to a background tab). A pane that opens later
+ * takes over the same terminal.
+ */
+export function startNativeTerminal(id: string, launch: NativeLaunch): void {
+  if (entries.has(id)) return;
+  const entry = createEntry(id, launch);
+  entries.set(id, entry);
+  parkingLot().appendChild(entry.outer);
+  entry.term.open(entry.host);
+  requestAnimationFrame(() => entry.fit());
 }
 
 /**

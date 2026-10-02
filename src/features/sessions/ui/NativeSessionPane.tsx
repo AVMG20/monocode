@@ -32,7 +32,12 @@ import {
   type NativeSessionPatch,
 } from "../model/nativeSession";
 import { HarnessIcon } from "./HarnessIcon";
-import { preferredModelId, saveLastModelChoice } from "../model/models";
+import {
+  isPickerProviderVisible,
+  preferredModelId,
+  saveLastModelChoice,
+} from "../model/models";
+import { loadProjectProviderSettings } from "../model/projectProviders";
 import { isRemoteProjectPath } from "../../projects/model/recents";
 import { Terminal } from "../../../shared/ui/icons";
 
@@ -316,6 +321,14 @@ function NativeSessionLauncher({
   }, [providers]);
 
   const installed = providers?.find((row) => row.id === provider)?.installed;
+  // Settings can keep a CLI out of the picker globally or for this project.
+  const projectHidden = loadProjectProviderSettings(session.cwd).hidden ?? [];
+  const shown = (providers ?? NATIVE_PROVIDERS.map((id) => ({ id, installed: true })))
+    .filter(
+      (row) =>
+        row.id === provider ||
+        (isPickerProviderVisible(row.id) && !projectHidden.includes(row.id)),
+    );
 
   const start = () => {
     if (!installed) return;
@@ -323,6 +336,8 @@ function NativeSessionLauncher({
       selectProviderAccount(provider, session.cwd, accountId);
     }
     saveLastModelChoice(provider, preferredModelId(provider));
+    // Drop any terminal left from an earlier conversation in this tab.
+    disposeNativeTerminal(session.id);
     markFreshNativeLaunch(session.id);
     onPatch(session.id, {
       harness: provider,
@@ -345,7 +360,7 @@ function NativeSessionLauncher({
             Agent
           </div>
           <div className="grid grid-cols-2 gap-2">
-            {(providers ?? NATIVE_PROVIDERS.map((id) => ({ id, installed: true }))).map(
+            {shown.map(
               (row) => (
                 <button
                   key={row.id}

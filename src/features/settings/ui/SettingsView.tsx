@@ -33,6 +33,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from "react";
+import { NATIVE_PROVIDERS } from "../../sessions/model/nativeSession";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import {
   ColorPickerPopover,
@@ -176,7 +177,6 @@ import {
   loadLastModelChoice,
   modelsFor,
   resolveModel,
-  saveDefaultModel,
   saveLastModelChoice,
   savePickerProviderVisible,
   subscribeModels,
@@ -196,16 +196,10 @@ import {
   type ArchivedProject,
   type RecentProject,
 } from "../../projects/model/recents";
-import {
-  HARNESSES,
-  HARNESS_TITLE,
-  sessionDisplayTitle,
-  type HarnessId,
-} from "../../sessions/model/session";
+import { HARNESS_TITLE, sessionDisplayTitle, type HarnessId } from "../../sessions/model/session";
 import {
   loadProjectProviderSettings,
   projectProvidersRevision,
-  setProjectDefaultModel,
   setProjectDefaultProvider,
   setProjectProviderHidden,
   subscribeProjectProviders,
@@ -287,7 +281,6 @@ import {
   filterKeybindings,
   currentKeybindings,
   keybindingVisible,
-  loadClaudeHooks,
   loadCloseToTray,
   loadCollapsedProjectRailMode,
   loadComposerRunner,
@@ -301,7 +294,6 @@ import {
   loadNotesEnabled,
   loadKeybindingOverrides,
   loadTabAnimationsEnabled,
-  saveClaudeHooks,
   saveCloseToTray,
   saveCollapsedProjectRailMode,
   saveComposerRunner,
@@ -755,7 +747,6 @@ function GeneralPage({
     setNotesEnabled(next);
   };
 
-
   const onLiveAgentsEnabled = (next: boolean) => {
     saveLiveAgentsEnabled(next);
     setLiveAgentsEnabled(next);
@@ -785,7 +776,7 @@ function GeneralPage({
         <Row
           id="sounds"
           label="Sounds"
-          description="Short cues for project activity, finished turns, and available updates. Choose project notification categories in Inbox settings. Switches and Copy on a finished turn also play."
+          description="Short cues when an agent finishes or needs you, and when an update is available."
         >
           <Toggle
             label="Sounds"
@@ -849,14 +840,14 @@ function GeneralPage({
         <Row
           id="notes"
           label="Notes"
-          description="A global markdown notebook on the project rail. Save a finished turn from the transcript, then mention it later with @note or add it to chat."
+          description="A global markdown notebook on the project rail for plans, prompts and anything you want to keep across sessions."
         >
           <Toggle label="Notes" on={notesEnabled} onChange={onNotesEnabled} />
         </Row>
         <Row
           id="working-agents"
           label="Working agents"
-          description="When two or more chats are in flight, a card on the project rail lists them so you can jump across projects. Finished turns stay until you open that session."
+          description="When two or more sessions are working or waiting for you, a card on the project rail lists them so you can jump across projects. Finished sessions stay until you open them."
         >
           <Toggle
             label="Working agents"
@@ -2556,7 +2547,6 @@ function ShortcutEditor({
   );
 }
 
-
 function KeybindingShortcutEditor({
   command,
   display,
@@ -3028,7 +3018,6 @@ function ProvidersPage({
   void providersRevision;
   const [choice, setChoice] = useState(loadLastModelChoice);
   const [defaultModels, setDefaultModels] = useState(loadDefaultModels);
-  const [claudeHooks, setClaudeHooks] = useState(loadClaudeHooks);
   const [scope, setScope] = useState<string>(GLOBAL_PROVIDER_SCOPE);
   const [hiddenGlobally, setHiddenGlobally] = useState(
     loadHiddenPickerProviders,
@@ -3083,24 +3072,6 @@ function ProvidersPage({
     }
   }, [scope, scopeOptions]);
 
-  const onClaudeHooks = (next: boolean) => {
-    saveClaudeHooks(next);
-    setClaudeHooks(next);
-  };
-
-  const onModelChange = (harness: HarnessId, model: string) => {
-    if (project) {
-      setProjectDefaultModel(project, harness, model);
-      return;
-    }
-    saveDefaultModel(harness, model);
-    setDefaultModels((prev) => ({ ...prev, [harness]: model }));
-    if (choice?.harness === harness) {
-      saveLastModelChoice(harness, model);
-      setChoice({ harness, model });
-    }
-  };
-
   const onDefault = (harness: HarnessId, model: string) => {
     if (project) {
       setProjectDefaultProvider(project, harness, model);
@@ -3142,10 +3113,10 @@ function ProvidersPage({
         description={
           project
             ? `These defaults apply to ${projectName(project)} only. A provider with Show in picker off is also kept out of new conversations started in this project. CLI paths remain global for MonoCode.`
-            : "A provider is listed as installed once its CLI is found on your PATH. Uninstalled CLIs stay listed but are left out of the model picker, as are installed ones with Show in picker off. The model beside a provider is what its new conversations start with; Use by default picks the provider itself. CLI paths are global for MonoCode and apply to every project."
+            : "Sessions run each provider's own CLI in a terminal. A CLI is listed as installed once it is found on your PATH; uninstalled CLIs, and installed ones with Show when starting off, are left out of the new-session picker. Use by default picks the CLI new sessions start with. CLI paths are global for MonoCode and apply to every project."
         }
       >
-        {HARNESSES.map((harness) => {
+        {NATIVE_PROVIDERS.map((harness) => {
           const inPicker = project
             ? !(projectSettings.hidden ?? []).includes(harness) &&
               !hiddenGlobally.includes(harness)
@@ -3179,26 +3150,12 @@ function ProvidersPage({
               inPicker={inPicker}
               pickerLocked={pickerLocked}
               onDefault={onDefault}
-              onModelChange={onModelChange}
               onPickerVisible={(visible) => onPickerVisible(harness, visible)}
             />
           );
         })}
       </Group>
 
-      <Group title="Advanced">
-        <Row
-          id="claude-hooks"
-          label="Claude Code hooks"
-          description="Run the hooks configured in your settings.json files — PreToolUse command rewrites, blocks, notifications, and the rest — just as the Claude Code CLI would. Turn this off if a hook is misbehaving and you need the session back. Takes effect on the next turn."
-        >
-          <Toggle
-            label="Claude Code hooks"
-            on={claudeHooks}
-            onChange={onClaudeHooks}
-          />
-        </Row>
-      </Group>
     </>
   );
 }
@@ -3561,7 +3518,6 @@ function ProviderRow({
   inPicker,
   pickerLocked = false,
   onDefault,
-  onModelChange,
   onPickerVisible,
 }: {
   harness: HarnessId;
@@ -3571,7 +3527,6 @@ function ProviderRow({
   /** Globally hidden providers cannot be turned on per project. */
   pickerLocked?: boolean;
   onDefault: (harness: HarnessId, model: string) => void;
-  onModelChange: (harness: HarnessId, model: string) => void;
   onPickerVisible: (visible: boolean) => void;
 }) {
   const models = modelsFor(harness);
@@ -3595,34 +3550,23 @@ function ProviderRow({
       }
       description={
         available
-          ? `${models.length} ${models.length === 1 ? "model" : "models"} available.`
+          ? "Installed. Sessions run its own CLI, which picks its model."
           : harnessUnavailableHint(harness)
       }
     >
-      {current ? (
-        <Select
-          label={`${HARNESS_TITLE[harness]} model`}
-          value={current.id}
-          onChange={(next) => onModelChange(harness, next)}
-          options={models.map((item) => ({
-            value: item.id,
-            label: item.name,
-          }))}
-        />
-      ) : null}
       <SecondaryButton
-        onClick={() => current && onDefault(harness, current.id)}
-        disabled={isDefault || !current}
+        onClick={() => onDefault(harness, current?.id ?? selectedModel)}
+        disabled={isDefault}
       >
         {isDefault ? "Default" : "Use by default"}
       </SecondaryButton>
       {available ? (
         <div className="flex items-center gap-2">
           <span className="text-[12px] text-content/50">
-            {pickerLocked ? "Hidden globally" : "Show in picker"}
+            {pickerLocked ? "Hidden globally" : "Show when starting"}
           </span>
           <Toggle
-            label={`Show ${HARNESS_TITLE[harness]} in the model picker`}
+            label={`Show ${HARNESS_TITLE[harness]} when starting a session`}
             on={inPicker}
             onChange={onPickerVisible}
             disabled={pickerLocked}

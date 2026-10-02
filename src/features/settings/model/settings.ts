@@ -16,10 +16,16 @@ import { SHOW_FILES, SHOW_SOURCE_CONTROL } from "../../../app/model/features";
 
 const SECTION_KEY = "monocode.settingsSection";
 
-/** Settings pages for surfaces this build hides (see app/model/features). */
-const HIDDEN_SETTINGS_SECTIONS = new Set<string>(
-  SHOW_SOURCE_CONTROL ? [] : ["worktrees"],
-);
+/**
+ * Settings pages for surfaces this build hides (see app/model/features).
+ * Chat and Inbox configured the old chat transcript and its GitHub inbox;
+ * sessions now run each provider's own CLI.
+ */
+const HIDDEN_SETTINGS_SECTIONS = new Set<string>([
+  "chat",
+  "inbox",
+  ...(SHOW_SOURCE_CONTROL ? [] : ["worktrees"]),
+]);
 
 /** Individual settings rows for hidden surfaces. */
 const HIDDEN_SETTING_IDS = new Set<string>([
@@ -55,7 +61,10 @@ function visibleSections(sections: SettingsSection[]): SettingsSection[] {
 }
 
 function visibleEntries(entries: SettingsEntry[]): SettingsEntry[] {
-  return entries.filter((entry) => settingVisible(entry.id));
+  return entries.filter(
+    (entry) =>
+      settingVisible(entry.id) && !HIDDEN_SETTINGS_SECTIONS.has(entry.section),
+  );
 }
 
 export type SettingsSectionId =
@@ -413,12 +422,6 @@ export const SETTINGS_INDEX: SettingsEntry[] = visibleEntries([
     label: "Provider accounts",
     keywords:
       "account sign in login rename remove delete credentials profile usage limit quota exhausted",
-  },
-  {
-    id: "claude-hooks",
-    section: "providers",
-    label: "Claude Code hooks",
-    keywords: "pretooluse settings.json block command notification",
   },
   {
     id: "project-notifications",

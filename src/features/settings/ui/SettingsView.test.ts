@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { NATIVE_PROVIDERS } from "../../sessions/model/nativeSession";
 import { act, createElement, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -42,7 +43,7 @@ vi.mock("@tauri-apps/api/window", () => ({
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ ask: vi.fn(async () => true) }));
 vi.mock("../../../integrations/harness/core/availability", () => ({
-  isHarnessAvailable: (id: string) => id === "claude" || id === "cursor",
+  isHarnessAvailable: (id: string) => id === "claude" || id === "codex",
   hasProbedHarnessAvailability: () => true,
   getHarnessAvailabilitySnapshot: () => 0,
   subscribeHarnessAvailability: () => () => {},
@@ -721,7 +722,7 @@ describe("settings pages", () => {
         .mocked(invoke)
         .mock.calls.some(([command]) => command === "harness_exec"),
     ).toBe(false);
-    for (const harness of HARNESSES) {
+    for (const harness of NATIVE_PROVIDERS) {
       expect(
         container.querySelector(
           `[aria-label="Show ${HARNESS_TITLE[harness]} CLI details"]`,
@@ -809,33 +810,14 @@ describe("settings search", () => {
   }
 
   it("finds a setting that lives on another page", async () => {
-    await render("general");
-    await type("pacman");
+    await render("appearance");
+    await type("scratchpad");
     expect(options().map((item) => item.textContent)).toEqual([
-      "Empty session gamesChat",
+      "NotesGeneral",
     ]);
 
     await act(async () => options()[0]!.click());
-    expect(onSelectSection).toHaveBeenCalledWith("chat");
-  });
-
-  it("finds and reveals project notifications separately from global notifications", async () => {
-    await render("general");
-    await type("project notifications");
-    expect(options().map((item) => item.textContent)).toEqual([
-      "Project notificationsInbox",
-    ]);
-
-    await act(async () => options()[0]!.click());
-    expect(onSelectSection).toHaveBeenCalledWith("inbox");
-    await render("inbox");
-    const section = container.querySelector(
-      '[data-setting-id="project-notifications"]',
-    );
-    expect(
-      section?.querySelector('[aria-label="Project notifications"]'),
-    ).not.toBeNull();
-    expect(section?.querySelector(".border-accent\\/60")).not.toBeNull();
+    expect(onSelectSection).toHaveBeenCalledWith("general");
   });
 
   // A page whose name starts with the query beats a setting that merely
@@ -850,13 +832,7 @@ describe("settings search", () => {
     await type("notification");
     expect(
       options().map((item) => item.querySelector("span")!.textContent),
-    ).toEqual([
-      "Notifications",
-      "Project notifications",
-      "Claude Code hooks",
-      "General",
-      "Inbox",
-    ]);
+    ).toEqual(["Notifications", "General"]);
   });
 
   it("closes the results without touching the page when cleared", async () => {
@@ -1051,7 +1027,7 @@ describe("providers scope inheritance", () => {
     );
     localStorage.setItem(
       "monocode.hiddenPickerProviders",
-      JSON.stringify(["cursor"]),
+      JSON.stringify(["codex"]),
     );
     await render("providers");
 
@@ -1059,7 +1035,7 @@ describe("providers scope inheritance", () => {
 
     // A project with no overrides shows the inherited global default provider.
     const claudeRow = container
-      .querySelector('[aria-label^="Claude Code model"]')!
+      .querySelector('[aria-label="Show Claude Code when starting a session"]')!
       .closest(".settings-row")!;
     const claudeDefault = Array.from(
       claudeRow.querySelectorAll<HTMLButtonElement>("button"),
@@ -1070,18 +1046,18 @@ describe("providers scope inheritance", () => {
     expect(
       container
         .querySelector<HTMLButtonElement>(
-          '[aria-label="Show Claude Code in the model picker"]',
+          '[aria-label="Show Claude Code when starting a session"]',
         )!
         .getAttribute("aria-checked"),
     ).toBe("true");
-    const cursorToggle = container.querySelector<HTMLButtonElement>(
-      '[aria-label="Show Cursor in the model picker"]',
+    const codexToggle = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Show Codex when starting a session"]',
     )!;
-    expect(cursorToggle.getAttribute("aria-checked")).toBe("false");
+    expect(codexToggle.getAttribute("aria-checked")).toBe("false");
     // Global precedence: the project toggle cannot turn a globally hidden
     // provider back on, so it is locked and explained.
-    expect(cursorToggle.hasAttribute("disabled")).toBe(true);
-    expect(cursorToggle.closest(".settings-row")?.textContent).toContain(
+    expect(codexToggle.hasAttribute("disabled")).toBe(true);
+    expect(codexToggle.closest(".settings-row")?.textContent).toContain(
       "Hidden globally",
     );
   });

@@ -289,7 +289,7 @@ export function NotesView({
           <p className="px-3 py-2 text-[12px] text-content/50">
             {query.trim()
               ? "No matching notes"
-              : "No notes yet. Save a turn from the transcript, or create one here."}
+              : "No notes yet. Create one here, then start a session from it."}
           </p>
         ) : (
           <ul className="flex flex-col gap-0.5 p-1.5">
@@ -852,7 +852,7 @@ function NoteEditor({
               onClick={() => onAddToChat(draft)}
               className="inline-flex items-center gap-1 rounded-md bg-content px-3 h-6.5 text-[12px] text-background-base hover:bg-content/80 disabled:cursor-default disabled:opacity-40"
             >
-              Add to chat
+              Start session
             </button>
             <button
               type="button"
