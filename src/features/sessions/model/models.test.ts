@@ -257,10 +257,10 @@ describe("provider defaults", () => {
     });
   });
 
-  it("keeps catalog defaults when nothing is saved", () => {
+  it("starts with Claude Code when nothing is saved", () => {
     expect(defaultSessionChoice()).toEqual({
-      harness: "cursor",
-      model: defaultModelId("cursor"),
+      harness: "claude",
+      model: defaultModelId("claude"),
     });
   });
 
@@ -279,15 +279,20 @@ describe("provider defaults", () => {
 
   it("uses a project's own provider and model when set", () => {
     saveLastModelChoice("claude", "claude:opus-5");
-    setProjectDefaultProvider("/repo/a", "cursor", "cursor:composer-2.5");
+    setProjectDefaultProvider("/repo/a", "codex", defaultModelId("codex"));
     expect(defaultSessionChoice("/repo/a")).toEqual({
-      harness: "cursor",
-      model: "cursor:composer-2.5",
+      harness: "codex",
+      model: defaultModelId("codex"),
     });
     expect(defaultSessionChoice("/repo/b")).toEqual({
       harness: "claude",
       model: "claude:opus-5",
     });
+  });
+
+  it("only starts sessions with a provider whose CLI MonoCode can host", () => {
+    setProjectDefaultProvider("/repo/a", "cursor", "cursor:composer-2.5");
+    expect(defaultSessionChoice("/repo/a").harness).toBe("claude");
   });
 
   it("keeps a provider the project still allows", () => {
