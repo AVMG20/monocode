@@ -29,6 +29,14 @@ export type SpawnNativeSessionArgs = {
   conversationId: string;
   /** Codex / OpenCode: continue the most recent conversation. */
   resume: boolean;
+  /** First prompt handed to the CLI on its command line. */
+  initialPrompt?: string;
+};
+
+export type NativeSpawnResult = {
+  resumed: boolean;
+  /** False when the CLI takes no prompt argument; type it into the TUI. */
+  promptDelivered: boolean;
 };
 
 type StatusPayload = { id: string; status: NativeSessionStatus };
@@ -39,9 +47,9 @@ export async function listNativeProviders(): Promise<NativeProvider[]> {
 
 export async function spawnNativeSession(
   args: SpawnNativeSessionArgs,
-): Promise<{ resumed: boolean }> {
+): Promise<NativeSpawnResult> {
   markPtyOpened(args.id);
-  return invoke<{ resumed: boolean }>("native_session_spawn", {
+  return invoke<NativeSpawnResult>("native_session_spawn", {
     id: args.id,
     cwd: args.cwd,
     cols: args.cols,
@@ -50,6 +58,7 @@ export async function spawnNativeSession(
     accountId: args.accountId ?? null,
     conversationId: args.conversationId,
     resume: args.resume,
+    initialPrompt: args.initialPrompt ?? null,
   });
 }
 

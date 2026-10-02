@@ -39,6 +39,8 @@ pub struct NativeProvider {
 #[serde(rename_all = "camelCase")]
 pub struct NativeSpawnResult {
     resumed: bool,
+    /// False when the CLI takes no first-prompt argument; the caller types it.
+    prompt_delivered: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -104,6 +106,7 @@ pub fn native_session_spawn(
     account_id: Option<String>,
     conversation_id: String,
     resume: bool,
+    initial_prompt: Option<String>,
 ) -> Result<NativeSpawnResult, String> {
     if !PROVIDERS.contains(&provider.as_str()) {
         return Err(format!("Unsupported native session provider: {provider}"));
@@ -164,6 +167,13 @@ pub fn native_session_spawn(
         ),
     };
 
+    let initial_prompt = initial_prompt.filter(|prompt| !prompt.trim().is_empty());
+    let prompt_delivered = initial_prompt.is_some() && provider != "antigravity";
+    let args = match initial_prompt {
+        Some(prompt) => with_initial_prompt(&provider, args, &prompt),
+        None => args,
+    };
+
     let pid = crate::pty::spawn_pty(
         app.clone(),
         &host,
@@ -203,7 +213,10 @@ pub fn native_session_spawn(
         thread::spawn(move || watch_statuses(watch_app));
     }
 
-    Ok(NativeSpawnResult { resumed })
+    Ok(NativeSpawnResult {
+        resumed,
+        prompt_delivered,
+    })
 }
 
 /// Current status of each requested id that is still a live native session.
@@ -340,6 +353,25 @@ fn simple_args(provider: &str, resume: bool) -> Vec<String> {
     args.iter().map(|arg| (*arg).to_string()).collect()
 }
 
+/// Hand the CLI its first prompt on the command line, so it starts working at
+/// once in its own TUI. A leading `-` is padded so it is never read as a flag.
+fn with_initial_prompt(provider: &str, mut args: Vec<String>, prompt: &str) -> Vec<String> {
+    let prompt = if prompt.starts_with('-') {
+        format!(" {prompt}")
+    } else {
+        prompt.to_string()
+    };
+    match provider {
+        "claude" | "codex" => args.push(prompt),
+        "opencode" => {
+            args.push("--prompt".into());
+            args.push(prompt);
+        }
+        _ => {}
+    }
+    args
+}
+
 fn claude_args(conversation_id: &str, resume: bool, settings: &Path) -> Vec<String> {
     let flag = if resume { "--resume" } else { "--session-id" };
     vec![
@@ -449,6 +481,20 @@ mod tests {
         ));
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn initial_prompt_goes_where_each_cli_expects_it() {
+        let base = vec!["--session-id".to_string(), "abc".to_string()];
+        assert_eq!(
+            with_initial_prompt("claude", base.clone(), "fix it"),
+            vec!["--session-id", "abc", "fix it"]
+        );
+        assert_eq!(
+            with_initial_prompt("opencode", Vec::new(), "-x"),
+            vec!["--prompt", " -x"]
+        );
+        assert!(with_initial_prompt("antigravity", Vec::new(), "hi").is_empty());
     }
 
     #[test]

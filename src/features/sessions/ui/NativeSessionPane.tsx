@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import {
   listNativeProviders,
   type NativeProviderId,
@@ -43,6 +50,8 @@ type Props = {
   onPatch: (sessionId: string, patch: NativeSessionPatch) => void;
   /** Open an extra shell terminal below this session. */
   onNewTerminal?: (sessionId: string) => void;
+  /** Present in a split: dragging the header moves the pane. */
+  onPaneDragStart?: (event: ReactPointerEvent<HTMLElement>) => void;
 };
 
 /**
@@ -57,6 +66,7 @@ export function NativeSessionPane({
   onFocus,
   onPatch,
   onNewTerminal,
+  onPaneDragStart,
 }: Props) {
   const launched =
     !!session.providerSessionId && isNativeProvider(session.harness);
@@ -66,7 +76,11 @@ export function NativeSessionPane({
       onMouseDown={() => onFocus(session.id)}
     >
       {launched ? (
-        <NativeSessionHeader session={session} onNewTerminal={onNewTerminal} />
+        <NativeSessionHeader
+          session={session}
+          onNewTerminal={onNewTerminal}
+          onPaneDragStart={onPaneDragStart}
+        />
       ) : null}
       {launched ? (
         <NativeTerminalSurface
@@ -85,9 +99,11 @@ export function NativeSessionPane({
 function NativeSessionHeader({
   session,
   onNewTerminal,
+  onPaneDragStart,
 }: {
   session: Session;
   onNewTerminal?: (sessionId: string) => void;
+  onPaneDragStart?: (event: ReactPointerEvent<HTMLElement>) => void;
 }) {
   const profileLabel = useSyncExternalStore(
     subscribeProviderAccounts,
@@ -101,7 +117,12 @@ function NativeSessionHeader({
     supportsProviderAccounts(session.harness) &&
     providerAccounts(session.harness).length > 1;
   return (
-    <div className="flex h-8 shrink-0 items-center gap-2 px-3 text-[12px] text-content/50">
+    <div
+      className={`flex h-8 shrink-0 items-center gap-2 px-3 text-[12px] text-content/50 ${
+        onPaneDragStart ? "cursor-grab" : ""
+      }`}
+      onPointerDown={onPaneDragStart}
+    >
       <HarnessIcon harness={session.harness} className="size-3.5" />
       <span className="truncate">{HARNESS_TITLE[session.harness]}</span>
       {multipleProfiles ? (
@@ -117,6 +138,7 @@ function NativeSessionHeader({
           aria-label="Open a terminal below this session"
           className="flex items-center gap-1 rounded-md px-1.5 py-0.5 hover:bg-content/5 hover:text-content"
           onMouseDown={(event) => event.stopPropagation()}
+          onPointerDown={(event) => event.stopPropagation()}
           onClick={() => onNewTerminal(session.id)}
         >
           <Terminal className="size-3.5" />

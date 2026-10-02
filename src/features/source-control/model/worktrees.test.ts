@@ -49,8 +49,9 @@ describe("worktree deletion preflight", () => {
 describe("working-copy context", () => {
   it("lets an empty session select a worktree and return to main in place", () => {
     const session = {
+      // A launched native session (providerSessionId) owns a live CLI
+      // conversation and is never blank, so this one has not started yet.
       ...newSession("codex", "/repo"),
-      providerSessionId: "old-provider",
       context: { used: 12 },
       composerSeed: "An unsent draft",
       blocks: [{ id: "s", role: "status" as const, text: "Ready" }],

@@ -44,6 +44,8 @@ type Entry = {
   outer: HTMLDivElement;
   host: HTMLDivElement;
   state: NativeTerminalState;
+  /** The CLI process was spawned and accepts input. */
+  started: boolean;
   listeners: Set<(state: NativeTerminalState) => void>;
   onTitle?: (title: string) => void;
   fit: () => void;
@@ -53,6 +55,29 @@ type Entry = {
 const entries = new Map<string, Entry>();
 /** Sessions whose next spawn starts a new conversation rather than resuming. */
 const freshLaunches = new Set<string>();
+
+/** Prompts to hand the CLI when its session next starts. */
+const initialPrompts = new Map<string, string>();
+
+/** Queue a prompt for the session's next CLI start. */
+export function setNativeInitialPrompt(id: string, prompt: string): void {
+  const queued = initialPrompts.get(id);
+  initialPrompts.set(id, queued ? `${queued}\n\n${prompt}` : prompt);
+}
+
+/**
+ * Send a prompt to a session whose CLI is already running, as a bracketed
+ * paste followed by Enter. Returns false when no live CLI can take it.
+ */
+export function sendToNativeTerminal(id: string, prompt: string): boolean {
+  const entry = entries.get(id);
+  if (!entry || entry.state.exited || !entry.started) return false;
+  void writePty(id, `\x1b[200~${prompt}\x1b[201~`)
+    .then(() => new Promise((resolve) => setTimeout(resolve, 60)))
+    .then(() => writePty(id, "\r"))
+    .catch(() => undefined);
+  return true;
+}
 
 /** Mark that the next spawn for `id` is a brand-new conversation. */
 export function markFreshNativeLaunch(id: string): void {
@@ -106,6 +131,7 @@ function createEntry(id: string, launch: NativeLaunch): Entry {
     outer,
     host,
     state: { exited: false },
+    started: false,
     listeners: new Set(),
     fit: () => {},
     dispose: () => {},
@@ -220,6 +246,8 @@ function createEntry(id: string, launch: NativeLaunch): Entry {
   let lastRows = 0;
   const spawn = (cols: number, rows: number) => {
     const fresh = freshLaunches.delete(id);
+    const initialPrompt = initialPrompts.get(id);
+    initialPrompts.delete(id);
     spawnNativeSession({
       id,
       cwd: launch.cwd,
@@ -229,13 +257,20 @@ function createEntry(id: string, launch: NativeLaunch): Entry {
       accountId: launch.accountId,
       conversationId: launch.conversationId,
       resume: !fresh,
+      initialPrompt,
     })
-      .then(() => {
+      .then((result) => {
         if (closed) return;
         spawned = true;
+        entry.started = true;
         resolveStart();
+        if (initialPrompt && !result.promptDelivered) {
+          // No prompt argument: give the TUI a moment to draw, then type it.
+          setTimeout(() => sendToNativeTerminal(id, initialPrompt), 1500);
+        }
       })
-      .catch((error) => {
+      .catch((error: unknown) => {
+        if (initialPrompt) setNativeInitialPrompt(id, initialPrompt);
         const message = error instanceof Error ? error.message : String(error);
         if (!closed) {
           term.writeln(`\x1b[31m${message}\x1b[0m`);

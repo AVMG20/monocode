@@ -77,3 +77,41 @@ export function nativeSessionWaiting(
 ): boolean {
   return map.get(id) === "waiting";
 }
+
+export type NativeTurnOutcome = "completed" | "failed";
+
+/**
+ * Call `settle` once the session's next agent turn ends: it reported
+ * `running` and later `idle`, or the CLI went away. Providers without status
+ * hooks never report `running`, so their turn settles after `fallbackMs`.
+ */
+export function watchNativeTurn(
+  id: string,
+  settle: (outcome: NativeTurnOutcome) => void,
+  fallbackMs = 30_000,
+): () => void {
+  let sawRunning = statuses.get(id) === "running";
+  let done = false;
+  const finish = (outcome: NativeTurnOutcome) => {
+    if (done) return;
+    done = true;
+    listeners.delete(check);
+    clearTimeout(timer);
+    settle(outcome);
+  };
+  const check = () => {
+    const status = statuses.get(id);
+    if (status === "running" || status === "waiting") sawRunning = true;
+    else if (sawRunning) finish(status === "idle" ? "completed" : "failed");
+  };
+  const timer = setTimeout(() => {
+    if (!sawRunning) finish("completed");
+  }, fallbackMs);
+  ensureBridge();
+  listeners.add(check);
+  return () => {
+    done = true;
+    listeners.delete(check);
+    clearTimeout(timer);
+  };
+}
