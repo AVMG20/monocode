@@ -189,6 +189,7 @@ import {
   type InboxReplyTarget,
 } from "./InboxComments";
 import { InboxPrDiff } from "./InboxPrDiff";
+import { SHOW_SOURCE_CONTROL } from "../../../app/model/features";
 import {
   InboxPrChecks,
   PrChecksTab,
@@ -2107,7 +2108,7 @@ export function InboxDetail({
 
   // Checks load as soon as a GitHub PR is open, whatever tab is active. The
   // panel passes revision 0, so its loads ride on mount and the identity key.
-  const prChecksEnabled = githubKind === "pr";
+  const prChecksEnabled = SHOW_SOURCE_CONTROL && githubKind === "pr";
   const prChecksView = useGithubPrChecks({
     cwd: item.projectPath || cwd,
     repo: item.repo,
@@ -2800,7 +2801,7 @@ export function InboxDetail({
                 <p className="text-[12px] text-red-400/90">{startError}</p>
               ) : null}
             </header>
-            {isPr ? (
+            {isPr && SHOW_SOURCE_CONTROL ? (
               <div className="flex h-9 items-stretch gap-4">
                 <div
                   role="tablist"

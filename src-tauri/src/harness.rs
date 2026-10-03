@@ -98,7 +98,7 @@ fn antigravity_args() -> Vec<String> {
 
 struct LiveChild {
     cwd: PathBuf,
-    stdin: Mutex<ChildStdin>,
+    stdin: Mutex<Option<ChildStdin>>,
     pid: u32,
     account: Option<HarnessAccount>,
 }
@@ -477,45 +477,6 @@ fn configured_ws_mcp_servers(cwd: &Path) -> Vec<String> {
     names
 }
 
-#[tauri::command]
-pub async fn claude_mcp_add(
-    host: State<'_, HarnessHost>,
-    cwd: String,
-    name: String,
-    config: String,
-    scope: String,
-) -> Result<(), String> {
-    if !valid_mcp_name(&name) {
-        return Err("Server name must use letters, numbers, hyphens, or underscores".into());
-    }
-    if !matches!(scope.as_str(), "local" | "project" | "user") {
-        return Err("Invalid MCP scope".into());
-    }
-    let value: serde_json::Value = serde_json::from_str(&config).map_err(|e| e.to_string())?;
-    if !value.is_object() {
-        return Err("Server configuration must be a JSON object".into());
-    }
-    let binary_path = host.runtime_binary_path("claude");
-    tauri::async_runtime::spawn_blocking(move || {
-        claude_mcp_command(
-            vec![
-                "mcp".into(),
-                "add-json".into(),
-                name,
-                config,
-                "--scope".into(),
-                scope,
-            ],
-            cwd,
-            Duration::from_secs(30),
-            binary_path.as_deref(),
-        )
-    })
-    .await
-    .map_err(|e| e.to_string())??;
-    Ok(())
-}
-
 pub(crate) fn add_mcp_via_cli(
     provider: &str,
     scope: &str,
@@ -831,6 +792,7 @@ pub fn harness_spawn(
     account: Option<HarnessAccount>,
     binary_provider: Option<String>,
     binary_path: Option<String>,
+    no_input: Option<bool>,
 ) -> Result<u32, String> {
     let workdir = expand_home(&cwd);
     if !workdir.is_dir() {
@@ -852,22 +814,34 @@ pub fn harness_spawn(
     let mut cmd = Command::new(&command);
     cmd.args(&args)
         .current_dir(&workdir)
-        .stdin(Stdio::piped())
+        // A child that reads no input gets EOF on stdin: `claude auth login`
+        // otherwise keeps waiting on its "paste code" prompt after the
+        // browser sign-in has finished.
+        .stdin(if no_input.unwrap_or(false) {
+            Stdio::null()
+        } else {
+            Stdio::piped()
+        })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     prepare_child(&mut cmd, &command);
     apply_provider_account(&app, &mut cmd, account.as_ref())?;
-
-    crate::control::configure_child(&app, &session_id, &mut cmd);
+    let named_account = account
+        .as_ref()
+        .is_some_and(|account| account.id != DEFAULT_PROVIDER_ACCOUNT_ID);
+    if !named_account {
+        // The default account is the CLI's own folder (what native sessions
+        // use too), not one inherited from the shell that launched MonoCode.
+        for key in default_folder_overrides(binary_provider.as_deref().unwrap_or_default()) {
+            cmd.env_remove(key);
+        }
+    }
 
     let mut child =
         spawn_managed(&mut cmd).map_err(|e| format!("Failed to start {command}: {e}"))?;
     let pid = child.id();
 
-    let stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| "Failed to open harness stdin".to_string())?;
+    let stdin = child.stdin.take();
     let stdout = child
         .stdout
         .take()
@@ -946,6 +920,25 @@ pub fn harness_spawn(
     });
 
     Ok(pid)
+}
+
+/// Variables that would point a CLI away from its own default folder.
+pub(crate) fn default_folder_overrides(provider: &str) -> &'static [&'static str] {
+    match provider {
+        "claude" => &["CLAUDE_CONFIG_DIR", "CLAUDE_SECURESTORAGE_CONFIG_DIR"],
+        "codex" => &["CODEX_HOME"],
+        _ => &[],
+    }
+}
+
+/// The provider CLI's own config folder, which the default account uses.
+pub(crate) fn provider_default_folder(provider: &str) -> Option<PathBuf> {
+    let home = PathBuf::from(dirs_home()?);
+    match provider {
+        "claude" => Some(home.join(".claude")),
+        "codex" => Some(home.join(".codex")),
+        _ => None,
+    }
 }
 
 pub(crate) fn provider_account_dir(
@@ -1043,26 +1036,43 @@ fn apply_provider_account(
     let Some(dir) = provider_account_dir(app, &account.provider, Some(&account.id))? else {
         return Ok(());
     };
-    match account.provider.as_str() {
-        "claude" => {
-            // Claude scopes both its ordinary config and its macOS Keychain
-            // credential to these exact strings. Setting both keeps profiles
-            // isolated on every supported platform.
-            cmd.env("CLAUDE_CONFIG_DIR", &dir)
-                .env("CLAUDE_SECURESTORAGE_CONFIG_DIR", &dir)
-                .env_remove("ANTHROPIC_API_KEY")
-                .env_remove("ANTHROPIC_AUTH_TOKEN")
-                .env_remove("CLAUDE_CODE_OAUTH_TOKEN");
-        }
-        "codex" => {
-            cmd.env("CODEX_HOME", &dir)
-                .env_remove("OPENAI_API_KEY")
-                .env_remove("CODEX_API_KEY")
-                .env_remove("CODEX_ACCESS_TOKEN");
-        }
-        _ => unreachable!("provider_account_dir validates the provider"),
+    let (set, remove) = provider_account_env(&account.provider, &dir);
+    for key in remove {
+        cmd.env_remove(key);
+    }
+    for (key, value) in set {
+        cmd.env(key, value);
     }
     Ok(())
+}
+
+/// Env a provider account profile at `dir` needs: vars to set, and ambient
+/// credentials to remove so they cannot override the profile.
+pub(crate) fn provider_account_env(
+    provider: &str,
+    dir: &Path,
+) -> (Vec<(&'static str, PathBuf)>, &'static [&'static str]) {
+    match provider {
+        // Claude scopes both its ordinary config and its macOS Keychain
+        // credential to these exact strings. Setting both keeps profiles
+        // isolated on every supported platform.
+        "claude" => (
+            vec![
+                ("CLAUDE_CONFIG_DIR", dir.to_path_buf()),
+                ("CLAUDE_SECURESTORAGE_CONFIG_DIR", dir.to_path_buf()),
+            ],
+            &[
+                "ANTHROPIC_API_KEY",
+                "ANTHROPIC_AUTH_TOKEN",
+                "CLAUDE_CODE_OAUTH_TOKEN",
+            ],
+        ),
+        "codex" => (
+            vec![("CODEX_HOME", dir.to_path_buf())],
+            &["OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN"],
+        ),
+        _ => unreachable!("provider_account_dir validates the provider"),
+    }
 }
 
 /// A child that stops draining stdin can block `write_all` for minutes, so the
@@ -1079,6 +1089,9 @@ pub async fn harness_write(
         .ok_or_else(|| "Harness process is not running".to_string())?;
     tauri::async_runtime::spawn_blocking(move || {
         let mut stdin = live.stdin.lock().unwrap_or_else(|e| e.into_inner());
+        let stdin = stdin
+            .as_mut()
+            .ok_or_else(|| "Harness process takes no input".to_string())?;
         stdin
             .write_all(line.as_bytes())
             .and_then(|_| stdin.write_all(b"\n"))
@@ -1904,7 +1917,7 @@ fn resolve_cursor_agent() -> Option<PathBuf> {
     first_binary_matching(candidates, is_cursor_agent)
 }
 
-fn resolve_harness_binary_default(provider: &str) -> Option<PathBuf> {
+pub(crate) fn resolve_harness_binary_default(provider: &str) -> Option<PathBuf> {
     match provider {
         "claude" => resolve_claude(),
         "codex" => resolve_codex(),
@@ -1946,7 +1959,10 @@ fn configured_binary_fingerprint(path: &Path) -> Option<String> {
     }
 }
 
-fn resolve_harness_binary_override(provider: &str, binary_path: &str) -> Result<PathBuf, String> {
+pub(crate) fn resolve_harness_binary_override(
+    provider: &str,
+    binary_path: &str,
+) -> Result<PathBuf, String> {
     if provider == "antigravity" && cfg!(windows) {
         return Err("Antigravity ACP server overrides are not supported on Windows.".into());
     }
@@ -2592,7 +2608,7 @@ fn is_cursor_agent(path: &Path) -> bool {
 ///
 /// Reads the cached PATH rather than spawning a shell per lookup: six
 /// resolvers each asking `command -v` meant six shell startups per probe.
-fn which_via_login_shell(name: &str) -> Option<PathBuf> {
+pub(crate) fn which_via_login_shell(name: &str) -> Option<PathBuf> {
     which_in_path(&gui_search_path(), name)
 }
 
@@ -2982,7 +2998,7 @@ mod tests {
         (
             Arc::new(LiveChild {
                 cwd: PathBuf::from("/test"),
-                stdin: Mutex::new(stdin),
+                stdin: Mutex::new(Some(stdin)),
                 pid,
                 account: None,
             }),
@@ -3086,7 +3102,7 @@ mod tests {
         let writer = thread::spawn(move || {
             let payload = vec![b'x'; 8 * 1024 * 1024];
             let mut stdin = live.stdin.lock().unwrap_or_else(|e| e.into_inner());
-            let _ = stdin.write_all(&payload);
+            let _ = stdin.as_mut().map(|stdin| stdin.write_all(&payload));
         });
         thread::sleep(Duration::from_millis(200));
         // Kill needs neither the stdin mutex nor the writer's thread.
@@ -3143,7 +3159,7 @@ mod tests {
         (
             Arc::new(LiveChild {
                 cwd: PathBuf::from("/test"),
-                stdin: Mutex::new(stdin),
+                stdin: Mutex::new(Some(stdin)),
                 pid,
                 account: None,
             }),

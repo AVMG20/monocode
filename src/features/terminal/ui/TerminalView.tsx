@@ -99,7 +99,7 @@ const ANSI_LIGHT = {
   brightWhite: "#ffffff",
 };
 
-function terminalTheme(light: boolean) {
+export function terminalTheme(light: boolean) {
   return {
     background: "#00000000",
     foreground: cssColor("var(--color-content)", light ? "#2e2e2e" : "#e8eef2"),
@@ -113,14 +113,14 @@ function terminalTheme(light: boolean) {
   };
 }
 
-function monoFont(): string {
+export function monoFont(): string {
   const fromCss = getComputedStyle(document.documentElement)
     .getPropertyValue("--font-mono")
     .trim();
   return fromCss || "ui-monospace, SFMono-Regular, Menlo, Monaco, monospace";
 }
 
-function oscColors() {
+export function oscColors() {
   const light = isLightScheme();
   return {
     fg: cssHexColor(
@@ -138,6 +138,13 @@ function oscColors() {
   };
 }
 
+/**
+ * Latest mount per terminal id. A remount (React StrictMode in development,
+ * or a pane moving) spawns over the same id before the previous mount's
+ * deferred kill runs, and that kill must not take the new shell with it.
+ */
+const terminalMounts = new Map<string, number>();
+
 export function TerminalView({ id, cwd, active, onMetaChange }: Props) {
   const outerRef = useRef<HTMLDivElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
@@ -153,6 +160,8 @@ export function TerminalView({ id, cwd, active, onMetaChange }: Props) {
     const host = hostRef.current;
     if (!outer || !host) return;
 
+    const mount = (terminalMounts.get(id) ?? 0) + 1;
+    terminalMounts.set(id, mount);
     const term = new Terminal({
       cursorBlink: true,
       cursorStyle: "bar",
@@ -363,7 +372,13 @@ export function TerminalView({ id, cwd, active, onMetaChange }: Props) {
       renderSub.dispose();
       bufferSub.dispose();
       unsubscribe();
-      void starting.catch(() => undefined).then(() => killPty(id));
+      void starting
+        .catch(() => undefined)
+        .then(() => {
+          if (terminalMounts.get(id) !== mount) return;
+          terminalMounts.delete(id);
+          return killPty(id);
+        });
       term.dispose();
       termRef.current = null;
       spawned.current = false;

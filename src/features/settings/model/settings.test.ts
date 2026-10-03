@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
 import {
   COMPOSER_RUNNER_DEFAULT,
   AUTOSAVE_DEFAULT,
@@ -49,6 +50,13 @@ import {
   saveTabAnimationsEnabled,
 } from "./settings";
 import { IS_MAC, MOD, SHIFT } from "../../../platform/tauri/platform";
+
+// Exercises the upstream git/files UI, which this build hides by default.
+vi.mock("../../../app/model/features", () => ({
+  SHOW_SOURCE_CONTROL: true,
+  SHOW_FILES: true,
+  sidebarTabEnabled: () => true,
+}));
 
 const KEY = "monocode.composerRunner";
 const MODEL_CONTROLS_KEY = "monocode.modelControls";
@@ -331,23 +339,6 @@ describe("keybinding overrides", () => {
   });
 });
 
-describe("quick composer shortcut setting", () => {
-  beforeEach(mockLocalStorage);
-
-  it("defaults to the existing shortcut and persists a custom binding", () => {
-    expect(loadQuickComposerShortcut()).toBe("Command+Shift+Space");
-    saveQuickComposerShortcut("Command+Option+KeyK");
-    expect(localStorage.getItem(QUICK_COMPOSER_SHORTCUT_KEY)).toBe(
-      "Command+Option+KeyK",
-    );
-    expect(loadQuickComposerShortcut()).toBe("Command+Option+KeyK");
-  });
-
-  it("ignores malformed stored bindings", () => {
-    localStorage.setItem(QUICK_COMPOSER_SHORTCUT_KEY, "Shift+Space");
-    expect(loadQuickComposerShortcut()).toBe("Command+Shift+Space");
-  });
-});
 
 describe("live agents enabled setting", () => {
   beforeEach(mockLocalStorage);
@@ -606,11 +597,9 @@ describe("settings navigation", () => {
       "connections",
       "appearance",
       "keybindings",
-      "chat",
       "providers",
       "mcp",
       "skills",
-      "inbox",
       "archive",
       "worktrees",
     ]);
@@ -642,18 +631,17 @@ describe("settings search", () => {
     ]);
   });
 
-  it("finds a setting by a word that is not in its label", () => {
-    expect(searchSettings("steer")[0]).toMatchObject({
-      section: "chat",
-      sectionLabel: "Chat",
-      settingId: "follow-up",
-      label: "Follow-up behavior",
-    });
+  it("leaves the old chat and inbox settings out of search", () => {
+    expect(searchSettings("steer")).toEqual([]);
+    expect(searchSettings("jira")).toEqual([]);
+  });
 
-    expect(searchSettings("prettier")[0]).toMatchObject({
-      section: "chat",
-      settingId: "format-on-save",
-      label: "Format on save",
+  it("finds a setting by a word that is not in its label", () => {
+    expect(searchSettings("scratchpad")[0]).toMatchObject({
+      section: "general",
+      sectionLabel: "General",
+      settingId: "notes",
+      label: "Notes",
     });
   });
 

@@ -70,10 +70,6 @@ import {
   saveChangesView,
   type ChangesView,
 } from "../../settings/model/appearance";
-import {
-  generateCommitMessage,
-  generatePrContent,
-} from "../../../integrations/harness";
 import { invalidateWatchedFiles } from "../../files/model/fileWatch";
 import { MOD } from "../../../platform/tauri/platform";
 import { applyProjectDiffStats } from "../hooks/useProjectDiffStats";
@@ -94,6 +90,23 @@ let stagedOpen = true;
 let changesOpen = true;
 let graphOpen = true;
 let changesView: ChangesView = loadChangesView();
+
+// Commit and pull request text used to come from the removed chat runtime.
+// Agents now run as native CLIs, so ask the session to write them instead.
+async function generateCommitMessage(
+  _cwd: string,
+  _harness?: HarnessId,
+  _signal?: AbortSignal,
+): Promise<string> {
+  throw new Error("Ask your agent session to write the commit message.");
+}
+
+async function generatePrContent(
+  _cwd: string,
+  _harness?: HarnessId,
+): Promise<{ title: string; body: string; base: string; head: string } | null> {
+  return null;
+}
 /** Folders the user collapsed in tree view, keyed `<kind>:<dir>`. */
 const collapsedDirs = new Set<string>();
 const indexByCwd = new Map<string, GitDiffIndex>();
@@ -380,7 +393,7 @@ function ChangedFiles({
     !!index?.branch &&
     !!index.defaultBranch &&
     index.branch === index.defaultBranch;
-  const canGenerate = files.length > 0 && !busy && !isRemoteProjectPath(cwd);
+  const canGenerate = false;
   const canCommit =
     (staged.length > 0 || amend) && message.trim().length > 0 && !busy;
   const canCreatePr =

@@ -51,20 +51,6 @@ describe("native command composer behavior", () => {
     expect(slashTokenAt("/Review_Code", 12)).toBeNull();
   });
 
-  it("only treats leading command tokens as native invocations", () => {
-    expect(isNativeCommandPrompt("/workflow foo @README.md", "omp")).toBe(true);
-    expect(isNativeCommandPrompt("/omp:plan investigate", "omp")).toBe(true);
-    for (const text of [
-      "Explain /workflow",
-      "> /workflow",
-      "/tmp/file.ts",
-      "/tmp\\file.ts",
-      "hello",
-    ]) {
-      expect(isNativeCommandPrompt(text, "omp")).toBe(false);
-    }
-    expect(isNativeCommandPrompt("/review foo", "claude")).toBe(false);
-  });
 });
 
 const review: Skill = {

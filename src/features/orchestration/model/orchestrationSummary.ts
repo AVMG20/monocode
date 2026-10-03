@@ -1,9 +1,21 @@
-import type { OrchestrationRun, TaskStatus } from "./orchestration";
-import { sessionNeedsInput, type HarnessId, type Session } from "../../sessions/model/session";
+import type { HarnessId } from "../../sessions/model/session";
 
-/** Small history projection; never includes prompts, results or credentials. */
+type TaskStatus =
+  | "queued"
+  | "running"
+  | "cancelling"
+  | "completed"
+  | "failed"
+  | "blocked"
+  | "interrupted"
+  | "cancelled";
+
+/**
+ * Saved history projection of an orchestration run from the old chat
+ * runtime. Kept so legacy sessions still list their workers' outcomes.
+ */
 export type OrchestrationSummary = {
-  status: OrchestrationRun["status"];
+  status: "active" | "paused" | "stopped" | "finished";
   live?: boolean;
   tasks: {
     sessionId: string;
@@ -14,26 +26,6 @@ export type OrchestrationSummary = {
     needsInput?: boolean;
   }[];
 };
-
-export function summarizeOrchestration(
-  run: OrchestrationRun,
-  sessions: readonly Session[],
-): OrchestrationSummary {
-  const byId = new Map(sessions.map((session) => [session.id, session]));
-  return {
-    status: run.status,
-    live: true,
-    tasks: run.tasks.map(({ sessionId, title, harness, model, status }) => ({
-      sessionId,
-      title,
-      harness,
-      model,
-      status,
-      needsInput:
-        !!byId.get(sessionId) && sessionNeedsInput(byId.get(sessionId)!),
-    })),
-  };
-}
 
 export function orchestrationTaskLabel(
   task: OrchestrationSummary["tasks"][number],

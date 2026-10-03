@@ -15,7 +15,7 @@ import {
   unwatchChild,
   watchChild,
 } from "../../../integrations/harness/core/child";
-import { asRecord } from "../../../integrations/harness/providers/codex/codexProtocol";
+import { asRecord } from "../../../shared/lib/records";
 import { JsonRpcClient } from "../../../integrations/harness/core/jsonRpc";
 
 const USAGE_CHILD_ID = "monocode-codex-usage";

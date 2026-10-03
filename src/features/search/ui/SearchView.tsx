@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
+import { SHOW_FILES } from "../../../app/model/features";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { MatchText } from "../../../shared/ui/MatchText";
 import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";
@@ -50,12 +51,15 @@ import {
   type SessionSummary,
 } from "../../sessions/data/sessionStore";
 
-const SCOPES: { id: SearchScope; label: string }[] = [
+const ALL_SCOPES: { id: SearchScope; label: string }[] = [
   { id: "all", label: "All" },
   { id: "conversations", label: "Conversations" },
   { id: "files", label: "Files" },
   { id: "projects", label: "Projects" },
 ];
+const SCOPES = ALL_SCOPES.filter(
+  (scope) => SHOW_FILES || scope.id !== "files",
+);
 
 type Props = {
   open: boolean;
@@ -142,7 +146,7 @@ export function SearchView({
 
   useEffect(() => {
     if (!open) return;
-    if (!isLocalProject(cwd)) {
+    if (!SHOW_FILES || !isLocalProject(cwd)) {
       setFiles([]);
       return;
     }
@@ -163,7 +167,7 @@ export function SearchView({
   );
   const fileHits = useMemo(
     () =>
-      trimmed && isLocalProject(cwd)
+      SHOW_FILES && trimmed && isLocalProject(cwd)
         ? hitsFromFileRanks(
             rankProjectFiles(files, trimmed, recentOpenedFiles(cwd), 40),
           )
@@ -211,7 +215,8 @@ export function SearchView({
     const timer = window.setTimeout(() => {
       const jobs: Promise<void>[] = [];
       const wantSessions = scope === "all" || scope === "conversations";
-      const wantFiles = scope === "all" || scope === "files";
+      const wantFiles =
+        SHOW_FILES && (scope === "all" || scope === "files");
 
       if (wantSessions) {
         const searchOwner = crypto.randomUUID();
@@ -503,7 +508,9 @@ function EmptyState() {
       </div>
 
       <p className="max-w-xs text-center text-[13px] text-content/45">
-        Find files, conversations, messages, and projects.
+        {SHOW_FILES
+          ? "Find files, conversations, messages, and projects."
+          : "Find conversations, messages, and projects."}
       </p>
     </div>
   );

@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { appendUser } from "../../../integrations/harness/core/apply";
 import {
   CONTINUE_PROMPT,
   INTERRUPT_MESSAGE,
@@ -647,12 +646,6 @@ describe("hydrateWorkspaceSnapshot", () => {
     expect(restored?.model).toBe("codex:gpt-5.6-sol");
     expect(restored?.modelSettings).toEqual(session.modelSettings);
     expect(canAutoContinue(restored!)).toBe(true);
-    const continued = appendUser(restored!, CONTINUE_PROMPT);
-    expect(continued.blocks.at(-1)?.turnModel).toEqual({
-      harness: "codex",
-      id: "codex:gpt-5.6-sol",
-      name: "GPT-5.6-Sol",
-    });
   });
 
   it("keeps terminal-only tabs", () => {

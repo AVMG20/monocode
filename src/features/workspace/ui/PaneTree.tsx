@@ -15,10 +15,6 @@ import {
   useExternalPaneDrop,
   type TitleTabDropPosition,
 } from "../model/paneDrop";
-import type {
-  ApprovalDecision,
-  UserQuestionReply,
-} from "../../../integrations/harness";
 import type { EditorNavigationTarget } from "../../search/model/search";
 import {
   layoutLeaves,
@@ -29,29 +25,11 @@ import {
   type LayoutSash,
   type PaneEdge,
 } from "../model/layout";
-import {
-  sameProjectPath,
-  type RecentProject,
-} from "../../projects/model/recents";
 import type { TerminalMetaPatch } from "../../terminal/model/terminalTab";
-import {
-  sessionWorkCwd,
-  type Attachment,
-  type Block,
-  type HarnessId,
-  type LinkedWorkItem,
-  type ModelTarget,
-  type PlanBuildTarget,
-  type RuntimeMode,
-  type Session,
-  type WorkspaceMode,
-  type ComposerTurnOptions,
-} from "../../sessions/model/session";
+import { type Session } from "../../sessions/model/session";
 import { FilePane } from "../../files/ui/FilePane";
-import { SessionPane } from "../../sessions/ui/SessionPane";
-import type { TranscriptPool } from "../../sessions/ui/TranscriptPool";
-import type { SessionFolderTarget } from "../../sessions/model/sessionFolders";
-import type { Worktree } from "../../source-control/model/worktrees";
+import { NativeSessionPane } from "../../sessions/ui/NativeSessionPane";
+import type { NativeSessionPatch } from "../../sessions/model/nativeSession";
 
 type Shared = {
   visible: boolean;
@@ -60,13 +38,7 @@ type Shared = {
   dirtyFileIds: Set<string>;
   fileErrorCounts: Map<string, number>;
   focusedId: string;
-  addToChatSessionId?: string;
-  composerFocused: boolean;
-  composerFocusToken?: number;
-  recents: RecentProject[];
-  hideProjectPicker?: boolean;
   onFocus: (paneId: string) => void;
-  onClose: (sessionId: string) => void;
   onSelectFile: (paneId: string, fileId: string) => void;
   onCloseFile: (paneId: string, fileId: string) => void;
   onCloseOtherFiles: (paneId: string, fileId: string) => void;
@@ -75,109 +47,8 @@ type Shared = {
   onFileDirtyChange: (fileId: string, dirty: boolean) => void;
   onFileErrorCountChange: (fileId: string, count: number) => void;
   onRatio: (splitId: string, index: number, ratio: number) => void;
-  onCwdChange: (sessionId: string, cwd: string) => void;
-  onBranchChange: (sessionId: string) => void;
-  onWorktreeChange?: (sessionId: string, tree: Worktree) => Promise<void>;
-  onWorkspaceModeChange: (
-    sessionId: string,
-    mode: WorkspaceMode,
-    base?: string,
-  ) => void;
-  onWorktreeBaseChange: (sessionId: string, base: string) => void;
-  onManageWorktrees?: () => void;
-  onModelChange: (sessionId: string, harness: HarnessId, model: string) => void;
-  onModelSettingsChange: (
-    sessionId: string,
-    settings: Record<string, string>,
-  ) => void;
-  onRuntimeModeChange: (sessionId: string, mode: RuntimeMode) => void;
-  onSubmit: (
-    sessionId: string,
-    text: string,
-    attachments: Attachment[],
-    options?: ComposerTurnOptions,
-  ) => boolean | void;
-  onSaveDraft: (
-    sessionId: string,
-    text: string,
-    attachments: Attachment[],
-  ) => boolean | void;
-  onRemoveDraft: (sessionId: string, draftBlockId: string) => boolean | void;
-  onStop: (sessionId: string) => void;
-  onStopBackgroundTask?: (sessionId: string, taskId: string) => void;
-  onCompactContext: (sessionId: string) => boolean;
-  onPlaceSessionInFolder: (
-    sessionId: string,
-    target: SessionFolderTarget,
-  ) => void;
-  onDeleteQueuedMessage: (sessionId: string, messageId: string) => void;
-  onEditQueuedMessage: (
-    sessionId: string,
-    messageId: string,
-    text: string,
-  ) => void;
-  onQueuedMessageEditingChange: (sessionId: string, messageId?: string) => void;
-  onSteerQueuedMessage: (sessionId: string, messageId: string) => void;
-  onResumeQueue: (sessionId: string) => void;
-  onUsageLimitResume: (sessionId: string) => void;
-  onUsageLimitResumeAtReset: (sessionId: string, enabled: boolean) => void;
-  onUsageLimitDismiss: (sessionId: string) => void;
-  onInboxCardDismiss?: (sessionId: string) => void;
-  onLinkedWorkItemUpdateCardDismiss?: (sessionId: string) => void;
-  onNoteCardDismiss?: (sessionId: string) => void;
-  onHandoffCardDismiss?: (sessionId: string) => void;
-  onOpenLinkedWorkItem?: (item: LinkedWorkItem, sessionId: string) => void;
-  onArchiveSession?: (sessionId: string, archived: boolean) => Promise<boolean>;
-  onDeleteSession?: (sessionId: string) => Promise<boolean>;
-  onApproval: (
-    sessionId: string,
-    requestId: number,
-    decision: ApprovalDecision,
-  ) => void;
-  onQuestionReply: (
-    sessionId: string,
-    requestId: number,
-    reply: UserQuestionReply,
-  ) => void;
-  onQuestionInteraction?: (sessionId: string, requestId: number) => void;
   onOpenFile: (path: string) => void;
   editorNavigation?: EditorNavigationTarget | null;
-  onOpenDiff: (
-    path?: string,
-    session?: { sessionId: string; cwd: string },
-  ) => void;
-  onOpenPlan: (sessionId: string, blockId: string) => void;
-  onUpdatePlan: (sessionId: string, blockId: string, text: string) => void;
-  onBuildPlan: (
-    sessionId: string,
-    blockId: string,
-    target?: PlanBuildTarget,
-  ) => void;
-  onSecondOpinion?: (
-    sessionId: string,
-    target: ModelTarget,
-    turn: Block[],
-  ) => void;
-  onHandoff?: (sessionId: string, target: ModelTarget, turn: Block[]) => void;
-  onBtwSubmit?: (
-    sessionId: string,
-    turn: Block[],
-    threadId: string,
-    messageId: string,
-    text: string,
-    model?: string,
-    modelSettings?: Record<string, string>,
-  ) => boolean | void;
-  onBtwRetry?: (sessionId: string, turn: Block[], threadId: string) => void;
-  onBtwDelete?: (sessionId: string, turn: Block[], threadId: string) => void;
-  onBtwStop?: (sessionId: string, turn: Block[], threadId: string) => void;
-  onBtwModelChange?: (
-    sessionId: string,
-    turn: Block[],
-    threadId: string,
-    model: string,
-    modelSettings: Record<string, string>,
-  ) => void;
   onMovePane: (fromId: string, toId: string, edge: PaneEdge) => void;
   onDetachPane: (
     paneId: string,
@@ -186,7 +57,8 @@ type Shared = {
   ) => void;
   onNewTerminal: (sessionId: string) => void;
   onTerminalMetaChange?: (fileId: string, patch: TerminalMetaPatch) => void;
-  transcriptPool?: TranscriptPool;
+  /** Native CLI sessions report launch details and terminal titles here. */
+  onNativeSessionPatch: (sessionId: string, patch: NativeSessionPatch) => void;
 };
 
 type Props = Shared & { layout: LayoutNode };
@@ -207,13 +79,7 @@ function PaneTreeComponent({
   dirtyFileIds,
   fileErrorCounts,
   focusedId,
-  addToChatSessionId,
-  composerFocused,
-  composerFocusToken,
-  recents,
-  hideProjectPicker,
   onFocus,
-  onClose,
   onSelectFile,
   onCloseFile,
   onCloseOtherFiles,
@@ -222,58 +88,13 @@ function PaneTreeComponent({
   onFileDirtyChange,
   onFileErrorCountChange,
   onRatio,
-  onCwdChange,
-  onBranchChange,
-  onWorktreeChange,
-  onWorkspaceModeChange,
-  onWorktreeBaseChange,
-  onManageWorktrees,
-  onModelChange,
-  onModelSettingsChange,
-  onRuntimeModeChange,
-  onSaveDraft,
-  onRemoveDraft,
-  onSubmit,
-  onStop,
-  onStopBackgroundTask,
-  onCompactContext,
-  onPlaceSessionInFolder,
-  onDeleteQueuedMessage,
-  onEditQueuedMessage,
-  onQueuedMessageEditingChange,
-  onSteerQueuedMessage,
-  onResumeQueue,
-  onUsageLimitResume,
-  onUsageLimitResumeAtReset,
-  onUsageLimitDismiss,
-  onInboxCardDismiss,
-  onLinkedWorkItemUpdateCardDismiss,
-  onNoteCardDismiss,
-  onHandoffCardDismiss,
-  onOpenLinkedWorkItem,
-  onArchiveSession,
-  onDeleteSession,
-  onApproval,
-  onQuestionReply,
-  onQuestionInteraction,
   onOpenFile,
   editorNavigation,
-  onOpenDiff,
-  onOpenPlan,
-  onUpdatePlan,
-  onBuildPlan,
-  onSecondOpinion,
-  onBtwSubmit,
-  onBtwRetry,
-  onBtwDelete,
-  onBtwStop,
-  onBtwModelChange,
-  onHandoff,
   onMovePane,
   onDetachPane,
   onNewTerminal,
   onTerminalMetaChange,
-  transcriptPool,
+  onNativeSessionPatch,
 }: Props) {
   const treeRef = useRef<HTMLDivElement>(null);
   const layoutRef = useRef(layout);
@@ -293,9 +114,8 @@ function PaneTreeComponent({
     setDraft(null);
   }, [layout]);
 
-  // A sash drag re-renders this tree every frame. `SessionPane` compares props
-  // shallowly, so handing it a fresh drag handler each frame would re-render
-  // the whole session subtree (transcript, composer, picker) per frame.
+  // A sash drag re-renders this tree every frame; keep each pane's drag
+  // handler stable so panes do not re-render per frame.
   const dragHandlers = useRef(
     new Map<string, (event: ReactPointerEvent<HTMLElement>) => void>(),
   );
@@ -441,7 +261,6 @@ function PaneTreeComponent({
                 showTabs={inSplit || editorPane.files.length > 1}
                 dirtyFileIds={dirtyFileIds}
                 fileErrorCounts={fileErrorCounts}
-                sessions={sessions}
                 onFocus={onFocus}
                 onSelectFile={onSelectFile}
                 onCloseFile={onCloseFile}
@@ -451,84 +270,19 @@ function PaneTreeComponent({
                 onDirtyChange={onFileDirtyChange}
                 onErrorCountChange={onFileErrorCountChange}
                 onOpenFile={onOpenFile}
-                onUpdatePlan={onUpdatePlan}
-                onBuildPlan={onBuildPlan}
                 editorNavigation={editorNavigation}
                 onPaneDragStart={onPaneDragStart}
                 onTerminalMetaChange={onTerminalMetaChange}
               />
             ) : session ? (
-              <SessionPane
+              <NativeSessionPane
                 session={session}
-                reviewUndoLocked={sessions.some(
-                  (other) =>
-                    other.id !== session.id &&
-                    other.busy &&
-                    sameProjectPath(
-                      sessionWorkCwd(other),
-                      sessionWorkCwd(session),
-                    ),
-                )}
                 visible={visible}
                 focused={focusedId === session.id}
-                addToChatTarget={addToChatSessionId === session.id}
-                inSplit={inSplit}
-                composerFocused={composerFocused}
-                composerFocusToken={composerFocusToken}
-                recents={recents}
-                hideProjectPicker={hideProjectPicker}
                 onFocus={onFocus}
-                onClose={onClose}
-                onCwdChange={onCwdChange}
-                onBranchChange={onBranchChange}
-                onWorktreeChange={onWorktreeChange}
-                onWorkspaceModeChange={onWorkspaceModeChange}
-                onWorktreeBaseChange={onWorktreeBaseChange}
-                onManageWorktrees={onManageWorktrees}
-                onModelChange={onModelChange}
-                onModelSettingsChange={onModelSettingsChange}
-                onRuntimeModeChange={onRuntimeModeChange}
-                onSaveDraft={onSaveDraft}
-                onRemoveDraft={onRemoveDraft}
-                onSubmit={onSubmit}
-                onStop={onStop}
-                onStopBackgroundTask={onStopBackgroundTask}
-                onCompactContext={onCompactContext}
-                onPlaceSessionInFolder={onPlaceSessionInFolder}
-                onDeleteQueuedMessage={onDeleteQueuedMessage}
-                onEditQueuedMessage={onEditQueuedMessage}
-                onQueuedMessageEditingChange={onQueuedMessageEditingChange}
-                onSteerQueuedMessage={onSteerQueuedMessage}
-                onResumeQueue={onResumeQueue}
-                onUsageLimitResume={onUsageLimitResume}
-                onUsageLimitResumeAtReset={onUsageLimitResumeAtReset}
-                onUsageLimitDismiss={onUsageLimitDismiss}
-                onInboxCardDismiss={onInboxCardDismiss}
-                onLinkedWorkItemUpdateCardDismiss={
-                  onLinkedWorkItemUpdateCardDismiss
-                }
-                onNoteCardDismiss={onNoteCardDismiss}
-                onHandoffCardDismiss={onHandoffCardDismiss}
-                onOpenLinkedWorkItem={onOpenLinkedWorkItem}
-                onArchiveSession={onArchiveSession}
-                onDeleteSession={onDeleteSession}
-                onApproval={onApproval}
-                onQuestionReply={onQuestionReply}
-                onQuestionInteraction={onQuestionInteraction}
-                onOpenFile={onOpenFile}
-                onOpenDiff={onOpenDiff}
-                onOpenPlan={onOpenPlan}
-                onBuildPlan={onBuildPlan}
-                onSecondOpinion={onSecondOpinion}
-                onHandoff={onHandoff}
-                onBtwSubmit={onBtwSubmit}
-                onBtwRetry={onBtwRetry}
-                onBtwDelete={onBtwDelete}
-                onBtwStop={onBtwStop}
-                onBtwModelChange={onBtwModelChange}
+                onPatch={onNativeSessionPatch}
                 onNewTerminal={onNewTerminal}
                 onPaneDragStart={onPaneDragStart}
-                transcriptPool={transcriptPool}
               />
             ) : null}
           </div>

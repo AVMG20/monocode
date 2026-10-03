@@ -12,8 +12,7 @@ import {
 import {
   compareSemver,
   parseOpenCodeVersion,
-} from "../../../integrations/harness/providers/opencode/opencodeProtocol";
-import { refreshHarnessCatalogs } from "../../../integrations/harness/core/registry";
+} from "../model/cliVersions";
 import { LAYER } from "../../../shared/lib/layers";
 import { Check, Loader, X } from "../../../shared/ui/icons";
 import { isPickerProviderVisible } from "../../sessions/model/models";
@@ -28,7 +27,6 @@ import {
   claimLaunchHarnessUpdateCheck,
   fetchLatestHarnessVersion,
   findHarnessUpdates,
-  onHarnessUpdated,
   UPDATABLE_HARNESSES,
   type HarnessUpdate,
 } from "../model/harnessUpdates";
@@ -76,7 +74,6 @@ async function runUpdate(update: HarnessUpdate): Promise<RowState> {
     const after = await inspectHarnessBinary(update.harness);
     const version = parseOpenCodeVersion(after.version ?? "");
     if (version && compareSemver(version, update.latest) >= 0) {
-      await refreshHarnessCatalogs([update.harness], { force: true });
       void announceHarnessUpdated(update.harness).catch(() => undefined);
       return { status: "updated", version };
     }
@@ -106,15 +103,6 @@ export function HarnessUpdateNotice({
 
   // Mounted in every window, so the window that ran the update tells the
   // others to pick up the new CLI's models too.
-  useEffect(() => {
-    const unlisten = onHarnessUpdated((harness) => {
-      void refreshHarnessCatalogs([harness], { force: true });
-    }).catch(() => undefined);
-    return () => {
-      void unlisten.then((stop) => stop?.());
-    };
-  }, []);
-
   useEffect(() => {
     let cancelled = false;
     void checkForHarnessUpdates().then((next) => {

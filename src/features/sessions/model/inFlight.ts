@@ -1,7 +1,6 @@
 import { leafIds, newTab, type WorkspaceTab } from "../../workspace/model/layout";
 import type { DockSide, ProjectTerminalDock } from "../../projects/model/projectTerminal";
 import { sessionNeedsInput, type Session } from "./session";
-import { stopStreaming } from "../../../integrations/harness/core/apply";
 import type { ProjectReturnMemory } from "../../projects/model/projectReturn";
 
 export const INTERRUPT_MESSAGE =
@@ -75,7 +74,7 @@ export function quitWhileBusyMessage(count: number): string {
  * resume on the second quit.
  */
 export function markTurnInterrupted(session: Session): Session {
-  const sealed = { ...sealOpenWork(stopStreaming(session)), busy: false };
+  const sealed = { ...sealOpenWork(session), busy: false };
   if (lastBlockIsInterrupt(sealed)) return sealed;
   return {
     ...sealed,

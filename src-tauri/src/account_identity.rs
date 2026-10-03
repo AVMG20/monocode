@@ -84,9 +84,9 @@ fn parse_claude_identity(config: &Value) -> Option<ProviderAccountIdentity> {
 fn codex_identity(dir: Option<PathBuf>) -> Option<ProviderAccountIdentity> {
     let dir = match dir {
         Some(dir) => dir,
-        None => std::env::var_os("CODEX_HOME")
-            .map(PathBuf::from)
-            .or_else(|| home().map(|home| home.join(".codex")))?,
+        // The default profile always runs Codex with ~/.codex (sessions drop
+        // an inherited CODEX_HOME), so read the identity from there too.
+        None => home()?.join(".codex"),
     };
     parse_codex_identity(&read_json(&dir.join("auth.json"))?)
 }

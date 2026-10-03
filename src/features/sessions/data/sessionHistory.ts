@@ -1,5 +1,3 @@
-import type { OrchestrationRun } from "../../orchestration/model/orchestration";
-import { summarizeOrchestration } from "../../orchestration/model/orchestrationSummary";
 import { fuzzyMatch } from "../../../shared/lib/fuzzy";
 import { projectName } from "../../../shared/lib/paths";
 import { sameProjectPath } from "../../projects/model/recents";
@@ -114,6 +112,9 @@ export function summaryFromSession(
     title: session.title,
     draft: !!sessionDraftBlock(session),
     providerSessionId: session.providerSessionId,
+    ...(session.providerAccountId
+      ? { providerAccountId: session.providerAccountId }
+      : {}),
     worktreeCwd: session.worktreeCwd,
     worktreeRemoved: session.worktreeRemoved,
     ...(session.linkedWorkItem
@@ -155,7 +156,6 @@ export function historyWithLiveSessions(
   sessions: Session[],
   cwd: string,
   git?: SessionGitHint,
-  runs: readonly OrchestrationRun[] = [],
 ): SessionSummary[] {
   const workerIds = new Set([
     ...sessions
@@ -164,7 +164,6 @@ export function historyWithLiveSessions(
     ...history.flatMap(
       (row) => row.orchestration?.tasks.map((task) => task.sessionId) ?? [],
     ),
-    ...runs.flatMap((run) => run.tasks.map((task) => task.sessionId)),
   ]);
   const inboxIds = new Set(
     sessions.filter((session) => session.inboxAsk).map((session) => session.id),
@@ -187,9 +186,16 @@ export function historyWithLiveSessions(
       const stored = rows[storedIndex];
       const draft = !!sessionDraftBlock(session);
       const automationId = session.automationId || stored.automationId;
-      if (!!stored.draft !== draft || stored.automationId !== automationId) {
+      if (
+        !!stored.draft !== draft ||
+        stored.automationId !== automationId ||
+        stored.harness !== session.harness ||
+        stored.providerAccountId !== session.providerAccountId
+      ) {
         rows[storedIndex] = {
           ...stored,
+          harness: session.harness,
+          providerAccountId: session.providerAccountId,
           draft: draft || undefined,
           ...(automationId ? { automationId } : {}),
         };
@@ -202,13 +208,5 @@ export function historyWithLiveSessions(
     };
     rows = mergeHistorySummary(rows, summaryFromSession(session, sessionHint));
   }
-  const byLead = new Map(runs.map((run) => [run.leadId, run]));
-  return rows
-    .map((row) => {
-      const run = byLead.get(row.id);
-      return run
-        ? { ...row, orchestration: summarizeOrchestration(run, sessions) }
-        : row;
-    })
-    .sort(compareSessionSummaries);
+  return rows.sort(compareSessionSummaries);
 }

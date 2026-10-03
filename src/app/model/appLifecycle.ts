@@ -1,10 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
 import { ask } from "@tauri-apps/plugin-dialog";
-import {
-  bindHarnessSession,
-  forgetHarnessSession,
-  isLiveHarness,
-} from "../../integrations/harness/core/registry";
 import { killAllChildren } from "../../integrations/harness/core/child";
 import {
   hasInFlightSessions,
@@ -23,8 +18,7 @@ import {
   type DockSide,
   type ProjectTerminalDock,
 } from "../../features/projects/model/projectTerminal";
-import { sessionWorkCwd, type Session } from "../../features/sessions/model/session";
-import { sessionChildHarnesses } from "../../features/sessions/model/handoff";
+import { type Session } from "../../features/sessions/model/session";
 import {
   getSession,
   listInFlightSessions,
@@ -40,8 +34,10 @@ import {
   collectWorkspaceSnapshot,
   hydrateWorkspaceSnapshot,
   parseWorkspaceSnapshot,
+  withoutSnapshotFiles,
 } from "../../features/workspace/model/workspaceSnapshot";
 import { loadWindowTransfer } from "./windowTransferBootstrap";
+import { isHiddenSurfaceFile } from "./hiddenSurfaces";
 import type { WindowTransferPayload } from "./windowTransfer";
 import { lastProjectPath, normalizeProjectPath, sameProjectPath } from "../../features/projects/model/recents";
 import type { ProjectReturnMemory } from "../../features/projects/model/projectReturn";
@@ -277,7 +273,11 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
     listInFlightSessions().catch(() => []),
   ]);
   const interrupted = new Set(refs.map((ref) => ref.sessionId));
-  const snapshot = parseWorkspaceSnapshot(snapshotRaw);
+  const parsed = parseWorkspaceSnapshot(snapshotRaw);
+  // Saved layouts may hold editor or diff panes this build no longer shows.
+  const snapshot = parsed
+    ? withoutSnapshotFiles(parsed, isHiddenSurfaceFile)
+    : null;
 
   const ids = new Set<string>();
   if (snapshot) {
@@ -322,25 +322,6 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
     );
   }
   return workspace;
-}
-
-export function bindResumedSessions(sessions: Session[]): void {
-  for (const session of sessions) {
-    if (
-      session.worktreeRemoved ||
-      !session.providerSessionId ||
-      !isLiveHarness(session.harness)
-    )
-      continue;
-    bindHarnessSession(
-      session.harness,
-      session.id,
-      session.providerSessionId,
-      sessionWorkCwd(session),
-      session.providerAccountId,
-      session.blocks,
-    );
-  }
 }
 
 export async function hideCurrentWindow(): Promise<void> {
@@ -494,22 +475,16 @@ export async function reapWindowRuntime(
   projectTerminals: ProjectTerminalDock[] = [],
   includeAllChildren = true,
 ): Promise<void> {
+  // Native CLI sessions run in PTYs keyed by session id, next to the shells.
   await Promise.all(
-    sessions.map((session) =>
-      Promise.all(
-        sessionChildHarnesses(session).map((harness) =>
-          forgetHarnessSession(harness, session.id),
-        ),
-      ),
-    ),
+    [
+      ...sessions.map((session) => session.id),
+      ...terminalFileIds(tabs),
+      ...projectTerminalFileIds(projectTerminals),
+    ].map((id) => killPty(id)),
   );
-  await Promise.all(
-    [...terminalFileIds(tabs), ...projectTerminalFileIds(projectTerminals)].map(
-      (id) => killPty(id),
-    ),
-  );
-  // Catalog probes, title generators, and usage scrapers are not session
-  // children. Drop them so an unused Pi/Codex probe cannot outlive the window.
+  // Usage scrapers are not session children. Drop them so an unused Codex
+  // probe cannot outlive the window.
   if (includeAllChildren) await killAllChildren().catch(() => undefined);
 }
 

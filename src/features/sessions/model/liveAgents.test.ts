@@ -193,3 +193,25 @@ describe("formatLiveElapsed", () => {
     expect(formatLiveElapsed(0, 3_720_000)).toBe("1h 2m");
   });
 });
+
+describe("native CLI sessions", () => {
+  it("lists a working or waiting terminal session from its hook status", () => {
+    const working = { ...newSession("claude", "/repo"), title: "claude · Fix login" };
+    const waiting = { ...newSession("claude", "/repo"), title: "claude · Review" };
+    const idle = newSession("claude", "/repo");
+    const agents = liveAgentsFromSessions(
+      [working, waiting, idle],
+      new Set(),
+      new Map([
+        [working.id, "running"],
+        [waiting.id, "waiting"],
+        [idle.id, "idle"],
+      ]),
+    );
+    expect(agents.map((agent) => [agent.id, agent.activity])).toEqual([
+      [waiting.id, "Needs input"],
+      [working.id, "Working"],
+    ]);
+    expect(agents[0].needsApproval).toBe(true);
+  });
+});

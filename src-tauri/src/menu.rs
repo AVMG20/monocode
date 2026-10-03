@@ -147,13 +147,12 @@ pub fn dispatch(app: &AppHandle, id: &str) {
         "quit" => crate::window::request_quit(app),
         "close_tab" | "close_other_tabs" | "next_tab" | "prev_tab" | "back_tab" | "forward_tab"
         | "split_right" | "split_down" | "focus_left" | "focus_right" | "focus_up"
-        | "focus_down" | "sidebar_opacity" | "open_project" | "go_to_file" | "open_search"
-        | "open_inbox" | "open_notes" | "find_in_project" | "find" | "new_terminal"
-        | "new_terminal_tab" | "toggle_terminal" | "open_model_picker" | "open_settings"
+        | "focus_down" | "sidebar_opacity" | "open_project" | "open_search" | "open_notes"
+        | "new_terminal" | "new_terminal_tab" | "toggle_terminal" | "open_settings"
         | "check_for_updates" => {
             let _ = app.emit(id, ());
         }
-        // New Tab, Sidebar, Zoom, Reload, Command Palette, and Close All Tabs target one window: a broadcast would
+        // New Tab, Sidebar, Zoom, Reload, and Close All Tabs target one window: a broadcast would
         // make every window act on a single menu click.
         "new_tab"
         | "toggle_sidebar"
@@ -162,7 +161,6 @@ pub fn dispatch(app: &AppHandle, id: &str) {
         | "zoom_out"
         | "zoom_reset"
         | "reload"
-        | "open_command_palette"
         | "close_all_tabs" => emit_to_focused(app, id),
         _ => {}
     }
@@ -221,22 +219,6 @@ fn build(
         "App: Open Project",
         overrides,
     )?;
-    let go_to_file = menu_item(
-        app,
-        "go_to_file",
-        "Go to File…",
-        "CmdOrCtrl+P",
-        "App: Go to File",
-        overrides,
-    )?;
-    let command_palette = menu_item(
-        app,
-        "open_command_palette",
-        "Command Palette…",
-        "CmdOrCtrl+Shift+P",
-        "App: Command Palette",
-        overrides,
-    )?;
     let open_search = menu_item(
         app,
         "open_search",
@@ -245,7 +227,6 @@ fn build(
         "App: Search",
         overrides,
     )?;
-    let open_inbox = MenuItemBuilder::with_id("open_inbox", "Inbox").build(app)?;
     let open_notes = MenuItemBuilder::with_id("open_notes", "Notes").build(app)?;
     let new_tab = menu_item(
         app,
@@ -401,14 +382,6 @@ fn build(
         "App: Toggle Session Sidebar",
         overrides,
     )?;
-    let open_model_picker = menu_item(
-        app,
-        "open_model_picker",
-        "Switch Model…",
-        "CmdOrCtrl+.",
-        "App: Switch Model",
-        overrides,
-    )?;
     let sidebar_opacity =
         MenuItemBuilder::with_id("sidebar_opacity", "Sidebar Appearance…").build(app)?;
     // No accelerators here on purpose: the webview key handler owns
@@ -425,23 +398,6 @@ fn build(
         "View: Reload",
         overrides,
     )?;
-    let find = menu_item(
-        app,
-        "find",
-        "Find",
-        "CmdOrCtrl+F",
-        "Editor: Find",
-        overrides,
-    )?;
-
-    let find_in_project = menu_item(
-        app,
-        "find_in_project",
-        "Find in Files…",
-        "CmdOrCtrl+Shift+F",
-        "App: Find in Files",
-        overrides,
-    )?;
     let autosave = CheckMenuItem::with_id(
         app,
         "toggle_autosave",
@@ -455,9 +411,6 @@ fn build(
         .item(&new_window)
         .item(&open_project)
         .item(&open_search)
-        .item(&go_to_file)
-        .item(&command_palette)
-        .item(&find_in_project)
         .separator()
         .item(&autosave)
         .separator()
@@ -479,10 +432,8 @@ fn build(
     let view = SubmenuBuilder::new(app, "View")
         .item(&toggle_sidebar)
         .item(&toggle_session_sidebar)
-        .item(&open_inbox)
         .item(&open_notes)
         .item(&toggle_terminal)
-        .item(&open_model_picker)
         .separator()
         .item(&focus_left)
         .item(&focus_right)
@@ -505,8 +456,6 @@ fn build(
         .copy()
         .paste()
         .select_all()
-        .separator()
-        .item(&find)
         .build()?;
 
     #[cfg(target_os = "macos")]

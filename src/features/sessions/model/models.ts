@@ -808,13 +808,22 @@ export function firstEnabledHarness(
   return HARNESSES.find(enabled) ?? preferred;
 }
 
+const NATIVE_HARNESSES: readonly HarnessId[] = [
+  "claude",
+  "codex",
+  "opencode",
+  "antigravity",
+];
+
 /** Provider + model new conversations should start with. */
 export function defaultSessionChoice(cwd?: string): LastModelChoice {
   const project = loadProjectProviderSettings(cwd);
   const last = loadLastModelChoice();
+  const preferred = project.defaultHarness ?? last?.harness ?? "claude";
+  // Sessions run a provider's own CLI, which exists for these four only.
   const harness = firstEnabledHarness(
     cwd,
-    project.defaultHarness ?? last?.harness ?? "cursor",
+    NATIVE_HARNESSES.includes(preferred) ? preferred : "claude",
   );
   const model =
     project.models?.[harness] ??

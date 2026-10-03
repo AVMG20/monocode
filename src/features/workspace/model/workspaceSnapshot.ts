@@ -139,13 +139,23 @@ function parseProjectReturnTargets(raw: unknown): ProjectReturnMemory {
  * cost the whole workspace tab on restore, so the pane is closed here instead.
  */
 function withoutAgentTabs(tabs: WorkspaceTab[]): WorkspaceTab[] {
+  return withoutPaneFiles(tabs, isAgentTab);
+}
+
+/**
+ * Drop editor-pane files matching `drop`. A pane left empty is closed, and a
+ * workspace tab left with no panes at all is dropped.
+ */
+export function withoutPaneFiles(
+  tabs: WorkspaceTab[],
+  drop: (file: FilePaneTab) => boolean,
+): WorkspaceTab[] {
   return tabs.flatMap((tab) => {
-    if (!tab.editorPanes.some((pane) => pane.files.some(isAgentTab)))
-      return [tab];
+    if (!tab.editorPanes.some((pane) => pane.files.some(drop))) return [tab];
     let remaining: WorkspaceTab | null = tab;
     const panes: EditorPane[] = [];
     for (const pane of tab.editorPanes) {
-      const files = pane.files.filter((file) => !isAgentTab(file));
+      const files = pane.files.filter((file) => !drop(file));
       if (files.length === pane.files.length) {
         panes.push(pane);
       } else if (files.length === 0) {
@@ -240,6 +250,23 @@ export function parseWorkspaceSnapshot(raw: unknown): WorkspaceSnapshot | null {
         parseProjectReturnTargets(value.projectReturnTargets),
       )
     : null;
+}
+
+/** Drop matching editor files from a parsed snapshot; null when no tab is left. */
+export function withoutSnapshotFiles(
+  snapshot: WorkspaceSnapshot,
+  drop: (file: FilePaneTab) => boolean,
+): WorkspaceSnapshot | null {
+  const tabs = withoutPaneFiles(snapshot.tabs, drop);
+  if (tabs.length === 0) return null;
+  if (tabs.every((tab, index) => tab === snapshot.tabs[index])) return snapshot;
+  return {
+    ...snapshot,
+    tabs,
+    activeTabId: tabs.some((tab) => tab.id === snapshot.activeTabId)
+      ? snapshot.activeTabId
+      : tabs[0].id,
+  };
 }
 
 export function workspaceSnapshotKey(snapshot: WorkspaceSnapshot): string {

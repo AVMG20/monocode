@@ -135,9 +135,17 @@ async function runHarnessLogin(
       accountId && accountId !== "default" && supportsProviderAccounts(harness)
         ? { provider: harness, id: accountId }
         : undefined;
-    const spawn = account
-      ? child.spawnChild(childId, path, [...args], cwd, account, harness)
-      : child.spawnChild(childId, path, [...args], cwd, undefined, harness);
+    // No stdin: with an open pipe, `claude auth login` keeps waiting on its
+    // "paste code" prompt after the browser sign-in finished.
+    const spawn = child.spawnChild(
+      childId,
+      path,
+      [...args],
+      cwd,
+      account,
+      harness,
+      true,
+    );
     void spawn.catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
       finish(

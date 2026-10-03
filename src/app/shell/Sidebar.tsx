@@ -1,5 +1,10 @@
 import { NO_BRANCH_LABEL } from "../../features/source-control/model/worktrees";
-import { OrchestrationSidebarAgents } from "../../features/orchestration/ui/OrchestrationSidebarAgents";
+import { nativeSessionLabel } from "../../features/sessions/model/nativeSession";
+import {
+  SHOW_FILES,
+  SHOW_SOURCE_CONTROL,
+  sidebarTabEnabled,
+} from "../model/features";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   Archive,
@@ -52,7 +57,6 @@ import {
 } from "../../platform/tauri/fs";
 import { IS_MAC, MOD } from "../../platform/tauri/platform";
 import { copyText } from "../../platform/tauri/clipboard";
-import { resolveModel } from "../../features/sessions/model/models";
 import type { OpenFileFn } from "../../features/search/model/search";
 import { sessionDisplayTitle } from "../../features/sessions/model/session";
 import { nextUnseenFinishedSessions } from "../../features/sessions/model/sessionDone";
@@ -401,7 +405,9 @@ function SidebarComponent({
   onDismissUpdate,
 }: Props) {
   const remoteProject = isRemoteProjectPath(cwd);
-  const tab: SidebarTabId = requestedTab;
+  const tab: SidebarTabId = sidebarTabEnabled(requestedTab)
+    ? requestedTab
+    : "sessions";
   const remote = useRemoteProjectSessions(cwd, remoteProject);
   const hostProject = remoteProject ? remoteProjectFor(cwd) : undefined;
   const remoteChange = async (
@@ -698,11 +704,17 @@ function SidebarComponent({
   const sessionListKey = `${cwd}\0${sessionFilters.showArchived}\0${sessionFilters.time}\0${sessionFilters.hiddenHarnesses.join(",")}\0${sessionFilters.status.working}\0${sessionFilters.status.needsApproval}\0${sessionFilters.status.done}\0${searchQuery}`;
   const sessionHarnesses = harnessesInSessions(projectSessions);
   const narrowedByUser = searchNarrowed || filtersActive;
-  const visibleTabs = tabOrder.filter((itemId) => itemId !== "inbox");
+  const visibleTabs = tabOrder.filter(
+    (itemId) => itemId !== "inbox" && sidebarTabEnabled(itemId),
+  );
+  // A lone tab needs no switcher row.
+  const showTabStrip = visibleTabs.length > 1;
   const sortable = useAnimatedReorder(visibleTabs, (ids) => {
     let index = 0;
     const next = tabOrder.map((itemId) =>
-      itemId === "inbox" ? itemId : ids[index++],
+      itemId === "inbox" || !sidebarTabEnabled(itemId)
+        ? itemId
+        : ids[index++],
     );
     setTabOrder(next);
     saveSidebarTabOrder(next);
@@ -758,8 +770,14 @@ function SidebarComponent({
   const drawerRendered = drawerVisible || drawerClosing;
   const drawerAnimation = useRef<Animation | null>(null);
   const panelOpen = open || drawerVisible;
-  const gitStatuses = useGitFileStatuses(gitRoot, panelOpen && tab === "files");
-  const changeStats = useProjectDiffStats(gitRoot, panelOpen);
+  const gitStatuses = useGitFileStatuses(
+    gitRoot,
+    SHOW_FILES && panelOpen && tab === "files",
+  );
+  const changeStats = useProjectDiffStats(
+    gitRoot,
+    SHOW_SOURCE_CONTROL && panelOpen,
+  );
 
   useEffect(() => {
     if (!drawerMode || !sidebarAvailable) setDrawerOpen(false);
@@ -1597,13 +1615,15 @@ function SidebarComponent({
             </span>
             <WorkspaceTitleActions onSearch={onGoToFile} onNew={onNew} />
           </div>
-          <div
-            role="tablist"
-            aria-label="Workspace"
-            className="flex h-9 shrink-0 items-center gap-px border-b border-stroke px-2"
-          >
-            {workspaceTabItems}
-          </div>
+          {showTabStrip ? (
+            <div
+              role="tablist"
+              aria-label="Workspace"
+              className="flex h-9 shrink-0 items-center gap-px border-b border-stroke px-2"
+            >
+              {workspaceTabItems}
+            </div>
+          ) : null}
         </>
       ) : (
         <>
@@ -1646,7 +1666,7 @@ function SidebarComponent({
               inboxUnseen={inboxUnseen}
             />
           ) : null}
-          {!compactRailVisible ? (
+          {!compactRailVisible && showTabStrip ? (
             <div
               role="tablist"
               aria-label="Workspace"
@@ -1658,38 +1678,40 @@ function SidebarComponent({
         </>
       )}
       <>
-        <div
-          className={`flex min-h-0 flex-1 flex-col overflow-hidden ${
-            tab === "files" ? "" : "hidden"
-          }`}
-        >
-          {filesSearchOpen ? (
-            <ProjectSearch
-              cwd={gitRoot}
-              focusToken={searchFocusToken}
-              onOpenFile={onOpenFile}
-              onClose={() => onFilesSearchOpenChange(false)}
-            />
-          ) : cwd && cwd !== "~" ? (
-            <div className="flex min-h-0 flex-1 flex-col">
-              <FileTree
-                key={gitRoot}
+        {SHOW_FILES ? (
+          <div
+            className={`flex min-h-0 flex-1 flex-col overflow-hidden ${
+              tab === "files" ? "" : "hidden"
+            }`}
+          >
+            {filesSearchOpen ? (
+              <ProjectSearch
                 cwd={gitRoot}
-                rootLabel={explorerRootLabel}
+                focusToken={searchFocusToken}
                 onOpenFile={onOpenFile}
-                onOpenTerminal={remoteProject ? undefined : onOpenTerminal}
-                onFileMoved={onFileMoved}
-                onFileDeleted={onFileDeleted}
-                onSearch={onOpenFilesSearch}
-                gitStatuses={gitStatuses}
+                onClose={() => onFilesSearchOpenChange(false)}
               />
-            </div>
-          ) : (
-            <p className="px-3 py-2 text-[12px] text-content/50">
-              No project folder
-            </p>
-          )}
-        </div>
+            ) : cwd && cwd !== "~" ? (
+              <div className="flex min-h-0 flex-1 flex-col">
+                <FileTree
+                  key={gitRoot}
+                  cwd={gitRoot}
+                  rootLabel={explorerRootLabel}
+                  onOpenFile={onOpenFile}
+                  onOpenTerminal={remoteProject ? undefined : onOpenTerminal}
+                  onFileMoved={onFileMoved}
+                  onFileDeleted={onFileDeleted}
+                  onSearch={onOpenFilesSearch}
+                  gitStatuses={gitStatuses}
+                />
+              </div>
+            ) : (
+              <p className="px-3 py-2 text-[12px] text-content/50">
+                No project folder
+              </p>
+            )}
+          </div>
+        ) : null}
         {tab === "sessions" && cwd && cwd !== "~" ? (
           <div className="flex h-9 shrink-0 items-center gap-1 border-b border-stroke px-2">
             <div className="relative flex h-7 min-w-0 flex-1 items-center">
@@ -2495,20 +2517,22 @@ function CompactProjectRail({
           active={searchActive}
           onClick={action(searchActive, onSearch)}
         />
-        <CompactRailAction
-          label={inboxUnseen ? "Inbox, new items" : "Inbox"}
-          icon={Inbox}
-          active={inboxActive}
-          dot={inboxUnseen}
-          onClick={action(inboxActive, onOpenInbox)}
-          onOpenContextMenu={(x, y) => {
-            inboxTrigger.current =
-              document.activeElement instanceof HTMLElement
-                ? document.activeElement
-                : null;
-            setInboxMenu({ x, y });
-          }}
-        />
+        {onOpenInbox ? (
+          <CompactRailAction
+            label={inboxUnseen ? "Inbox, new items" : "Inbox"}
+            icon={Inbox}
+            active={inboxActive}
+            dot={inboxUnseen}
+            onClick={action(inboxActive, onOpenInbox)}
+            onOpenContextMenu={(x, y) => {
+              inboxTrigger.current =
+                document.activeElement instanceof HTMLElement
+                  ? document.activeElement
+                  : null;
+              setInboxMenu({ x, y });
+            }}
+          />
+        ) : null}
         {onOpenNotes ? (
           <CompactRailAction
             label="Notes"
@@ -2982,14 +3006,16 @@ const SessionCard = memo(function SessionCard({
     orchestration?.tasks.filter((task) => task.status === "completed").length ??
     0;
   const title = sessionDisplayTitle(session.title, session.harness);
-  const gitLabel = session.worktreeRemoved
-    ? NO_BRANCH_LABEL
-    : formatGitLabel(session.repo, session.branch);
+  const gitLabel = !SHOW_SOURCE_CONTROL
+    ? ""
+    : session.worktreeRemoved
+      ? NO_BRANCH_LABEL
+      : formatGitLabel(session.repo, session.branch);
   const time = formatRelative(session.updatedAt, now);
   const model =
     compact && !orchestrationExpanded
       ? null
-      : resolveModel(session.harness, session.model).name;
+      : nativeSessionLabel(session.harness, session.providerAccountId);
   const statusClass = needsApproval
     ? "text-amber-400"
     : busy
@@ -3333,12 +3359,6 @@ const SessionCard = memo(function SessionCard({
             ) : null}
           </span>
         </div>
-        {orchestrationExpanded ? (
-          <OrchestrationSidebarAgents
-            leadId={session.id}
-            summary={orchestration!}
-          />
-        ) : null}
         <span className="relative mt-1 flex items-center gap-2">
           {gitLabel ? (
             <span

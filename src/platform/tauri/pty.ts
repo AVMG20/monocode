@@ -136,6 +136,14 @@ export async function spawnPty(
   await invoke("pty_spawn", { id, cwd, cols, rows });
 }
 
+/**
+ * Mark a PTY spawned outside `spawnPty` (e.g. a native agent session) as owned
+ * by this window, so its output is buffered until a view subscribes.
+ */
+export function markPtyOpened(id: string): void {
+  openedPtys.add(id);
+}
+
 export async function writePty(id: string, data: string): Promise<void> {
   await invoke("pty_write", { id, data });
 }

@@ -20,19 +20,48 @@ export type LiveAgent = {
   done: boolean;
 };
 
+/** What a native CLI session's hooks last reported. */
+export type NativeAgentStatus = "idle" | "running" | "waiting" | "exited";
+
 export function liveAgentsFromSessions(
   sessions: Session[],
   unseenFinishedIds: ReadonlySet<string> = new Set(),
+  nativeStatuses: ReadonlyMap<string, NativeAgentStatus> = new Map(),
 ): LiveAgent[] {
+  const nativeLive = (session: Session) => {
+    const status = nativeStatuses.get(session.id);
+    return status === "running" || status === "waiting";
+  };
   return sessions
     .filter(
       (session) =>
-        !session.inboxAsk && !session.orchestrationLeadId && (isInFlightSession(session) || unseenFinishedIds.has(session.id)),
+        !session.inboxAsk &&
+        !session.orchestrationLeadId &&
+        (isInFlightSession(session) ||
+          nativeLive(session) ||
+          unseenFinishedIds.has(session.id)),
     )
     .map((session) =>
-      toLiveAgent(session, unseenFinishedIds.has(session.id)),
+      nativeLive(session)
+        ? toNativeLiveAgent(session, nativeStatuses.get(session.id)!)
+        : toLiveAgent(session, unseenFinishedIds.has(session.id)),
     )
     .sort(compareLiveAgents);
+}
+
+function toNativeLiveAgent(
+  session: Session,
+  status: NativeAgentStatus,
+): LiveAgent {
+  return {
+    id: session.id,
+    cwd: session.cwd,
+    title: sessionDisplayTitle(session.title, session.harness),
+    harness: session.harness,
+    activity: status === "waiting" ? "Needs input" : "Working",
+    needsApproval: status === "waiting",
+    done: false,
+  };
 }
 
 export function formatLiveElapsed(startedAt: number, now: number): string {

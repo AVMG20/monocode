@@ -2,6 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
 import { InboxPrChecks, PrChecksTab } from "./InboxPrChecks";
 import { InboxDetail, LinkedWorkItemPanel } from "./InboxView";
 import type { GithubPrChecksView } from "../hooks/useGithubPrChecks";
@@ -10,6 +11,13 @@ import type {
   GithubPrCheck,
   GithubPrChecksOverall,
 } from "../model/githubPrChecks";
+
+// Exercises the upstream git/files UI, which this build hides by default.
+vi.mock("../../../app/model/features", () => ({
+  SHOW_SOURCE_CONTROL: true,
+  SHOW_FILES: true,
+  sidebarTabEnabled: () => true,
+}));
 
 const { openUrl, invoke } = vi.hoisted(() => ({
   openUrl: vi.fn(),

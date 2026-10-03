@@ -1,14 +1,5 @@
-import { stopStreaming } from "../../../integrations/harness/core/apply";
-import { forgetHarnessSession } from "../../../integrations/harness/core/registry";
-import {
-  buildDeterministicHandoff,
-  completeHandoff,
-  isPreparingHandoff,
-  sessionChildHarnesses,
-} from "./handoff";
 import { flushSessionCheckpoint } from "./checkpoint";
 import { isFilesystemTab, type WorkspaceTab } from "../../workspace/model/layout";
-import { orchestrator } from "../../orchestration/model/orchestration";
 import {
   newSession,
   type HarnessId,
@@ -45,7 +36,6 @@ type ReplacementSeed = {
 
 type WorkspaceChange =
   | { type: "stopped"; session: Session }
-  | { type: "orchestrationReleased"; leadId: string }
   | {
       type: "removed";
       mode: SessionRemovalMode;
@@ -109,39 +99,13 @@ async function removeSession(
   });
   if (!(await options.confirm(plan.closedTabs, options.mode))) return false;
 
-  if (options.mode === "delete") {
-    const run = orchestrator.forSession(sessionId);
-    if (run && (run.status === "active" || run.status === "paused")) {
-      await orchestrator.stopRun(run.leadId);
-    }
-  }
   await options.stop(sessionId);
   const latest = options.workspace
     .snapshot()
     .sessions.find((session) => session.id === sessionId);
-  let stopped = latest;
-  if (latest) {
-    stopped = latest.busy ? stopStreaming(latest) : latest;
-    if (isPreparingHandoff(stopped)) {
-      stopped = completeHandoff(stopped, buildDeterministicHandoff(stopped));
-    }
-    if (stopped.queuedMessages?.length) {
-      stopped = { ...stopped, queueStatus: "paused" };
-    }
-    // Cancellation invalidates normal turn completion. Keep a usable stopped
-    // session even when the following storage operation fails.
-    options.workspace.apply({ type: "stopped", session: stopped });
-  }
-  const harnesses: HarnessId[] = stopped
-    ? sessionChildHarnesses(stopped)
-    : [options.replacement.harness ?? "cursor"];
-  if (options.mode === "delete") {
-    // Release native processes before deleting the record, so a following
-    // worktree removal cannot race fire-and-forget cleanup.
-    await Promise.all(
-      harnesses.map((harness) => forgetHarnessSession(harness, sessionId)),
-    );
-  }
+  // `options.stop` already ended the session's native CLI.
+  const stopped = latest ? { ...latest, busy: false } : undefined;
+  if (stopped) options.workspace.apply({ type: "stopped", session: stopped });
 
   if (stopped) await flushSessionCheckpoint(sessionId);
   let savedSummary: SessionSummary | undefined;
@@ -149,13 +113,7 @@ async function removeSession(
     const imagePaths = stopped?.blocks.flatMap((block) =>
       block.role === "image" && block.image ? [block.image.path] : [],
     ) ?? [];
-    await orchestrator.deleteSession(sessionId, () =>
-      deleteSession(sessionId, imagePaths),
-    );
-    options.workspace.apply({
-      type: "orchestrationReleased",
-      leadId: sessionId,
-    });
+    await deleteSession(sessionId, imagePaths);
   } else {
     if (stopped && shouldPersistSession(stopped)) {
       const saved = await upsertSession(stopped);
@@ -197,11 +155,6 @@ async function removeSession(
   });
   // No await between the final read and commit: unrelated streaming updates,
   // tabs, and focus changes must survive this operation.
-  if (options.mode === "archive") {
-    for (const harness of harnesses) {
-      void forgetHarnessSession(harness, sessionId);
-    }
-  }
   options.workspace.apply({
     type: "removed",
     mode: options.mode,

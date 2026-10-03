@@ -1,4 +1,4 @@
-import { asRecord } from "../../../integrations/harness/providers/codex/codexProtocol";
+import { asRecord } from "../../../shared/lib/records";
 
 export type RateLimitProvider = "claude" | "codex" | "opencode";
 

@@ -81,6 +81,11 @@ impl PtyHost {
             .cloned()
     }
 
+    /// Pid of the live PTY under `id`, if any. Changes when the id is respawned.
+    pub(crate) fn pid_of(&self, id: &str) -> Option<u32> {
+        self.get(id).map(|live| live.pid)
+    }
+
     fn remove(&self, id: &str) -> Option<Arc<LivePty>> {
         self.sessions
             .lock()
@@ -124,6 +129,28 @@ impl Drop for PtyHost {
     }
 }
 
+/// What to run inside a PTY. The plain terminal runs the login shell; native
+/// agent sessions run a provider CLI with its own args and account env.
+pub(crate) struct PtySpawnSpec {
+    pub program: String,
+    pub args: Vec<String>,
+    /// Applied after the shared terminal env, so these win.
+    pub env: Vec<(String, std::ffi::OsString)>,
+    pub env_remove: Vec<String>,
+}
+
+impl PtySpawnSpec {
+    pub(crate) fn default_shell() -> Self {
+        let (program, args) = default_shell();
+        Self {
+            program,
+            args,
+            env: Vec::new(),
+            env_remove: Vec::new(),
+        }
+    }
+}
+
 #[tauri::command]
 pub fn pty_spawn(
     app: AppHandle,
@@ -133,7 +160,31 @@ pub fn pty_spawn(
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
-    let workdir = working_dir(&cwd);
+    spawn_pty(
+        app,
+        &host,
+        id,
+        &cwd,
+        cols,
+        rows,
+        PtySpawnSpec::default_shell(),
+    )
+    .map(|_| ())
+}
+
+/// Spawn `spec` in a PTY under `id`, replacing any live PTY with that id.
+/// Output and exit go through the shared `pty-data` / `pty-exit` events, and
+/// `pty_write` / `pty_resize` / `pty_kill` work on it. Returns the child pid.
+pub(crate) fn spawn_pty(
+    app: AppHandle,
+    host: &PtyHost,
+    id: String,
+    cwd: &str,
+    cols: u16,
+    rows: u16,
+    spec: PtySpawnSpec,
+) -> Result<u32, String> {
+    let workdir = working_dir(cwd);
     let _reservation = crate::worktree_lifecycle::reserve_spawn(&workdir)?;
     if let Some(prev) = host.remove(&id) {
         terminate(prev.pid);
@@ -143,17 +194,17 @@ pub fn pty_spawn(
 
     #[cfg(unix)]
     {
-        spawn_unix(app, host, id, workdir, cols.max(2), rows.max(2))
+        spawn_unix(app, host, id, workdir, cols.max(2), rows.max(2), spec)
     }
 
     #[cfg(windows)]
     {
-        spawn_windows(app, host, id, workdir, cols.max(2), rows.max(2))
+        spawn_windows(app, host, id, workdir, cols.max(2), rows.max(2), spec)
     }
 
     #[cfg(not(any(unix, windows)))]
     {
-        let _ = (app, cwd, cols, rows);
+        let _ = (app, host, id, workdir, cols, rows, spec);
         Err("Terminals are not supported on this platform.".into())
     }
 }
@@ -244,18 +295,24 @@ pub fn pty_kill_all(host: State<'_, PtyHost>) -> Result<(), String> {
 #[cfg(unix)]
 fn spawn_unix(
     app: AppHandle,
-    host: State<PtyHost>,
+    host: &PtyHost,
     id: String,
     workdir: std::path::PathBuf,
     cols: u16,
     rows: u16,
-) -> Result<(), String> {
+    spec: PtySpawnSpec,
+) -> Result<u32, String> {
     use std::fs::File;
     use std::os::unix::io::FromRawFd;
     use std::os::unix::process::CommandExt;
     use std::process::Command;
 
-    let (shell, args) = default_shell();
+    let PtySpawnSpec {
+        program: shell,
+        args,
+        env,
+        env_remove,
+    } = spec;
     let (master, slave) = open_pty(cols, rows)?;
 
     let mut cmd = Command::new(&shell);
@@ -273,6 +330,12 @@ fn spawn_unix(
         cmd.env("HOME", &home);
     }
     cmd.env("PWD", &workdir);
+    for key in &env_remove {
+        cmd.env_remove(key);
+    }
+    for (key, value) in &env {
+        cmd.env(key, value);
+    }
 
     // setsid() already creates a new session and process group. Calling
     // process_group(0) first makes the child a group leader, so setsid()
@@ -367,21 +430,27 @@ fn spawn_unix(
         }
     });
 
-    Ok(())
+    Ok(pid)
 }
 
 #[cfg(windows)]
 fn spawn_windows(
     app: AppHandle,
-    host: State<PtyHost>,
+    host: &PtyHost,
     id: String,
     workdir: std::path::PathBuf,
     cols: u16,
     rows: u16,
-) -> Result<(), String> {
+    spec: PtySpawnSpec,
+) -> Result<u32, String> {
     use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 
-    let (shell, args) = default_shell();
+    let PtySpawnSpec {
+        program: shell,
+        args,
+        env,
+        env_remove,
+    } = spec;
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(PtySize {
@@ -405,6 +474,12 @@ fn spawn_windows(
         cmd.env("USERPROFILE", &home);
     }
     cmd.env("PWD", workdir.to_string_lossy().as_ref());
+    for key in &env_remove {
+        cmd.env_remove(key);
+    }
+    for (key, value) in &env {
+        cmd.env(key, value);
+    }
 
     let mut child = crate::windows::spawn_pty(pair.slave.as_ref(), cmd)
         .map_err(|err| format!("Failed to start {shell}: {err}"))?;
@@ -458,7 +533,7 @@ fn spawn_windows(
         }
     });
 
-    Ok(())
+    Ok(pid)
 }
 
 fn working_dir(cwd: &str) -> std::path::PathBuf {
@@ -524,7 +599,7 @@ fn hangup(pid: u32) {
     }
 }
 
-fn terminate(pid: u32) {
+pub(crate) fn terminate(pid: u32) {
     if pid == 0 || pid == 1 {
         return;
     }

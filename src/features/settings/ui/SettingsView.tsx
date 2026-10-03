@@ -33,6 +33,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from "react";
+import { NATIVE_PROVIDERS } from "../../sessions/model/nativeSession";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import {
   ColorPickerPopover,
@@ -165,8 +166,7 @@ import {
   compareSemver,
   MINIMUM_OPENCODE_VERSION,
   parseOpenCodeVersion,
-} from "../../../integrations/harness/providers/opencode/opencodeProtocol";
-import { refreshHarnessCatalogs } from "../../../integrations/harness/core/registry";
+} from "../../providers/model/cliVersions";
 import { loginHarness } from "../../../integrations/harness/core/auth";
 import {
   defaultModelId,
@@ -177,7 +177,6 @@ import {
   loadLastModelChoice,
   modelsFor,
   resolveModel,
-  saveDefaultModel,
   saveLastModelChoice,
   savePickerProviderVisible,
   subscribeModels,
@@ -197,16 +196,10 @@ import {
   type ArchivedProject,
   type RecentProject,
 } from "../../projects/model/recents";
-import {
-  HARNESSES,
-  HARNESS_TITLE,
-  sessionDisplayTitle,
-  type HarnessId,
-} from "../../sessions/model/session";
+import { HARNESS_TITLE, sessionDisplayTitle, type HarnessId } from "../../sessions/model/session";
 import {
   loadProjectProviderSettings,
   projectProvidersRevision,
-  setProjectDefaultModel,
   setProjectDefaultProvider,
   setProjectProviderHidden,
   subscribeProjectProviders,
@@ -287,7 +280,7 @@ import { ProjectMascot } from "../../projects/ui/ProjectMascot";
 import {
   filterKeybindings,
   currentKeybindings,
-  loadClaudeHooks,
+  keybindingVisible,
   loadCloseToTray,
   loadCollapsedProjectRailMode,
   loadComposerRunner,
@@ -300,10 +293,7 @@ import {
   loadModelControls,
   loadNotesEnabled,
   loadKeybindingOverrides,
-  loadQuickComposerEnabled,
-  loadQuickComposerShortcut,
   loadTabAnimationsEnabled,
-  saveClaudeHooks,
   saveCloseToTray,
   saveCollapsedProjectRailMode,
   saveComposerRunner,
@@ -316,15 +306,13 @@ import {
   saveModelControls,
   saveNotesEnabled,
   saveKeybindingOverride,
-  validateKeybindingShortcut,
-  saveQuickComposerEnabled,
-  saveQuickComposerShortcut,
   subscribeKeybindings,
   type KeybindingOverride,
   saveTabAnimationsEnabled,
   searchSettings,
   settingsSectionDescription,
   settingsSectionLabel,
+  settingVisible,
   COLLAPSED_PROJECT_RAIL_MODE_DEFAULT,
   type CollapsedProjectRailMode,
   type DiffViewer,
@@ -335,14 +323,7 @@ import {
   type SettingsSectionId,
 } from "../model/settings";
 import { loadSoundsEnabled, playCue, saveSoundsEnabled } from "../model/sounds";
-import { setQuickComposerShortcut } from "../../quick-composer/model/quickComposer";
-import {
-  isGlobalShortcut,
-  QUICK_COMPOSER_DEFAULT_SHORTCUT,
-  quickComposerShortcutLabel,
-  quickComposerShortcutPreview,
-  shortcutFromKeyEvent,
-} from "../../quick-composer/model/quickComposerShortcut";
+import { shortcutPreview, shortcutFromKeyEvent } from "../model/shortcutLabels";
 import {
   cachedNotificationPermission,
   loadNotificationsEnabled,
@@ -362,6 +343,7 @@ import {
 import { SkillsPage } from "../../skills/ui/SkillsPage";
 import { ProjectNotificationSettings } from "../../notifications/ui/ProjectNotificationSettings";
 import { WorktreesPage } from "../../source-control/ui/WorktreesPage";
+import { SHOW_SOURCE_CONTROL } from "../../../app/model/features";
 import {
   removeWorktree,
   type RemoveWorktree,
@@ -556,7 +538,7 @@ export function SettingsView({
               {section === "providers" ? (
                 <ProvidersPage cwd={cwd} recents={recents} />
               ) : null}
-              {section === "worktrees" ? (
+              {SHOW_SOURCE_CONTROL && section === "worktrees" ? (
                 <WorktreesPage
                   cwd={cwd}
                   recents={recents}
@@ -735,12 +717,6 @@ function GeneralPage({
     loadTabAnimationsEnabled,
   );
   const [closeToTray, setCloseToTray] = useState(loadCloseToTray);
-  const [quickComposerEnabled, setQuickComposerEnabled] = useState(
-    loadQuickComposerEnabled,
-  );
-  const [quickComposerError, setQuickComposerError] = useState<string | null>(
-    null,
-  );
 
   // The user may flip the switch in System Settings and come back: re-read
   // the OS state whenever the window regains focus while the toggle is on.
@@ -769,17 +745,6 @@ function GeneralPage({
   const onNotesEnabled = (next: boolean) => {
     saveNotesEnabled(next);
     setNotesEnabled(next);
-  };
-
-  const onQuickComposerEnabled = (next: boolean) => {
-    saveQuickComposerEnabled(next);
-    setQuickComposerEnabled(next);
-    setQuickComposerError(null);
-    void setQuickComposerShortcut(next).catch((error: unknown) => {
-      // Another app already owns the combination. Leave the switch where the
-      // user put it so the next launch tries again, but say why it is dead.
-      setQuickComposerError(String(error));
-    });
   };
 
   const onLiveAgentsEnabled = (next: boolean) => {
@@ -811,7 +776,7 @@ function GeneralPage({
         <Row
           id="sounds"
           label="Sounds"
-          description="Short cues for project activity, finished turns, and available updates. Choose project notification categories in Inbox settings. Switches and Copy on a finished turn also play."
+          description="Short cues when an agent finishes or needs you, and when an update is available."
         >
           <Toggle
             label="Sounds"
@@ -844,21 +809,23 @@ function GeneralPage({
         title="Workspace"
         description="How project navigation and workspace tabs behave."
       >
-        <Row
-          id="file-tabs"
-          label="File tabs"
-          description="Open files beside the active chat, or give each file a normal tab in the top bar. Top-bar files can still be combined into split panes."
-        >
-          <Segmented
+        {settingVisible("file-tabs") ? (
+          <Row
+            id="file-tabs"
             label="File tabs"
-            value={fileTabMode}
-            options={[
-              { value: "pane", label: "Beside chat" },
-              { value: "workspace", label: "Top bar" },
-            ]}
-            onChange={onFileTabMode}
-          />
-        </Row>
+            description="Open files beside the active chat, or give each file a normal tab in the top bar. Top-bar files can still be combined into split panes."
+          >
+            <Segmented
+              label="File tabs"
+              value={fileTabMode}
+              options={[
+                { value: "pane", label: "Beside chat" },
+                { value: "workspace", label: "Top bar" },
+              ]}
+              onChange={onFileTabMode}
+            />
+          </Row>
+        ) : null}
         <Row
           id="tab-animations"
           label="Tab animations"
@@ -873,32 +840,14 @@ function GeneralPage({
         <Row
           id="notes"
           label="Notes"
-          description="A global markdown notebook on the project rail. Save a finished turn from the transcript, then mention it later with @note or add it to chat."
+          description="A global markdown notebook on the project rail for plans, prompts and anything you want to keep across sessions."
         >
           <Toggle label="Notes" on={notesEnabled} onChange={onNotesEnabled} />
         </Row>
-        {IS_MAC && (
-          <Row
-            id="quick-composer"
-            label="Quick composer"
-            description={`Press ${quickComposerShortcutLabel(loadQuickComposerShortcut())} in any app to float a prompt over it and start a session without switching to MonoCode. Change the shortcut in Keybindings. Return starts it in the background; ⌘Return starts it and brings the session forward.`}
-          >
-            {quickComposerError ? (
-              <span className="text-[12px] text-content/45">
-                {quickComposerError}
-              </span>
-            ) : null}
-            <Toggle
-              label="Quick composer"
-              on={quickComposerEnabled}
-              onChange={onQuickComposerEnabled}
-            />
-          </Row>
-        )}
         <Row
           id="working-agents"
           label="Working agents"
-          description="When two or more chats are in flight, a card on the project rail lists them so you can jump across projects. Finished turns stay until you open that session."
+          description="When two or more sessions are working or waiting for you, a card on the project rail lists them so you can jump across projects. Finished sessions stay until you open them."
         >
           <Toggle
             label="Working agents"
@@ -1064,43 +1013,47 @@ function ChatPage() {
         </Row>
       </Group>
 
-      <Group
-        title="Editor"
-        description="What happens when you save a file in the workspace editor."
-      >
-        <Row
-          id="format-on-save"
-          label="Format on save"
-          description="Run Prettier on supported files before writing. Off keeps the text you typed, including quote style."
+      {settingVisible("format-on-save") ? (
+        <Group
+          title="Editor"
+          description="What happens when you save a file in the workspace editor."
         >
-          <Toggle
+          <Row
+            id="format-on-save"
             label="Format on save"
-            on={formatOnSave}
-            onChange={onFormatOnSave}
-          />
-        </Row>
-      </Group>
+            description="Run Prettier on supported files before writing. Off keeps the text you typed, including quote style."
+          >
+            <Toggle
+              label="Format on save"
+              on={formatOnSave}
+              onChange={onFormatOnSave}
+            />
+          </Row>
+        </Group>
+      ) : null}
 
-      <Group
-        title="Code review"
-        description="Where a turn's changes open when you go to read them."
-      >
-        <Row
-          id="diff-view"
-          label="Diff view"
-          description="Editor keeps working-tree changes in the file. Unified stacks every changed file in one review, with sticky headers and collapsed unchanged lines."
+      {settingVisible("diff-view") ? (
+        <Group
+          title="Code review"
+          description="Where a turn's changes open when you go to read them."
         >
-          <Segmented
+          <Row
+            id="diff-view"
             label="Diff view"
-            value={diffViewer}
-            options={[
-              { value: "editor", label: "Editor" },
-              { value: "unified", label: "Unified" },
-            ]}
-            onChange={onDiffViewer}
-          />
-        </Row>
-      </Group>
+            description="Editor keeps working-tree changes in the file. Unified stacks every changed file in one review, with sticky headers and collapsed unchanged lines."
+          >
+            <Segmented
+              label="Diff view"
+              value={diffViewer}
+              options={[
+                { value: "editor", label: "Editor" },
+                { value: "unified", label: "Unified" },
+              ]}
+              onChange={onDiffViewer}
+            />
+          </Row>
+        </Group>
+      ) : null}
 
       <Group
         title="Extras"
@@ -2239,17 +2192,19 @@ function AppearancePage({ appearance }: { appearance: AppearanceSettings }) {
             onChange={(value) => appearance.onUiScale(Number(value))}
           />
         </Row>
-        <Row
-          id="show-excluded-files"
-          label="Show excluded files"
-          description="Show files and folders Git excludes, such as build output and dependencies, in the explorer."
-        >
-          <Toggle
+        {settingVisible("show-excluded-files") ? (
+          <Row
+            id="show-excluded-files"
             label="Show excluded files"
-            on={appearance.showExcludedFiles}
-            onChange={appearance.onShowExcludedFiles}
-          />
-        </Row>
+            description="Show files and folders Git excludes, such as build output and dependencies, in the explorer."
+          >
+            <Toggle
+              label="Show excluded files"
+              on={appearance.showExcludedFiles}
+              onChange={appearance.onShowExcludedFiles}
+            />
+          </Row>
+        ) : null}
       </Group>
     </>
   );
@@ -2504,7 +2459,7 @@ function ShortcutEditor({
         shiftKey: event.shiftKey || held.current.shiftKey,
       };
       setPreview(
-        quickComposerShortcutPreview(
+        shortcutPreview(
           modifiers,
           modifier ? undefined : event.code,
           event.key,
@@ -2527,7 +2482,7 @@ function ShortcutEditor({
         shiftKey: event.shiftKey || held.current.shiftKey,
       };
       modifiers[modifier] = false;
-      setPreview(quickComposerShortcutPreview(modifiers));
+      setPreview(shortcutPreview(modifiers));
     };
     window.addEventListener("keydown", onKeyDown, true);
     window.addEventListener("keyup", onKeyUp, true);
@@ -2592,50 +2547,6 @@ function ShortcutEditor({
   );
 }
 
-function QuickComposerShortcutEditor() {
-  const [shortcut, setShortcut] = useState(loadQuickComposerShortcut);
-  const [enabled, setEnabled] = useState(loadQuickComposerEnabled);
-  const apply = async (next: string) => {
-    if (!isGlobalShortcut(next))
-      throw new Error("Quick Composer needs ⌘ or Ctrl as a global hotkey");
-    // Validate before the native call: a rejected chord must not leave the OS
-    // holding a registered global hotkey that settings does not know about.
-    validateKeybindingShortcut("App: Quick Composer", next);
-    // Recording while the feature is off must not silently switch it back on.
-    if (enabled) await setQuickComposerShortcut(true, next);
-    saveQuickComposerShortcut(next);
-    setShortcut(next);
-  };
-  const reset = async () => {
-    // Reset restores the whole default state, including the enabled flag.
-    validateKeybindingShortcut(
-      "App: Quick Composer",
-      QUICK_COMPOSER_DEFAULT_SHORTCUT,
-    );
-    await setQuickComposerShortcut(true, QUICK_COMPOSER_DEFAULT_SHORTCUT);
-    saveQuickComposerEnabled(true);
-    saveQuickComposerShortcut(QUICK_COMPOSER_DEFAULT_SHORTCUT);
-    setShortcut(QUICK_COMPOSER_DEFAULT_SHORTCUT);
-    setEnabled(true);
-  };
-  return (
-    <ShortcutEditor
-      name="quick composer"
-      display={enabled ? quickComposerShortcutLabel(shortcut) : null}
-      resetVisible={
-        enabled !== true || shortcut !== QUICK_COMPOSER_DEFAULT_SHORTCUT
-      }
-      onApply={apply}
-      onDisable={async () => {
-        await setQuickComposerShortcut(false);
-        saveQuickComposerEnabled(false);
-        setEnabled(false);
-      }}
-      onReset={reset}
-    />
-  );
-}
-
 function KeybindingShortcutEditor({
   command,
   display,
@@ -2670,7 +2581,11 @@ function KeybindingsPage() {
     [],
   );
   const rows = useMemo(
-    () => filterKeybindings(currentKeybindings(), query),
+    () =>
+      filterKeybindings(
+        currentKeybindings().filter((row) => keybindingVisible(row.command)),
+        query,
+      ),
     [query, overrides],
   );
 
@@ -2726,16 +2641,12 @@ function KeybindingsPage() {
               >
                 {row.command}
               </span>
-              {row.command === "App: Quick Composer" ? (
-                <QuickComposerShortcutEditor />
-              ) : (
-                <KeybindingShortcutEditor
-                  command={row.command}
-                  display={disabled ? null : row.keys}
-                  modified={Boolean(override)}
-                  onSave={save}
-                />
-              )}
+              <KeybindingShortcutEditor
+                command={row.command}
+                display={disabled ? null : row.keys}
+                modified={Boolean(override)}
+                onSave={save}
+              />
               <span className="w-28 shrink-0 font-mono text-[11px] text-content/40">
                 {row.when}
               </span>
@@ -3107,7 +3018,6 @@ function ProvidersPage({
   void providersRevision;
   const [choice, setChoice] = useState(loadLastModelChoice);
   const [defaultModels, setDefaultModels] = useState(loadDefaultModels);
-  const [claudeHooks, setClaudeHooks] = useState(loadClaudeHooks);
   const [scope, setScope] = useState<string>(GLOBAL_PROVIDER_SCOPE);
   const [hiddenGlobally, setHiddenGlobally] = useState(
     loadHiddenPickerProviders,
@@ -3162,24 +3072,6 @@ function ProvidersPage({
     }
   }, [scope, scopeOptions]);
 
-  const onClaudeHooks = (next: boolean) => {
-    saveClaudeHooks(next);
-    setClaudeHooks(next);
-  };
-
-  const onModelChange = (harness: HarnessId, model: string) => {
-    if (project) {
-      setProjectDefaultModel(project, harness, model);
-      return;
-    }
-    saveDefaultModel(harness, model);
-    setDefaultModels((prev) => ({ ...prev, [harness]: model }));
-    if (choice?.harness === harness) {
-      saveLastModelChoice(harness, model);
-      setChoice({ harness, model });
-    }
-  };
-
   const onDefault = (harness: HarnessId, model: string) => {
     if (project) {
       setProjectDefaultProvider(project, harness, model);
@@ -3221,10 +3113,10 @@ function ProvidersPage({
         description={
           project
             ? `These defaults apply to ${projectName(project)} only. A provider with Show in picker off is also kept out of new conversations started in this project. CLI paths remain global for MonoCode.`
-            : "A provider is listed as installed once its CLI is found on your PATH. Uninstalled CLIs stay listed but are left out of the model picker, as are installed ones with Show in picker off. The model beside a provider is what its new conversations start with; Use by default picks the provider itself. CLI paths are global for MonoCode and apply to every project."
+            : "Sessions run each provider's own CLI in a terminal. A CLI is listed as installed once it is found on your PATH; uninstalled CLIs, and installed ones with Show when starting off, are left out of the new-session picker. Use by default picks the CLI new sessions start with. CLI paths are global for MonoCode and apply to every project."
         }
       >
-        {HARNESSES.map((harness) => {
+        {NATIVE_PROVIDERS.map((harness) => {
           const inPicker = project
             ? !(projectSettings.hidden ?? []).includes(harness) &&
               !hiddenGlobally.includes(harness)
@@ -3258,26 +3150,12 @@ function ProvidersPage({
               inPicker={inPicker}
               pickerLocked={pickerLocked}
               onDefault={onDefault}
-              onModelChange={onModelChange}
               onPickerVisible={(visible) => onPickerVisible(harness, visible)}
             />
           );
         })}
       </Group>
 
-      <Group title="Advanced">
-        <Row
-          id="claude-hooks"
-          label="Claude Code hooks"
-          description="Run the hooks configured in your settings.json files — PreToolUse command rewrites, blocks, notifications, and the rest — just as the Claude Code CLI would. Turn this off if a hook is misbehaving and you need the session back. Takes effect on the next turn."
-        >
-          <Toggle
-            label="Claude Code hooks"
-            on={claudeHooks}
-            onChange={onClaudeHooks}
-          />
-        </Row>
-      </Group>
     </>
   );
 }
@@ -3640,7 +3518,6 @@ function ProviderRow({
   inPicker,
   pickerLocked = false,
   onDefault,
-  onModelChange,
   onPickerVisible,
 }: {
   harness: HarnessId;
@@ -3650,18 +3527,12 @@ function ProviderRow({
   /** Globally hidden providers cannot be turned on per project. */
   pickerLocked?: boolean;
   onDefault: (harness: HarnessId, model: string) => void;
-  onModelChange: (harness: HarnessId, model: string) => void;
   onPickerVisible: (visible: boolean) => void;
 }) {
   const models = modelsFor(harness);
   const available = isHarnessAvailable(harness);
   const current =
     models.length > 0 ? resolveModel(harness, selectedModel) : null;
-
-  useEffect(() => {
-    if (!available || models.length > 0) return;
-    void refreshHarnessCatalogs([harness]);
-  }, [available, harness, models.length]);
 
   return (
     <Row
@@ -3679,34 +3550,23 @@ function ProviderRow({
       }
       description={
         available
-          ? `${models.length} ${models.length === 1 ? "model" : "models"} available.`
+          ? "Installed. Sessions run its own CLI, which picks its model."
           : harnessUnavailableHint(harness)
       }
     >
-      {current ? (
-        <Select
-          label={`${HARNESS_TITLE[harness]} model`}
-          value={current.id}
-          onChange={(next) => onModelChange(harness, next)}
-          options={models.map((item) => ({
-            value: item.id,
-            label: item.name,
-          }))}
-        />
-      ) : null}
       <SecondaryButton
-        onClick={() => current && onDefault(harness, current.id)}
-        disabled={isDefault || !current}
+        onClick={() => onDefault(harness, current?.id ?? selectedModel)}
+        disabled={isDefault}
       >
         {isDefault ? "Default" : "Use by default"}
       </SecondaryButton>
       {available ? (
         <div className="flex items-center gap-2">
           <span className="text-[12px] text-content/50">
-            {pickerLocked ? "Hidden globally" : "Show in picker"}
+            {pickerLocked ? "Hidden globally" : "Show when starting"}
           </span>
           <Toggle
-            label={`Show ${HARNESS_TITLE[harness]} in the model picker`}
+            label={`Show ${HARNESS_TITLE[harness]} when starting a session`}
             on={inPicker}
             onChange={onPickerVisible}
             disabled={pickerLocked}

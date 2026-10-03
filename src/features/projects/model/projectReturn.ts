@@ -22,6 +22,8 @@ export type ProjectReturnDecision =
 
 export function isBlankSession(session: Session | undefined): boolean {
   if (!session || session.busy) return false;
+  // A launched native CLI session holds its conversation in the terminal.
+  if (session.providerSessionId) return false;
   return !session.blocks.some((block) => block.role === "user");
 }
 
