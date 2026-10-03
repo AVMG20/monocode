@@ -136,6 +136,16 @@ pub fn native_session_spawn(
                     .map(|(key, value)| (key.to_string(), value.into_os_string())),
             );
             env_remove.extend(remove.iter().map(|key| key.to_string()));
+            if provider == "claude" {
+                // Pick up settings, MCP servers, plugins and skills changed in
+                // the default profile since the account last ran. A failed
+                // sync must not block the session.
+                if let Some(default) = crate::account_sync::DefaultProfile::locate() {
+                    if let Err(error) = crate::account_sync::sync_claude_account(&default, &dir) {
+                        eprintln!("[native-session] Account config sync skipped: {error}");
+                    }
+                }
+            }
             account_dir = Some(dir);
         } else {
             // The CLI's own folder. A CLAUDE_CONFIG_DIR / CODEX_HOME inherited
