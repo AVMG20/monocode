@@ -149,8 +149,12 @@ function setState(entry: Entry, state: NativeTerminalState) {
 
 function createEntry(id: string, launch: NativeLaunch): Entry {
   const outer = document.createElement("div");
+  // Pinned to the pane rather than `h-full`: a percentage height inside a
+  // flexed parent can resolve to the content height in WebKit, so the grid
+  // would keep its old size and clip its last rows when the pane shrinks
+  // (e.g. when the terminal dock opens).
   outer.className =
-    "monocode-terminal monocode-native-session flex h-full w-full min-h-0 min-w-0 flex-col";
+    "monocode-terminal monocode-native-session absolute inset-0 flex min-h-0 min-w-0 flex-col";
   const host = document.createElement("div");
   host.className = "monocode-terminal-host min-h-0 min-w-0 flex-1 overflow-hidden";
   outer.appendChild(host);

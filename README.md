@@ -19,7 +19,7 @@ Supported agents: **Claude Code** (primary), **Codex**, **OpenCode** and **Antig
 ### Sessions
 
 - **Start** a session from the sidebar's **+** (or Cmd/Ctrl+T), pick the agent and, when you have more than one, the account profile (for example *Work* or *Home*), then press **Start**.
-- **Profiles** are created under Settings → Providers → Accounts. Each profile is an isolated sign-in (`CLAUDE_CONFIG_DIR` for Claude Code, `CODEX_HOME` for Codex), so work and home never mix.
+- **Profiles** live under Settings → Providers → Accounts. Each one is its own config folder (`CLAUDE_CONFIG_DIR` for Claude Code, `CODEX_HOME` for Codex), so work and home never mix. Point an account at a folder you already use — for example *Personal* → `~/.claude-personal` if you run `CLAUDE_CONFIG_DIR=~/.claude-personal claude` — with the folder button or **Use a folder…** when adding it, and it shares that sign-in. The default account uses `~/.claude` (what plain `claude` uses), even if MonoCode was started from a shell that sets `CLAUDE_CONFIG_DIR`.
 - **Resume**: Claude Code sessions reopen their own conversation (`claude --resume`) after a restart or after the CLI exits; Codex and OpenCode continue their most recent conversation in that folder.
 - **Status**: Claude Code reports working / needs input / done through hooks, so the sidebar, tabs and the working-agents card stay in sync.
 - **Extra terminals**: the Terminal button in the footer (and the terminal icon above a session) opens shells below the session.

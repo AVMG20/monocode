@@ -137,6 +137,15 @@ pub fn native_session_spawn(
             );
             env_remove.extend(remove.iter().map(|key| key.to_string()));
             account_dir = Some(dir);
+        } else {
+            // The CLI's own folder. A CLAUDE_CONFIG_DIR / CODEX_HOME inherited
+            // from the shell that launched MonoCode would silently run another
+            // profile instead.
+            env_remove.extend(
+                default_folder_overrides(&provider)
+                    .iter()
+                    .map(|key| key.to_string()),
+            );
         }
     }
 
@@ -438,11 +447,19 @@ fn claude_args(conversation_id: &str, resume: bool, settings: &Path) -> Vec<Stri
     ]
 }
 
-fn default_claude_config_dir() -> Option<PathBuf> {
-    if let Some(dir) = std::env::var_os("CLAUDE_CONFIG_DIR").filter(|dir| !dir.is_empty()) {
-        return Some(PathBuf::from(dir));
+/// Variables that would point a CLI away from its own default folder.
+fn default_folder_overrides(provider: &str) -> &'static [&'static str] {
+    match provider {
+        "claude" => &["CLAUDE_CONFIG_DIR", "CLAUDE_SECURESTORAGE_CONFIG_DIR"],
+        "codex" => &["CODEX_HOME"],
+        _ => &[],
     }
-    dirs_home().map(|home| PathBuf::from(home).join(".claude"))
+}
+
+/// The default profile always runs with `~/.claude` (see
+/// `default_folder_overrides`), so that is where its transcripts live.
+fn default_claude_config_dir() -> Option<PathBuf> {
+    crate::harness::provider_default_folder("claude")
 }
 
 /// Claude keeps one `<conversation>.jsonl` per session under

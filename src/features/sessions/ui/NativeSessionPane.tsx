@@ -224,7 +224,7 @@ function NativeTerminalSurface({
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      <div ref={containerRef} className="flex min-h-0 flex-1 flex-col" />
+      <div ref={containerRef} className="relative min-h-0 flex-1 overflow-hidden" />
       {state.exited ? (
         <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center">
           <div className="pointer-events-auto flex items-center gap-3 rounded-lg border border-stroke bg-background-base/95 px-3 py-2 text-[13px] text-content/70 shadow-lg">
