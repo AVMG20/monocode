@@ -1,10 +1,11 @@
 import { useEffect, useState, type ReactNode } from "react";
-import type { Block } from "../model/session";
+import type { BackgroundTask, Block } from "../model/session";
 import { formatLiveElapsed } from "../model/liveAgents";
 import {
   isSubagentBlock,
   isSupersededSyntheticSubagent,
   subagentBrief,
+  subagentBriefFrom,
   subagentModelName,
   subagentName,
   toolCallState,
@@ -226,4 +227,45 @@ export function runningSubagents(blocks: Block[]): Block[] {
       toolCallState(block) === "pending" &&
       !isSupersededSyntheticSubagent(block, turn),
   );
+}
+
+/**
+ * Each run's own background task id, keyed by the run's block id. The task
+ * names the tool call that spawned it when the harness knows; otherwise fall
+ * back to the description both carry, which may still hold the "Task" prefix
+ * the run's name drops.
+ */
+export function subagentBackgroundTasks(
+  tasks: BackgroundTask[],
+  runs: Block[],
+): Map<string, string> {
+  const matched = new Map<string, string>();
+  const agents = tasks.filter((task) => task.agent);
+  const unclaimed = (block: Block) => !matched.has(block.id);
+  const rest: BackgroundTask[] = [];
+  for (const task of agents) {
+    const run = task.callId
+      ? runs.find(
+          (block) => unclaimed(block) && block.tool?.callId === task.callId,
+        )
+      : undefined;
+    if (run) matched.set(run.id, task.id);
+    else rest.push(task);
+  }
+  // A finished run left open in the view must not claim a live run's task.
+  const settled = (block: Block) => toolCallState(block) !== "pending";
+  const byLiveness = [...runs].sort(
+    (a, b) => Number(settled(a)) - Number(settled(b)),
+  );
+  for (const { id, description } of rest) {
+    const run = byLiveness.find(
+      (block) =>
+        unclaimed(block) &&
+        (description === block.tool?.title ||
+          description === subagentName(block) ||
+          subagentBriefFrom(description) === subagentBrief(block)),
+    );
+    if (run) matched.set(run.id, id);
+  }
+  return matched;
 }

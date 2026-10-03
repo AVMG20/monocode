@@ -3,7 +3,11 @@ import { act, createElement, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Block } from "../model/session";
-import { RunningSubagents, runningSubagents } from "./RunningSubagents";
+import {
+  RunningSubagents,
+  runningSubagents,
+  subagentBackgroundTasks,
+} from "./RunningSubagents";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -188,5 +192,48 @@ describe("RunningSubagents", () => {
     act(() => stops[0].click());
     expect(onStop).toHaveBeenCalledWith("a");
     expect(stops[0].textContent).toBe("Stopping…");
+  });
+});
+
+describe("subagentBackgroundTasks", () => {
+  it("pairs each run with the task its tool call spawned", () => {
+    const runs = [run("a", "Add Duration kind"), run("b", "Same name")];
+    const tasks = [
+      { id: "t2", description: "Same name", agent: true, callId: "b" },
+      { id: "t1", description: "Renamed later", agent: true, callId: "a" },
+    ];
+    expect([...subagentBackgroundTasks(tasks, runs)]).toEqual([
+      ["b", "t2"],
+      ["a", "t1"],
+    ]);
+  });
+
+  it("falls back to a description that still carries the Task prefix", () => {
+    const runs = [run("a", "panel Done button setting")];
+    const tasks = [
+      { id: "t1", description: "Task panel Done button setting", agent: true },
+    ];
+    expect(subagentBackgroundTasks(tasks, runs).get("a")).toBe("t1");
+  });
+
+  it("pairs a described task with the live run over a finished one", () => {
+    const done = run("a", "Same brief", {
+      streaming: false,
+      tool: {
+        callId: "a",
+        title: "Same brief",
+        kind: "agent",
+        status: "completed",
+      },
+    });
+    const runs = [done, run("b", "Same brief")];
+    const tasks = [{ id: "t1", description: "Same brief", agent: true }];
+    expect([...subagentBackgroundTasks(tasks, runs)]).toEqual([["b", "t1"]]);
+  });
+
+  it("leaves shell tasks alone", () => {
+    const runs = [run("a", "npm run dev")];
+    const tasks = [{ id: "t1", description: "npm run dev" }];
+    expect(subagentBackgroundTasks(tasks, runs).size).toBe(0);
   });
 });

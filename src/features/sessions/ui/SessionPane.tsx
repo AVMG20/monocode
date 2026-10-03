@@ -11,7 +11,11 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { Composer } from "./Composer";
-import { RunningSubagents, runningSubagents } from "./RunningSubagents";
+import {
+  RunningSubagents,
+  runningSubagents,
+  subagentBackgroundTasks,
+} from "./RunningSubagents";
 import { subagentName } from "../model/transcriptActivity";
 import { SessionArtifacts } from "./SessionArtifacts";
 import type { Worktree } from "../../source-control/model/worktrees";
@@ -445,22 +449,12 @@ const LocalSessionPane = memo(function LocalSessionPane({
     () => new Set(liveSubagents.map((block) => block.id)),
     [liveSubagents],
   );
-  // A background run's own task, matched by the description both carry, so
-  // its line can stop it and the commands below do not list it twice.
-  const subagentTasks = useMemo(() => {
-    const tasks = new Map<string, string>();
-    for (const task of session.backgroundTasks ?? []) {
-      if (!task.agent) continue;
-      const run = subagentRuns.find(
-        (block) =>
-          !tasks.has(block.id) &&
-          (task.description === block.tool?.title ||
-            task.description === subagentName(block)),
-      );
-      if (run) tasks.set(run.id, task.id);
-    }
-    return tasks;
-  }, [session.backgroundTasks, subagentRuns]);
+  // A background run's own task, so its line can stop it and the commands
+  // below do not list it twice.
+  const subagentTasks = useMemo(
+    () => subagentBackgroundTasks(session.backgroundTasks ?? [], subagentRuns),
+    [session.backgroundTasks, subagentRuns],
+  );
   const subagentTaskIds = new Set(subagentTasks.values());
   const runnerCompanions = useMemo(
     () =>

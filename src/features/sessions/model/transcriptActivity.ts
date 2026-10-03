@@ -554,10 +554,15 @@ export function isSupersededSyntheticSubagent(
  * so this can be a paragraph; it belongs on a tooltip, not on a row.
  */
 export function subagentBrief(block: Block): string {
-  const name =
-    block.agentRun?.name?.trim() ||
-    (block.text || block.tool?.title || "").trim();
-  const stripped = name
+  return subagentBriefFrom(
+    block.agentRun?.name?.trim() || block.text || block.tool?.title || "",
+  );
+}
+
+/** A run's brief from raw text, without the provider's "Task:"-style prefix. */
+export function subagentBriefFrom(text: string): string {
+  const stripped = text
+    .trim()
     .replace(/^(?:agent|task|subagent)\b[\s:·-]*/i, "")
     .trim();
   return stripped || "Subagent";

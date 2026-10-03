@@ -405,6 +405,8 @@ export type BackgroundTask = {
   description: string;
   /** A subagent: still the agent at work, unlike a lingering shell. */
   agent?: boolean;
+  /** The tool call that spawned a subagent, matching its transcript block. */
+  callId?: string;
 };
 
 export type Session = {
