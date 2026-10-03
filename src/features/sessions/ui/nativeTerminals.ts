@@ -1,5 +1,6 @@
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import {
   killPty,
   resizePty,
@@ -10,15 +11,30 @@ import {
   spawnNativeSession,
   type NativeProviderId,
 } from "../../../platform/tauri/nativeSession";
-import { IS_MAC } from "../../../platform/tauri/platform";
-import { isLightScheme, SCHEME_CHANGE_EVENT } from "../../settings/model/appearance";
-import { isOscColorQuery, oscColorReply } from "../../terminal/model/terminalChrome";
+import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
+import {
+  EXPLORER_FILE_POINTER_DRAG_EVENT,
+  type ExplorerFilePointerDragDetail,
+} from "../../../shared/lib/drag";
+import { dragPointToClient } from "../../../shared/lib/dragPoint";
+import {
+  isLightScheme,
+  SCHEME_CHANGE_EVENT,
+} from "../../settings/model/appearance";
+import {
+  isOscColorQuery,
+  oscColorReply,
+} from "../../terminal/model/terminalChrome";
 import {
   isMacTerminalClearShortcut,
   macTerminalShortcutData,
 } from "../../terminal/model/terminalKeys";
 import { fitTerminal } from "../../terminal/model/terminalLayout";
-import { monoFont, oscColors, terminalTheme } from "../../terminal/ui/TerminalView";
+import {
+  monoFont,
+  oscColors,
+  terminalTheme,
+} from "../../terminal/ui/TerminalView";
 import { setNativeSessionStatus } from "../model/nativeSessionStatus";
 import { isNativeProvider } from "../model/nativeSession";
 import type { Session } from "../model/session";
@@ -124,7 +140,9 @@ export function nativeLaunchPatch(
   prompt?: string,
 ): Required<Pick<Session, "harness" | "providerSessionId">> &
   Pick<Session, "providerAccountId"> {
-  const harness = isNativeProvider(session.harness) ? session.harness : "claude";
+  const harness = isNativeProvider(session.harness)
+    ? session.harness
+    : "claude";
   if (prompt) setNativeInitialPrompt(session.id, prompt);
   markFreshNativeLaunch(session.id);
   return {
@@ -147,7 +165,97 @@ function setState(entry: Entry, state: NativeTerminalState) {
   for (const listener of entry.listeners) listener(state);
 }
 
+/**
+ * A dropped path as a terminal types it: macOS / Linux terminals escape
+ * shell specials with backslashes, Windows Terminal quotes the path. The CLI
+ * turns a pasted image path into an image attachment.
+ */
+export function droppedPathText(path: string, isWin: boolean = IS_WIN): string {
+  if (isWin) return /[\s&()^%!;,'"]/.test(path) ? `"${path}"` : path;
+  // Letters and digits of any script stay as they are (Terminal.app does the
+  // same), so an accented or CJK file name still reads as a path.
+  return path.replace(/[^\p{L}\p{M}\p{N}_@%+=:,./\u202f-]/gu, "\\$&");
+}
+
+/** The on-screen session terminal under a client point, if any. */
+function entryAt(x: number, y: number): Entry | null {
+  const el = document.elementFromPoint(x, y);
+  if (!el) return null;
+  for (const entry of entries.values()) {
+    if (!entry.outer.contains(el) || entry.state.exited) continue;
+    if (entry.outer.parentElement === parking) continue;
+    return entry;
+  }
+  return null;
+}
+
+let dropTarget: Entry | null = null;
+
+function showDropTarget(entry: Entry | null) {
+  if (dropTarget === entry) return;
+  dropTarget?.outer.removeAttribute("data-file-drag");
+  dropTarget = entry;
+  entry?.outer.setAttribute("data-file-drag", "");
+}
+
+function dropPaths(entry: Entry, paths: string[]) {
+  if (paths.length === 0) return;
+  entry.term.paste(`${paths.map((path) => droppedPathText(path)).join(" ")} `);
+  entry.term.focus();
+}
+
+let dropListening = false;
+
+/**
+ * Files dragged from Finder / Explorer or MonoCode's file tree onto a
+ * session terminal are typed into the CLI as paths, the way a standalone
+ * terminal handles a drop. The webview swallows OS file drops, so they come
+ * from Tauri's drag-drop events rather than DOM `drop`.
+ */
+function ensureDropListener() {
+  if (dropListening) return;
+  dropListening = true;
+
+  void Promise.resolve()
+    .then(() =>
+      getCurrentWebview().onDragDropEvent((event) => {
+        if (event.payload.type === "leave") {
+          showDropTarget(null);
+          return;
+        }
+        const point = dragPointToClient(
+          event.payload.position.x,
+          event.payload.position.y,
+        );
+        const target = entryAt(point.x, point.y);
+        if (event.payload.type !== "drop") {
+          showDropTarget(target);
+          return;
+        }
+        showDropTarget(null);
+        if (target) dropPaths(target, event.payload.paths);
+      }),
+    )
+    .catch(() => undefined);
+
+  window.addEventListener(EXPLORER_FILE_POINTER_DRAG_EVENT, (event) => {
+    const detail = (event as CustomEvent<ExplorerFilePointerDragDetail>).detail;
+    if (!detail || detail.type === "end") {
+      showDropTarget(null);
+      return;
+    }
+    const target = entryAt(detail.x, detail.y);
+    if (detail.type === "move") {
+      showDropTarget(target);
+      return;
+    }
+    showDropTarget(null);
+    if (target) dropPaths(target, [detail.path]);
+  });
+}
+
 function createEntry(id: string, launch: NativeLaunch): Entry {
+  ensureDropListener();
   const outer = document.createElement("div");
   // Pinned to the pane rather than `h-full`: a percentage height inside a
   // flexed parent can resolve to the content height in WebKit, so the grid
@@ -156,7 +264,8 @@ function createEntry(id: string, launch: NativeLaunch): Entry {
   outer.className =
     "monocode-terminal monocode-native-session absolute inset-0 flex min-h-0 min-w-0 flex-col";
   const host = document.createElement("div");
-  host.className = "monocode-terminal-host min-h-0 min-w-0 flex-1 overflow-hidden";
+  host.className =
+    "monocode-terminal-host min-h-0 min-w-0 flex-1 overflow-hidden";
   outer.appendChild(host);
 
   const term = new Terminal({
@@ -397,6 +506,7 @@ function createEntry(id: string, launch: NativeLaunch): Entry {
   entry.dispose = () => {
     if (closed) return;
     closed = true;
+    if (dropTarget === entry) showDropTarget(null);
     if (raf) cancelAnimationFrame(raf);
     observer.disconnect();
     host.removeEventListener("copy", onCopy);
