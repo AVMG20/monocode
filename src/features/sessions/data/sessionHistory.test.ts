@@ -193,6 +193,19 @@ describe("historyWithLiveSessions", () => {
     });
   });
 
+  it("does not give a worktree session the project checkout's branch", () => {
+    const session = newSession("cursor", "/tmp/agent-terminal");
+    session.blocks = [{ id: "u1", role: "user", text: "hello" }];
+    session.busy = true;
+    session.worktreeCwd = "/tmp/trees/detached";
+
+    const rows = historyWithLiveSessions([], [session], "/tmp/agent-terminal", {
+      repo: "monocode",
+      branch: "main",
+    });
+    expect(rows[0].branch).toBeUndefined();
+  });
+
   it("matches project paths with trailing slashes", () => {
     const history = [summary("a1", "/tmp/project-a/")];
 

@@ -41,7 +41,17 @@ export function nativeSessionLabel(
 
 /** Session fields a native terminal pane may change. */
 export type NativeSessionPatch = Partial<
-  Pick<Session, "harness" | "providerAccountId" | "providerSessionId" | "title">
+  Pick<
+    Session,
+    | "harness"
+    | "providerAccountId"
+    | "providerSessionId"
+    | "title"
+    | "branch"
+    | "worktreeCwd"
+    | "workspaceMode"
+    | "worktreeBase"
+  >
 >;
 
 /** Titles the terminal set this run, so later updates may replace them. */

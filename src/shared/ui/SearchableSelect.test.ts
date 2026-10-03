@@ -90,3 +90,82 @@ it("does not scroll the page when a compact menu opens", async () => {
   const option = document.body.querySelector('[role="option"]');
   expect(option?.className).toContain("h-7");
 });
+
+it("offers to create the typed entry when nothing matches it exactly", async () => {
+  const onChange = vi.fn();
+  const onCreate = vi.fn();
+  await act(async () => {
+    root.render(
+      createElement(SearchableSelect, {
+        label: "Branch",
+        value: "main",
+        options: [
+          { value: "main", label: "main" },
+          { value: "feature", label: "feature", detail: "origin" },
+        ],
+        onChange,
+        create: { label: (name: string) => `Create branch ${name}`, onCreate },
+      }),
+    );
+  });
+  await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
+  expect(document.body.textContent).toContain("origin");
+  const input = document.body.querySelector<HTMLInputElement>('[role="combobox"]')!;
+  const type = async (text: string) =>
+    act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!;
+      setter.call(input, text);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+  await type("main");
+  expect(document.body.textContent).not.toContain("Create branch");
+
+  await type("new-work");
+  expect(document.body.textContent).toContain("Create branch new-work");
+  await act(async () =>
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+  );
+  expect(onCreate).toHaveBeenCalledWith("new-work");
+  expect(onChange).not.toHaveBeenCalled();
+});
+
+it("reaches the create row with the arrow keys when the text partly matches", async () => {
+  const onChange = vi.fn();
+  const onCreate = vi.fn();
+  await act(async () => {
+    root.render(
+      createElement(SearchableSelect, {
+        label: "Branch",
+        value: "main",
+        options: [
+          { value: "main", label: "main" },
+          { value: "fix-login", label: "fix-login" },
+        ],
+        onChange,
+        create: { label: (name: string) => `Create branch ${name}`, onCreate },
+      }),
+    );
+  });
+  await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
+  const input = document.body.querySelector<HTMLInputElement>('[role="combobox"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "fix",
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const key = (name: string) =>
+    act(async () =>
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true })),
+    );
+  await key("ArrowDown");
+  expect(input.getAttribute("aria-activedescendant")).toMatch(/-option-1$/);
+  await key("Enter");
+  expect(onCreate).toHaveBeenCalledWith("fix");
+  expect(onChange).not.toHaveBeenCalled();
+});

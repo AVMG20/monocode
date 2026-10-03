@@ -14,6 +14,8 @@ type Entry = {
   state: ProjectBranchesState;
   listeners: Set<() => void>;
   inFlight: boolean;
+  /** A forced reload arrived mid-load and must run once it lands. */
+  stale: boolean;
   unsubscribeGit: (() => void) | null;
   onResume: (() => void) | null;
 };
@@ -49,6 +51,7 @@ function entryFor(cwd: string): Entry {
     state: PENDING,
     listeners: new Set(),
     inFlight: false,
+    stale: false,
     unsubscribeGit: null,
     onResume: null,
   };
@@ -73,7 +76,12 @@ export function seedProjectBranches(cwd: string, branches: GitBranches) {
 }
 
 async function load(entry: Entry, force = false) {
-  if (entry.inFlight || (!force && document.hidden)) return;
+  if (entry.inFlight) {
+    // A checkout during a read must not leave the old branch cached.
+    entry.stale ||= force;
+    return;
+  }
+  if (!force && document.hidden) return;
   entry.inFlight = true;
   try {
     publish(entry, await gitBranches(entry.cwd));
@@ -81,6 +89,10 @@ async function load(entry: Entry, force = false) {
     publish(entry, null);
   } finally {
     entry.inFlight = false;
+  }
+  if (entry.stale) {
+    entry.stale = false;
+    await load(entry, true);
   }
 }
 
