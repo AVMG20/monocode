@@ -4,6 +4,7 @@ import type { Worktree } from "../../source-control/model/worktrees";
 import {
   branchValue,
   defaultLaunchWorkspace,
+  isGitRepo,
   launchSwitchesBranch,
   parseBranchValue,
   pickerBranches,
@@ -62,6 +63,26 @@ describe("launch workspace", () => {
     expect(
       defaultLaunchWorkspace({ cwd: "/repo", worktreeCwd: "/trees/a" }),
     ).toEqual({ kind: "existing", path: "/trees/a" });
+  });
+
+  it("starts an automation's requested worktree from its base", () => {
+    expect(
+      defaultLaunchWorkspace({
+        cwd: "/repo",
+        workspaceMode: "worktree",
+        worktreeBase: "develop",
+      }),
+    ).toEqual({ kind: "new", base: "develop", name: "" });
+    expect(
+      defaultLaunchWorkspace({ cwd: "/repo", workspaceMode: "worktree", worktreeBase: "HEAD" }),
+    ).toEqual({ kind: "new", base: null, name: "" });
+  });
+
+  it("tells a repository from a plain folder's empty listing", () => {
+    expect(isGitRepo(null)).toBe(false);
+    expect(isGitRepo({ current: null, detached: false, branches: [] })).toBe(false);
+    expect(isGitRepo(branches)).toBe(true);
+    expect(isGitRepo({ current: "abc1234", detached: true, branches: [] })).toBe(true);
   });
 
   it("round-trips branch values, including remotes with slashes", () => {

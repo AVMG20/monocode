@@ -298,3 +298,22 @@ it("shows the live branch above a running session and saves it", async () => {
   expect(container.textContent).toContain("feature");
   expect(onPatch).toHaveBeenCalledWith(session.id, { branch: "feature" });
 });
+
+it("hides the workspace picker in a folder that is not a git repository", async () => {
+  mocks.gitBranches.mockResolvedValue({ current: null, detached: false, branches: [] });
+  const session = newSession("claude", "/plain-folder");
+  const onPatch = await render(session);
+  await flush();
+
+  expect(container.textContent).not.toContain("Workspace");
+  await act(async () => button("Start Claude Code").click());
+  await flush();
+  expect(onPatch).toHaveBeenCalledWith(
+    session.id,
+    expect.objectContaining({ providerSessionId: expect.any(String) }),
+  );
+  expect(onPatch).not.toHaveBeenCalledWith(
+    session.id,
+    expect.objectContaining({ branch: expect.anything() }),
+  );
+});

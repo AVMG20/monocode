@@ -121,7 +121,9 @@ export function summaryFromSession(
       ? { linkedWorkItem: session.linkedWorkItem }
       : {}),
     ...(session.automationId ? { automationId: session.automationId } : {}),
-    ...(!session.worktreeRemoved && (session.branch || git?.branch)
+    // The project's branch says nothing about a session in its own worktree.
+    ...(!session.worktreeRemoved &&
+    (session.branch || (!session.worktreeCwd && git?.branch))
       ? { branch: session.branch || git?.branch }
       : {}),
     ...(git?.repo ? { repo: git.repo } : {}),

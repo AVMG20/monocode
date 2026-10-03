@@ -41,12 +41,16 @@ import { loadProjectProviderSettings } from "../model/projectProviders";
 import { isRemoteProjectPath } from "../../projects/model/recents";
 import { FolderTree, GitBranch, Terminal } from "../../../shared/ui/icons";
 import {
+  gitBranches,
   gitCheckout,
   gitCreateBranch,
   isCheckoutBlockedByChanges,
   notifyGitChanged,
 } from "../../../platform/tauri/fs";
-import { useProjectBranchesState } from "../../source-control/hooks/useProjectBranches";
+import {
+  seedProjectBranches,
+  useProjectBranchesState,
+} from "../../source-control/hooks/useProjectBranches";
 import { useProjectWorktrees } from "../../source-control/hooks/useProjectWorktrees";
 import {
   createWorktree,
@@ -54,7 +58,10 @@ import {
 } from "../../source-control/model/worktrees";
 import {
   defaultLaunchWorkspace,
+  isGitRepo,
+  launchSwitchesBranch,
   prepareLaunchWorkspace,
+  selectableWorktrees,
   type LaunchWorkspace,
 } from "../model/launchWorkspace";
 import { LaunchWorkspacePicker } from "./LaunchWorkspacePicker";
@@ -163,16 +170,17 @@ function NativeSessionHeader({
   // The branch the CLI is on right now; the sidebar shows the saved copy.
   const workCwd = sessionWorkCwd(session);
   const { branches } = useProjectBranchesState(workCwd, true);
-  const liveBranch = branches
+  const repo = isGitRepo(branches);
+  const liveBranch = repo
     ? branches.detached
       ? undefined
       : (branches.current ?? undefined)
     : session.branch;
   useEffect(() => {
-    if (branches && liveBranch !== session.branch) {
+    if (repo && liveBranch !== session.branch) {
       onPatch(session.id, { branch: liveBranch });
     }
-  }, [branches, liveBranch, session.branch, session.id, onPatch]);
+  }, [repo, liveBranch, session.branch, session.id, onPatch]);
   const BranchIcon = session.worktreeCwd ? FolderTree : GitBranch;
   return (
     <div
@@ -360,7 +368,7 @@ function NativeSessionLauncher({
     session.cwd,
     gitLookup,
   );
-  const gitProject = !!branches;
+  const gitProject = isGitRepo(branches);
   const { data: worktrees, error: worktreesError } = useProjectWorktrees(
     session.cwd,
     gitProject,
@@ -369,6 +377,24 @@ function NativeSessionLauncher({
     setWorkspace(next);
     setLaunchError(undefined);
   };
+  // A remembered worktree that is gone must be picked again, not launched into.
+  useEffect(() => {
+    if (workspace.kind !== "existing" || !workspace.path || !worktrees) return;
+    if (
+      !selectableWorktrees(worktrees.worktrees).some(
+        (tree) => tree.path === workspace.path,
+      )
+    ) {
+      setWorkspace({ kind: "existing", path: "" });
+    }
+  }, [workspace, worktrees]);
+  const alive = useRef(true);
+  useEffect(
+    () => () => {
+      alive.current = false;
+    },
+    [],
+  );
 
   useEffect(() => {
     let alive = true;
@@ -424,8 +450,15 @@ function NativeSessionLauncher({
               createWorktree(cwd, branch, base, false),
           },
         );
+        if (launchSwitchesBranch(workspace, branches)) {
+          // Refresh the shared branch cache before the header reads it.
+          await gitBranches(session.cwd)
+            .then((fresh) => seedProjectBranches(session.cwd, fresh))
+            .catch(() => undefined);
+        }
         notifyGitChanged();
       } catch (error) {
+        if (!alive.current) return;
         const message = error instanceof Error ? error.message : String(error);
         setLaunchError(
           isCheckoutBlockedByChanges(message)
@@ -436,6 +469,8 @@ function NativeSessionLauncher({
         return;
       }
     }
+    // The tab closed while Git worked; there is no session left to start.
+    if (!alive.current) return;
     if (supportsProviderAccounts(provider)) {
       selectProviderAccount(provider, session.cwd, accountId);
     }
@@ -448,6 +483,8 @@ function NativeSessionLauncher({
       harness: provider,
       providerAccountId: supportsProviderAccounts(provider) ? accountId : undefined,
       providerSessionId: crypto.randomUUID(),
+      workspaceMode: undefined,
+      worktreeBase: undefined,
     });
     setPreparing(false);
   };
@@ -479,7 +516,7 @@ function NativeSessionLauncher({
                 <button
                   key={row.id}
                   type="button"
-                  disabled={!row.installed}
+                  disabled={!row.installed || preparing}
                   title={row.installed ? undefined : `${HARNESS_TITLE[row.id]} is not installed`}
                   onClick={() => {
                     setProvider(row.id);
@@ -512,6 +549,7 @@ function NativeSessionLauncher({
                 <button
                   key={account.id}
                   type="button"
+                  disabled={preparing}
                   onClick={() => chooseAccount(account.id)}
                   className={`rounded-lg border px-3 py-1.5 text-[13px] ${
                     accountId === account.id

@@ -33,10 +33,27 @@ export type LaunchGit = {
 export function defaultLaunchWorkspace(session: {
   cwd: string;
   worktreeCwd?: string;
+  workspaceMode?: "current" | "worktree";
+  worktreeBase?: string;
 }): LaunchWorkspace {
-  return session.worktreeCwd
-    ? { kind: "existing", path: session.worktreeCwd }
-    : { kind: "current", branch: null };
+  if (session.worktreeCwd) return { kind: "existing", path: session.worktreeCwd };
+  // Automations can ask for a fresh worktree before the CLI starts.
+  if (session.workspaceMode === "worktree") {
+    return {
+      kind: "new",
+      base:
+        session.worktreeBase && session.worktreeBase !== "HEAD"
+          ? session.worktreeBase
+          : null,
+      name: "",
+    };
+  }
+  return { kind: "current", branch: null };
+}
+
+/** Git answers a plain folder with an empty listing rather than an error. */
+export function isGitRepo(branches: GitBranches | null): branches is GitBranches {
+  return !!branches && (branches.current != null || branches.branches.length > 0);
 }
 
 /** Git-facing ref of a listed branch: `origin/main` or `main`. */

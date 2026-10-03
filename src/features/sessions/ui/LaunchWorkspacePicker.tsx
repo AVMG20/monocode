@@ -119,14 +119,34 @@ export function LaunchWorkspacePicker({
         Workspace
       </div>
       <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Workspace">
-        {MODES.map(([kind, label, Icon]) => (
+        {MODES.map(([kind, label, Icon], index) => (
           <button
             key={kind}
             type="button"
             role="radio"
             aria-checked={value.kind === kind}
+            tabIndex={value.kind === kind ? 0 : -1}
             disabled={disabled}
             onClick={() => setMode(kind)}
+            onKeyDown={(event) => {
+              const step =
+                event.key === "ArrowRight" || event.key === "ArrowDown"
+                  ? 1
+                  : event.key === "ArrowLeft" || event.key === "ArrowUp"
+                    ? -1
+                    : 0;
+              if (!step) return;
+              event.preventDefault();
+              const next = MODES[(index + step + MODES.length) % MODES.length];
+              setMode(next[0]);
+              const group = event.currentTarget.parentElement;
+              requestAnimationFrame(() =>
+                group
+                  ?.querySelector<HTMLButtonElement>(`[data-mode="${next[0]}"]`)
+                  ?.focus(),
+              );
+            }}
+            data-mode={kind}
             className={`flex min-w-0 flex-col items-start gap-1 rounded-lg border px-2.5 py-2 text-left text-[12px] ${
               value.kind === kind
                 ? "border-content/30 bg-selection text-content"

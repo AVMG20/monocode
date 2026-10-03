@@ -80,8 +80,10 @@ export function SearchableSelect({
     !options.some((option) => option.label === createQuery)
       ? createQuery
       : null;
+  // The create row sits after the matches and takes part in arrow keys.
+  const rowCount = filtered.length + (createRow ? 1 : 0);
   const activeId =
-    filtered[active] != null ? `${listId}-option-${active}` : undefined;
+    active < rowCount ? `${listId}-option-${active}` : undefined;
   const popoverLayer =
     layer ??
     (root.current?.closest('[role="dialog"]')
@@ -122,10 +124,8 @@ export function SearchableSelect({
 
   useEffect(() => {
     if (!open) return;
-    setActive((index) =>
-      filtered.length === 0 ? 0 : Math.min(index, filtered.length - 1),
-    );
-  }, [filtered.length, open]);
+    setActive((index) => (rowCount === 0 ? 0 : Math.min(index, rowCount - 1)));
+  }, [rowCount, open]);
 
   useLayoutEffect(() => {
     if (!open) return;
@@ -159,14 +159,14 @@ export function SearchableSelect({
   const onSearchKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      if (filtered.length > 0) {
-        setActive((index) => Math.min(filtered.length - 1, index + 1));
+      if (rowCount > 0) {
+        setActive((index) => Math.min(rowCount - 1, index + 1));
       }
       return;
     }
     if (event.key === "ArrowUp") {
       event.preventDefault();
-      if (filtered.length > 0) {
+      if (rowCount > 0) {
         setActive((index) => Math.max(0, index - 1));
       }
       return;
@@ -178,14 +178,14 @@ export function SearchableSelect({
     }
     if (event.key === "End") {
       event.preventDefault();
-      setActive(Math.max(0, filtered.length - 1));
+      setActive(Math.max(0, rowCount - 1));
       return;
     }
     if (event.key === "Enter") {
       event.preventDefault();
       const option = filtered[active];
       if (option) pick(option.value);
-      else if (createRow) pickCreate(createRow);
+      else if (createRow && active === filtered.length) pickCreate(createRow);
     }
   };
 
@@ -337,12 +337,22 @@ export function SearchableSelect({
           {createRow ? (
             <div className="shrink-0 border-t border-stroke p-1">
               <button
+                ref={active === filtered.length ? activeOption : undefined}
+                id={`${listId}-option-${filtered.length}`}
                 type="button"
+                role="option"
+                tabIndex={-1}
+                aria-selected={false}
                 onMouseDown={(event) => event.preventDefault()}
+                onMouseEnter={() => setActive(filtered.length)}
                 onClick={() => pickCreate(createRow)}
-                className={`flex w-full items-center gap-2 rounded-md px-2 text-left leading-none text-content/75 hover:bg-content/5 hover:text-content ${
+                className={`flex w-full items-center gap-2 rounded-md px-2 text-left leading-none ${
                   compact ? "h-7 text-[12px]" : "h-8 text-[13px]"
-                } ${filtered.length === 0 ? "bg-selection text-content" : ""}`}
+                } ${
+                  active === filtered.length
+                    ? "bg-selection text-content"
+                    : "text-content/75 hover:bg-content/5 hover:text-content"
+                }`}
               >
                 <Plus className="size-3.5 shrink-0" strokeWidth={1.75} />
                 <span className="min-w-0 flex-1 truncate">

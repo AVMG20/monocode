@@ -49,6 +49,8 @@ export type NativeSessionPatch = Partial<
     | "title"
     | "branch"
     | "worktreeCwd"
+    | "workspaceMode"
+    | "worktreeBase"
   >
 >;
 
