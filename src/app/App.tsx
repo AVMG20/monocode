@@ -4814,7 +4814,7 @@ function Workspace({
   );
 
   const nextTitleTabs: TitleTab[] = deckProjectTabs.map((tab) =>
-    toTitleTab(tab, sessions, dirtyFiles, unseenFinishedIds),
+    toTitleTab(tab, sessions, dirtyFiles, unseenFinishedIds, busySessionIds),
   );
   tabProjectsRef.current = new Map(
     nextTitleTabs.map((tab) => [tab.id, tab.project]),
@@ -5804,7 +5804,9 @@ function Workspace({
               }
               recents={recents}
               busyProjectPaths={sessions.flatMap((session) =>
-                sessionWorking(session) && session.cwd ? [session.cwd] : [],
+                busySessionIds.has(session.id) && session.cwd
+                  ? [session.cwd]
+                  : [],
               )}
               liveAgents={liveAgents}
               onSelectAgent={onSelectLiveAgent}
@@ -6227,6 +6229,8 @@ function toTitleTab(
   sessions: Session[],
   dirtyFiles: Set<string>,
   unseenFinishedIds: ReadonlySet<string>,
+  /** Sessions at work, native CLIs included (see `busySessionIds`). */
+  busySessionIds: ReadonlySet<string>,
 ): TitleTab {
   const paneIds = leafIds(tab.layout);
   const multiPane = paneIds.length > 1;
@@ -6254,7 +6258,7 @@ function toTitleTab(
     : tabSessions;
   for (const session of ordered) {
     if (
-      sessionWorking(session) &&
+      busySessionIds.has(session.id) &&
       !sessionNeedsInput(session) &&
       !busySeen.has(session.harness)
     ) {
