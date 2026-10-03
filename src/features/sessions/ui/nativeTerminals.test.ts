@@ -29,7 +29,10 @@ vi.mock("@xterm/xterm", () => ({
     rows = 24;
     options = {};
     element = null;
-    buffer = { active: { type: "normal" }, onBufferChange: () => ({ dispose() {} }) };
+    buffer = {
+      active: { type: "normal" },
+      onBufferChange: () => ({ dispose() {} }),
+    };
     parser = { registerOscHandler: () => ({ dispose() {} }) };
     open() {}
     write() {}
@@ -74,6 +77,11 @@ vi.mock("../../../platform/tauri/nativeSession", () => ({
   spawnNativeSession: mocks.spawnNativeSession,
   subscribeNativeSessionStatus: () => () => undefined,
 }));
+vi.mock("@tauri-apps/api/webview", () => ({
+  getCurrentWebview: () => ({
+    onDragDropEvent: () => Promise.resolve(() => undefined),
+  }),
+}));
 vi.mock("../../terminal/model/terminalLayout", () => ({
   fitTerminal: () => ({ cols: 80, rows: 24 }),
 }));
@@ -86,6 +94,7 @@ vi.mock("../../terminal/ui/TerminalView", () => ({
 import {
   deliverNativePrompt,
   disposeNativeTerminal,
+  droppedPathText,
   setNativeInitialPrompt,
   startNativeTerminal,
 } from "./nativeTerminals";
@@ -188,5 +197,36 @@ describe("native terminal prompts", () => {
       expect.objectContaining({ initialPrompt: "build it" }),
     );
     disposeNativeTerminal("d");
+  });
+});
+
+describe("droppedPathText", () => {
+  it("escapes shell specials like a macOS terminal drop", () => {
+    expect(
+      droppedPathText("/Users/me/Desktop/Screen Shot (1).png", false),
+    ).toBe("/Users/me/Desktop/Screen\\ Shot\\ \\(1\\).png");
+    expect(droppedPathText("/tmp/plain-file_1.png", false)).toBe(
+      "/tmp/plain-file_1.png",
+    );
+  });
+
+  it("keeps letters of any script and escapes shell specials", () => {
+    expect(droppedPathText("/tmp/café 写真.png", false)).toBe(
+      "/tmp/café\\ 写真.png",
+    );
+    // macOS screenshot names use U+202F before AM/PM; terminals leave it.
+    expect(droppedPathText("/tmp/Shot 10.00.00\u202fPM.png", false)).toBe(
+      "/tmp/Shot\\ 10.00.00\u202fPM.png",
+    );
+    expect(droppedPathText("/tmp/~a#b'c\"d$e`f\\g", false)).toBe(
+      "/tmp/\\~a\\#b\\'c\\\"d\\$e\\`f\\\\g",
+    );
+  });
+
+  it("quotes paths with spaces on Windows", () => {
+    expect(droppedPathText("C:\\Users\\me\\My Pics\\a.png", true)).toBe(
+      '"C:\\Users\\me\\My Pics\\a.png"',
+    );
+    expect(droppedPathText("C:\\tmp\\a.png", true)).toBe("C:\\tmp\\a.png");
   });
 });

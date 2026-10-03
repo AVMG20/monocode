@@ -7,9 +7,9 @@ const MIN_TUI_SCROLLBAR_WIDTH = 1;
 
 type CellSize = { width: number; height: number };
 
-export function terminalScrollbarWidth(
-  overviewRuler?: { width?: number },
-): number {
+export function terminalScrollbarWidth(overviewRuler?: {
+  width?: number;
+}): number {
   const width = overviewRuler?.width;
   return width === undefined ? DEFAULT_SCROLLBAR_WIDTH : width;
 }
@@ -41,38 +41,39 @@ function availableSize(
   return { width, height };
 }
 
-/** Grow letter-spacing / line-height so the cell grid covers the host (TUI mode). */
-export function stretchGridToHost(
+/**
+ * Spread the leftover fraction of a row over the grid's line height (TUI
+ * mode) so it reaches the host's bottom, given the unstretched cell size.
+ * Columns are not stretched: xterm rounds letter-spacing to whole device
+ * pixels, so a sub-pixel share per column never lands. Cell heights round
+ * too, so the result is checked and backed off if the grid overflows.
+ */
+function stretchGrid(
   term: Terminal,
-  host: HTMLElement,
-  mode: TerminalFitMode,
+  size: { width: number; height: number },
+  base: CellSize,
 ): void {
-  if (mode !== "tui") return;
-  const size = availableSize(host, mode, term);
-  if (!size) return;
+  const lineHeight = size.height / term.rows / base.height;
+  if (lineHeight <= 1.001) return;
+  term.options.lineHeight = lineHeight;
 
   for (let pass = 0; pass < 4; pass++) {
     const cell = cellSize(term);
-    if (!cell) break;
-    const gapW = size.width - term.cols * cell.width;
-    const gapH = size.height - term.rows * cell.height;
-    if (gapW <= 0.5 && gapH <= 0.5) break;
-    if (gapW > 0.5) {
-      term.options.letterSpacing =
-        (term.options.letterSpacing ?? 0) + gapW / term.cols;
-    }
-    if (gapH > 0.5) {
-      const rowHeight = cell.height;
-      const targetRow = size.height / term.rows;
-      term.options.lineHeight =
-        (term.options.lineHeight ?? 1) * (targetRow / rowHeight);
-    }
+    if (!cell) return;
+    const overH = term.rows * cell.height - size.height;
+    if (overH <= 0) return;
+    const over = (overH + 1) / term.rows / base.height;
+    term.options.lineHeight = Math.max(
+      1,
+      (term.options.lineHeight ?? 1) - over,
+    );
   }
+  resetGridStretch(term);
 }
 
 export function resetGridStretch(term: Terminal): void {
-  term.options.letterSpacing = 0;
-  term.options.lineHeight = 1;
+  if (term.options.letterSpacing !== 0) term.options.letterSpacing = 0;
+  if (term.options.lineHeight !== 1) term.options.lineHeight = 1;
 }
 
 export function fitTerminal(
@@ -83,31 +84,21 @@ export function fitTerminal(
   const size = availableSize(host, mode, term);
   if (!size) return null;
 
-  let cell = cellSize(term);
+  // Count cells at the unstretched size. A stretch left from a larger host
+  // would otherwise make too few, too-tall rows — and rounding the count up
+  // would push the last row (a TUI's footer) below the host's bottom edge.
+  resetGridStretch(term);
+  const cell = cellSize(term);
   if (!cell) return null;
+  const base = { ...cell };
 
-  const round = mode === "tui" ? Math.ceil : Math.floor;
-  let cols = Math.max(2, round(size.width / cell.width));
-  let rows = Math.max(1, round(size.height / cell.height));
+  const cols = Math.max(2, Math.floor(size.width / cell.width));
+  const rows = Math.max(1, Math.floor(size.height / cell.height));
+  if (term.cols !== cols || term.rows !== rows) term.resize(cols, rows);
 
-  if (term.cols !== cols || term.rows !== rows) {
-    term.resize(cols, rows);
-    cell = cellSize(term);
-    if (!cell) return { cols, rows };
-    if (mode === "tui") {
-      while (cols * cell.width < size.width - 0.5) cols++;
-      while (rows * cell.height < size.height - 0.5) rows++;
-      if (term.cols !== cols || term.rows !== rows) {
-        term.resize(cols, rows);
-      }
-    }
-  }
-
-  if (mode === "tui") {
-    stretchGridToHost(term, host, mode);
-  } else {
-    resetGridStretch(term);
-  }
+  // A TUI paints its whole grid, so stretch the rows over the leftover
+  // fraction of a row instead of leaving a strip at the bottom.
+  if (mode === "tui") stretchGrid(term, size, base);
 
   return { cols: term.cols, rows: term.rows };
 }

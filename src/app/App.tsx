@@ -987,7 +987,8 @@ function Workspace({
       id: active.id,
       harness: active.harness,
       model: active.model,
-      busy: active.busy,
+      // Native CLIs never set `busy`; their live status says when a turn runs.
+      busy: busySessionIds.has(active.id),
       providerAccountId:
         active.providerAccountId ??
         // A started session ran without a named profile: that is Default.
@@ -996,7 +997,7 @@ function Workspace({
           ? DEFAULT_PROVIDER_ACCOUNT_ID
           : undefined),
     };
-  }, [active?.id, active?.harness, active?.model, active?.busy, active?.blocks, active?.providerAccountId, active?.providerSessionId]);
+  }, [active?.id, active?.harness, active?.model, busySessionIds, active?.blocks, active?.providerAccountId, active?.providerSessionId]);
   const runningTerminals = useMemo(() => {
     const files: FilePaneTab[] = [];
     const dock = findProjectTerminal(projectTerminals, projectCwd);
@@ -4813,7 +4814,7 @@ function Workspace({
   );
 
   const nextTitleTabs: TitleTab[] = deckProjectTabs.map((tab) =>
-    toTitleTab(tab, sessions, dirtyFiles, unseenFinishedIds),
+    toTitleTab(tab, sessions, dirtyFiles, unseenFinishedIds, busySessionIds),
   );
   tabProjectsRef.current = new Map(
     nextTitleTabs.map((tab) => [tab.id, tab.project]),
@@ -5803,7 +5804,9 @@ function Workspace({
               }
               recents={recents}
               busyProjectPaths={sessions.flatMap((session) =>
-                sessionWorking(session) && session.cwd ? [session.cwd] : [],
+                busySessionIds.has(session.id) && session.cwd
+                  ? [session.cwd]
+                  : [],
               )}
               liveAgents={liveAgents}
               onSelectAgent={onSelectLiveAgent}
@@ -6226,6 +6229,8 @@ function toTitleTab(
   sessions: Session[],
   dirtyFiles: Set<string>,
   unseenFinishedIds: ReadonlySet<string>,
+  /** Sessions at work, native CLIs included (see `busySessionIds`). */
+  busySessionIds: ReadonlySet<string>,
 ): TitleTab {
   const paneIds = leafIds(tab.layout);
   const multiPane = paneIds.length > 1;
@@ -6253,7 +6258,7 @@ function toTitleTab(
     : tabSessions;
   for (const session of ordered) {
     if (
-      sessionWorking(session) &&
+      busySessionIds.has(session.id) &&
       !sessionNeedsInput(session) &&
       !busySeen.has(session.harness)
     ) {

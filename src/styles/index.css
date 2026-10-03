@@ -3220,3 +3220,14 @@ html.theme-light .btw-burst {
     var(--color-background-base)
   );
 }
+
+/* A file dragged over a native session terminal drops its path in. */
+.monocode-native-session[data-file-drag]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 2px var(--color-accent, currentColor);
+  background: color-mix(in srgb, var(--color-accent, currentColor) 8%, transparent);
+}
