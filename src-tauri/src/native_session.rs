@@ -309,13 +309,37 @@ fn watch_statuses(app: AppHandle) {
         let mut events = Vec::new();
         let stop = {
             let mut inner = sessions.lock();
+            // Only list processes while a hooked CLI reports idle: that is
+            // when a background shell would otherwise read as finished.
+            let shell_parents = inner
+                .tracked
+                .values()
+                .any(|tracked| {
+                    tracked
+                        .status_file
+                        .as_deref()
+                        .and_then(read_status)
+                        .as_deref()
+                        == Some(STATUS_IDLE)
+                })
+                .then(background_shell_parents)
+                .unwrap_or_default();
             inner.tracked.retain(|id, tracked| {
                 if host.pid_of(id) != Some(tracked.pid) {
                     remove_pid_file(&tracked.pid_file, tracked.pid);
                     events.push((id.clone(), STATUS_EXITED.to_string()));
                     return false;
                 }
-                if let Some(status) = tracked.status_file.as_deref().and_then(read_status) {
+                let status = tracked.status_file.as_deref().and_then(read_status);
+                // Claude's turn ended but a shell it started in the background
+                // is still going, and the CLI resumes when it finishes.
+                let status = match status {
+                    Some(word) if word == STATUS_IDLE && shell_parents.contains(&tracked.pid) => {
+                        Some(STATUS_RUNNING.to_string())
+                    }
+                    other => other,
+                };
+                if let Some(status) = status {
                     if status != tracked.last {
                         tracked.last = status.clone();
                         events.push((id.clone(), status));
@@ -335,6 +359,38 @@ fn watch_statuses(app: AppHandle) {
             return;
         }
     }
+}
+
+/// Pids whose child is a shell Claude's Bash tool started. Claude runs each
+/// command as `<shell> -c source '<config>/shell-snapshots/…'`, and one run in
+/// the background outlives the turn as a direct child of the CLI. Hooks and
+/// MCP servers never source a snapshot, so they do not count.
+#[cfg(unix)]
+fn background_shell_parents() -> std::collections::HashSet<u32> {
+    let Ok(output) = std::process::Command::new("ps")
+        .args(["-axo", "ppid=,command="])
+        .output()
+    else {
+        return Default::default();
+    };
+    parse_shell_parents(&String::from_utf8_lossy(&output.stdout))
+}
+
+#[cfg(not(unix))]
+fn background_shell_parents() -> std::collections::HashSet<u32> {
+    Default::default()
+}
+
+fn parse_shell_parents(ps: &str) -> std::collections::HashSet<u32> {
+    ps.lines()
+        .filter_map(|line| {
+            let (ppid, command) = line.trim_start().split_once(char::is_whitespace)?;
+            command
+                .contains("/shell-snapshots/snapshot-")
+                .then(|| ppid.parse().ok())
+                .flatten()
+        })
+        .collect()
 }
 
 fn read_status(path: &Path) -> Option<String> {
@@ -742,6 +798,18 @@ mod tests {
         assert_eq!(parse_status(""), None);
         assert_eq!(parse_status("exited"), None);
         assert_eq!(parse_status("bogus"), None);
+    }
+
+    #[test]
+    fn shell_parents_are_cli_pids_running_a_bash_tool_shell() {
+        let ps = "  412 /bin/zsh -c source '/Users/a/.claude/shell-snapshots/snapshot-zsh-1.sh' && eval 'npm run build'\n\
+                  412 /bin/sh -c echo idle> \"/data/status\"\n\
+                  413 node /opt/mcp/server.js\n\
+                  bogus line\n";
+        let parents = parse_shell_parents(ps);
+        assert!(parents.contains(&412));
+        assert!(!parents.contains(&413));
+        assert_eq!(parents.len(), 1);
     }
 
     #[test]
