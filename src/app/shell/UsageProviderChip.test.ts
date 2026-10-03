@@ -8,6 +8,10 @@ import type { ProviderRateLimits } from "../../features/providers/model/rateLimi
 import { projectKey } from "../../shared/lib/paths";
 import { saveTabGroupMascot } from "../../features/workspace/model/tabGroups";
 import { needsProviderLogin, UsageProviderChip } from "./UsageProviderChip";
+import {
+  saveMaskEmails,
+  saveShowRemainingUsage,
+} from "../../features/settings/model/displayPrefs";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(async () => null),
@@ -128,6 +132,7 @@ describe("UsageProviderChip", () => {
   });
 
   it("opens a column of detailed progress bars", async () => {
+    saveShowRemainingUsage(true);
     act(() =>
       root.render(
         createElement(UsageProviderChip, { limits: codexLimits(), now }),
@@ -136,8 +141,12 @@ describe("UsageProviderChip", () => {
 
     const trigger = button("Codex usage details");
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(trigger.textContent).toBe("58% 2h·19% 2d 23h");
+    expect(trigger.title).toBe(
+      "58% remaining · Resets in 2h · 19% remaining · Resets in 2d 23h",
+    );
     expect(trigger.querySelector(".w-8 > span")?.getAttribute("style")).toBe(
-      "width: 81%;",
+      "width: 19%;",
     );
     await act(async () => trigger.click());
 
@@ -147,16 +156,46 @@ describe("UsageProviderChip", () => {
     expect(dialog?.textContent).toContain("Weekly limit");
     expect(dialog?.textContent).toContain("58% remaining");
     expect(dialog?.textContent).toContain("19% remaining");
+    expect(
+      dialog?.querySelector("section")?.querySelector("h3")?.nextElementSibling
+        ?.textContent,
+    ).toBe("58% remaining");
     expect(dialog?.querySelectorAll('[role="progressbar"]')).toHaveLength(2);
     const sessionBar = dialog?.querySelector(
-      '[aria-label="5-hour limit used"]',
+      '[aria-label="5-hour limit remaining"]',
     );
     const weeklyBar = dialog?.querySelector(
-      '[aria-label="Weekly limit used"]',
+      '[aria-label="Weekly limit remaining"]',
     );
-    expect(sessionBar?.getAttribute("aria-valuenow")).toBe("42");
+    expect(sessionBar?.getAttribute("aria-valuenow")).toBe("58");
     expect(sessionBar?.querySelector("span")?.getAttribute("style")).toBe(
-      "width: 42%;",
+      "width: 58%;",
+    );
+    expect(weeklyBar?.getAttribute("aria-valuenow")).toBe("19");
+    expect(weeklyBar?.querySelector("span")?.getAttribute("style")).toBe(
+      "width: 19%;",
+    );
+  });
+
+  it("fills bars with used capacity by default", async () => {
+    act(() =>
+      root.render(
+        createElement(UsageProviderChip, { limits: codexLimits(), now }),
+      ),
+    );
+
+    const trigger = button("Codex usage details");
+    expect(trigger.textContent).toBe("42% 2h·81% 2d 23h");
+    expect(trigger.title).toBe(
+      "42% used · Resets in 2h · 81% used · Resets in 2d 23h",
+    );
+    expect(trigger.querySelector(".w-8 > span")?.getAttribute("style")).toBe(
+      "width: 81%;",
+    );
+    await act(async () => trigger.click());
+
+    const weeklyBar = document.querySelector(
+      '[role="dialog"] [aria-label="Weekly limit used"]',
     );
     expect(weeklyBar?.getAttribute("aria-valuenow")).toBe("81");
     expect(weeklyBar?.querySelector("span")?.getAttribute("style")).toBe(
@@ -164,7 +203,66 @@ describe("UsageProviderChip", () => {
     );
   });
 
-  it("shows an empty bar before usage and a full red bar when exhausted", async () => {
+  it.each(["this window", "another window"])(
+    "updates the footer and open popover when the preference changes in %s",
+    async (source) => {
+      act(() =>
+        root.render(
+          createElement(UsageProviderChip, { limits: codexLimits(), now }),
+        ),
+      );
+      const trigger = button("Codex usage details");
+      await act(async () => trigger.click());
+      const changePreference = async (remaining: boolean) => {
+        await act(async () => {
+          if (source === "this window") {
+            saveShowRemainingUsage(remaining);
+          } else {
+            localStorage.setItem(
+              "monocode.showRemainingUsage",
+              remaining ? "1" : "0",
+            );
+            window.dispatchEvent(
+              new StorageEvent("storage", {
+                key: "monocode.showRemainingUsage",
+              }),
+            );
+          }
+        });
+      };
+
+      await changePreference(true);
+      expect(trigger.textContent).toBe("58% 2h·19% 2d 23h");
+      expect(trigger.title).toContain("19% remaining");
+      expect(trigger.querySelector(".w-8 > span")?.getAttribute("style")).toBe(
+        "width: 19%;",
+      );
+      const remainingBar = document.querySelector(
+        '[aria-label="Weekly limit remaining"]',
+      );
+      expect(remainingBar?.getAttribute("aria-valuenow")).toBe("19");
+      expect(remainingBar?.previousElementSibling?.textContent).toBe(
+        "Weekly limit19% remaining",
+      );
+
+      await changePreference(false);
+      expect(trigger.textContent).toBe("42% 2h·81% 2d 23h");
+      expect(trigger.title).toContain("81% used");
+      expect(trigger.querySelector(".w-8 > span")?.getAttribute("style")).toBe(
+        "width: 81%;",
+      );
+      const usedBar = document.querySelector(
+        '[aria-label="Weekly limit used"]',
+      );
+      expect(usedBar?.getAttribute("aria-valuenow")).toBe("81");
+      expect(usedBar?.previousElementSibling?.textContent).toBe(
+        "Weekly limit81% used",
+      );
+    },
+  );
+
+  it("shows a full bar before usage and an empty bar when exhausted", async () => {
+    saveShowRemainingUsage(true);
     const limits = codexLimits();
     limits.session!.usedPercent = 0;
     limits.weekly!.usedPercent = 100;
@@ -174,31 +272,28 @@ describe("UsageProviderChip", () => {
       button("Codex usage details")
         .querySelector(".w-8 > span")
         ?.getAttribute("style"),
-    ).toBe("width: 100%;");
-    expect(
-      button("Codex usage details").querySelector(".w-8 > span")?.className,
-    ).toContain("bg-red-400");
+    ).toBe("width: 0%;");
     await act(async () => button("Codex usage details").click());
 
     const dialog = document.querySelector('[role="dialog"]');
     const sessionBar = dialog?.querySelector(
-      '[aria-label="5-hour limit used"]',
+      '[aria-label="5-hour limit remaining"]',
     );
     const weeklyBar = dialog?.querySelector(
-      '[aria-label="Weekly limit used"]',
+      '[aria-label="Weekly limit remaining"]',
     );
-    expect(sessionBar?.getAttribute("aria-valuenow")).toBe("0");
+    expect(sessionBar?.getAttribute("aria-valuenow")).toBe("100");
     expect(sessionBar?.querySelector("span")?.getAttribute("style")).toBe(
-      "width: 0%;",
-    );
-    expect(weeklyBar?.getAttribute("aria-valuenow")).toBe("100");
-    expect(weeklyBar?.querySelector("span")?.getAttribute("style")).toBe(
       "width: 100%;",
     );
-    expect(weeklyBar?.querySelector("span")?.className).toContain("bg-red-400");
+    expect(weeklyBar?.getAttribute("aria-valuenow")).toBe("0");
+    expect(weeklyBar?.querySelector("span")?.getAttribute("style")).toBe(
+      "width: 0%;",
+    );
   });
 
   it("switches between named accounts from the usage popover", async () => {
+    saveShowRemainingUsage(true);
     const onSelectAccount = vi.fn();
     act(() =>
       root.render(
@@ -226,11 +321,13 @@ describe("UsageProviderChip", () => {
     expect(document.body.textContent).toContain("Codex accounts");
     expect(document.body.textContent).toContain("Default account");
     const accountRow = button("Default account").parentElement!;
-    const accountBar = accountRow.querySelector('[aria-label="5h limit used"]');
+    const accountBar = accountRow.querySelector(
+      '[aria-label="5h limit remaining"]',
+    );
     expect(accountRow.textContent).toContain("58% left");
-    expect(accountBar?.getAttribute("aria-valuenow")).toBe("42");
+    expect(accountBar?.getAttribute("aria-valuenow")).toBe("58");
     expect(accountBar?.querySelector("span")?.getAttribute("style")).toBe(
-      "width: 42%;",
+      "width: 58%;",
     );
     await act(async () => button("Work").click());
 
@@ -238,7 +335,7 @@ describe("UsageProviderChip", () => {
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
-  it("reveals emails independently of account switching and hides them on reopening", async () => {
+  it("applies email masking live, reveals independently of account switching and hides on reopening", async () => {
     vi.mocked(invoke).mockImplementation(async (command) =>
       command === "provider_account_identity"
         ? { email: "user@example.com", plan: "Pro" }
@@ -265,6 +362,10 @@ describe("UsageProviderChip", () => {
       ),
     );
     await act(async () => button("Codex usage details").click());
+
+    expect(document.querySelector('[aria-label="Reveal email"]')).toBeNull();
+    expect(document.querySelector('[title="user@example.com"]')).not.toBeNull();
+    await act(async () => saveMaskEmails(true));
 
     const email = button("Reveal email");
     expect(email.querySelector("span")?.className).toContain("blur-[5px]");
