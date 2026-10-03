@@ -39,7 +39,25 @@ import {
 } from "../model/models";
 import { loadProjectProviderSettings } from "../model/projectProviders";
 import { isRemoteProjectPath } from "../../projects/model/recents";
-import { Terminal } from "../../../shared/ui/icons";
+import { FolderTree, GitBranch, Terminal } from "../../../shared/ui/icons";
+import {
+  gitCheckout,
+  gitCreateBranch,
+  isCheckoutBlockedByChanges,
+  notifyGitChanged,
+} from "../../../platform/tauri/fs";
+import { useProjectBranchesState } from "../../source-control/hooks/useProjectBranches";
+import { useProjectWorktrees } from "../../source-control/hooks/useProjectWorktrees";
+import {
+  createWorktree,
+  temporaryWorktreeBranchName,
+} from "../../source-control/model/worktrees";
+import {
+  defaultLaunchWorkspace,
+  prepareLaunchWorkspace,
+  type LaunchWorkspace,
+} from "../model/launchWorkspace";
+import { LaunchWorkspacePicker } from "./LaunchWorkspacePicker";
 
 import {
   attachNativeTerminal,
@@ -101,6 +119,7 @@ export function NativeSessionPane({
       {launched ? (
         <NativeSessionHeader
           session={session}
+          onPatch={onPatch}
           onNewTerminal={onNewTerminal}
           onPaneDragStart={onPaneDragStart}
         />
@@ -121,10 +140,12 @@ export function NativeSessionPane({
 
 function NativeSessionHeader({
   session,
+  onPatch,
   onNewTerminal,
   onPaneDragStart,
 }: {
   session: Session;
+  onPatch: Props["onPatch"];
   onNewTerminal?: (sessionId: string) => void;
   onPaneDragStart?: (event: ReactPointerEvent<HTMLElement>) => void;
 }) {
@@ -139,6 +160,20 @@ function NativeSessionHeader({
   const multipleProfiles =
     supportsProviderAccounts(session.harness) &&
     providerAccounts(session.harness).length > 1;
+  // The branch the CLI is on right now; the sidebar shows the saved copy.
+  const workCwd = sessionWorkCwd(session);
+  const { branches } = useProjectBranchesState(workCwd, true);
+  const liveBranch = branches
+    ? branches.detached
+      ? undefined
+      : (branches.current ?? undefined)
+    : session.branch;
+  useEffect(() => {
+    if (branches && liveBranch !== session.branch) {
+      onPatch(session.id, { branch: liveBranch });
+    }
+  }, [branches, liveBranch, session.branch, session.id, onPatch]);
+  const BranchIcon = session.worktreeCwd ? FolderTree : GitBranch;
   return (
     <div
       className={`flex h-8 shrink-0 items-center gap-2 px-3 text-[12px] text-content/50 ${
@@ -151,6 +186,15 @@ function NativeSessionHeader({
       {multipleProfiles ? (
         <span className="truncate rounded-md bg-content/5 px-1.5 py-0.5 text-content/60">
           {profileLabel}
+        </span>
+      ) : null}
+      {liveBranch ? (
+        <span
+          className="flex min-w-0 items-center gap-1 text-content/45"
+          title={session.worktreeCwd ? `${liveBranch}\n${session.worktreeCwd}` : liveBranch}
+        >
+          <BranchIcon className="size-3 shrink-0" />
+          <span className="truncate">{liveBranch}</span>
         </span>
       ) : null}
       <span className="flex-1" />
@@ -304,6 +348,28 @@ function NativeSessionLauncher({
     onPatch(session.id, { providerAccountId: id });
   const startRef = useRef<HTMLButtonElement>(null);
 
+  // Workspace and branch are only picked here, before the CLI starts.
+  const [workspace, setWorkspace] = useState<LaunchWorkspace>(() =>
+    defaultLaunchWorkspace(session),
+  );
+  const [generatedName] = useState(() => temporaryWorktreeBranchName());
+  const [preparing, setPreparing] = useState(false);
+  const [launchError, setLaunchError] = useState<string>();
+  const gitLookup = !!session.cwd && session.cwd !== "~";
+  const { branches, settled: branchesSettled } = useProjectBranchesState(
+    session.cwd,
+    gitLookup,
+  );
+  const gitProject = !!branches;
+  const { data: worktrees, error: worktreesError } = useProjectWorktrees(
+    session.cwd,
+    gitProject,
+  );
+  const chooseWorkspace = (next: LaunchWorkspace) => {
+    setWorkspace(next);
+    setLaunchError(undefined);
+  };
+
   useEffect(() => {
     let alive = true;
     void loadProviders().then((rows) => {
@@ -334,8 +400,42 @@ function NativeSessionLauncher({
         (isPickerProviderVisible(row.id) && !projectHidden.includes(row.id)),
     );
 
-  const start = () => {
-    if (!installed) return;
+  const workspaceReady =
+    !gitProject || workspace.kind !== "existing" || !!workspace.path;
+  const canStart = !!installed && !preparing && workspaceReady;
+
+  const start = async () => {
+    if (!canStart) return;
+    setPreparing(true);
+    setLaunchError(undefined);
+    let placement: Awaited<ReturnType<typeof prepareLaunchWorkspace>> = {};
+    if (gitProject) {
+      try {
+        placement = await prepareLaunchWorkspace(
+          session.cwd,
+          workspace,
+          branches,
+          worktrees?.worktrees ?? [],
+          generatedName,
+          {
+            checkout: gitCheckout,
+            createBranch: gitCreateBranch,
+            createWorktree: (cwd, branch, base) =>
+              createWorktree(cwd, branch, base, false),
+          },
+        );
+        notifyGitChanged();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setLaunchError(
+          isCheckoutBlockedByChanges(message)
+            ? "Uncommitted changes in this checkout would be overwritten. Commit or stash them first, or start in a new worktree."
+            : message,
+        );
+        setPreparing(false);
+        return;
+      }
+    }
     if (supportsProviderAccounts(provider)) {
       selectProviderAccount(provider, session.cwd, accountId);
     }
@@ -344,11 +444,21 @@ function NativeSessionLauncher({
     disposeNativeTerminal(session.id);
     markFreshNativeLaunch(session.id);
     onPatch(session.id, {
+      ...placement,
       harness: provider,
       providerAccountId: supportsProviderAccounts(provider) ? accountId : undefined,
       providerSessionId: crypto.randomUUID(),
     });
+    setPreparing(false);
   };
+
+  const workCwdPreview = !gitProject
+    ? sessionWorkCwd(session)
+    : workspace.kind === "existing"
+      ? workspace.path || session.cwd
+      : workspace.kind === "new"
+        ? `New worktree in ${worktrees?.defaultRoot ?? "the worktree folder"}`
+        : session.cwd;
 
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center p-6">
@@ -356,7 +466,7 @@ function NativeSessionLauncher({
         className="flex w-full max-w-sm flex-col gap-5"
         onSubmit={(event) => {
           event.preventDefault();
-          start();
+          void start();
         }}
       >
         <div className="flex flex-col gap-2">
@@ -415,18 +525,47 @@ function NativeSessionLauncher({
             </div>
           </div>
         ) : null}
+        {gitProject ? (
+          <LaunchWorkspacePicker
+            cwd={session.cwd}
+            value={workspace}
+            onChange={chooseWorkspace}
+            branches={branches}
+            worktrees={worktrees}
+            worktreesError={worktreesError}
+            generatedName={generatedName}
+            disabled={preparing}
+          />
+        ) : gitLookup && !branchesSettled ? (
+          <div className="h-[4.5rem]" aria-hidden />
+        ) : null}
+        {launchError ? (
+          <p
+            role="alert"
+            className="whitespace-pre-wrap rounded-lg border border-red-400/25 bg-red-400/5 px-3 py-2 text-[12px] leading-4 text-red-400"
+          >
+            {launchError}
+          </p>
+        ) : null}
         <button
           ref={startRef}
           type="submit"
-          disabled={!installed}
+          disabled={!canStart}
           className="rounded-lg bg-content px-3 py-2 text-[13px] font-medium text-background-base hover:bg-content/85 disabled:opacity-40"
         >
           {providers && !installed
             ? `${HARNESS_TITLE[provider]} is not installed`
-            : `Start ${HARNESS_TITLE[provider]}`}
+            : preparing
+              ? workspace.kind === "new"
+                ? "Creating worktree…"
+                : "Preparing…"
+              : `Start ${HARNESS_TITLE[provider]}`}
         </button>
-        <div className="truncate text-center text-[12px] text-content/40">
-          {sessionWorkCwd(session)}
+        <div
+          className="truncate text-center text-[12px] text-content/40"
+          title={workCwdPreview}
+        >
+          {workCwdPreview}
         </div>
       </form>
     </div>

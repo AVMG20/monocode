@@ -18,6 +18,7 @@ import {
   Clock,
   FileScript,
   Folder,
+  FolderTree,
   GitBranch,
   GitPullRequest,
   Inbox,
@@ -3006,11 +3007,9 @@ const SessionCard = memo(function SessionCard({
     orchestration?.tasks.filter((task) => task.status === "completed").length ??
     0;
   const title = sessionDisplayTitle(session.title, session.harness);
-  const gitLabel = !SHOW_SOURCE_CONTROL
-    ? ""
-    : session.worktreeRemoved
-      ? NO_BRANCH_LABEL
-      : formatGitLabel(session.repo, session.branch);
+  const gitLabel = session.worktreeRemoved
+    ? NO_BRANCH_LABEL
+    : formatGitLabel(session.repo, session.branch);
   const time = formatRelative(session.updatedAt, now);
   const model =
     compact && !orchestrationExpanded
@@ -3365,7 +3364,11 @@ const SessionCard = memo(function SessionCard({
               className="flex min-w-0 flex-1 items-center gap-1 text-[11px] text-content/45"
               title={session.worktreeCwd ? `${gitLabel}\n${session.worktreeCwd}` : gitLabel}
             >
-              <GitBranch className="size-3 shrink-0" strokeWidth={1.75} />
+              {session.worktreeCwd && !session.worktreeRemoved ? (
+                <FolderTree className="size-3 shrink-0" strokeWidth={1.75} />
+              ) : (
+                <GitBranch className="size-3 shrink-0" strokeWidth={1.75} />
+              )}
               <span className="min-w-0 truncate">{gitLabel}</span>
             </span>
           ) : (
