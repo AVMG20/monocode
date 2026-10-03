@@ -987,7 +987,8 @@ function Workspace({
       id: active.id,
       harness: active.harness,
       model: active.model,
-      busy: active.busy,
+      // Native CLIs never set `busy`; their live status says when a turn runs.
+      busy: busySessionIds.has(active.id),
       providerAccountId:
         active.providerAccountId ??
         // A started session ran without a named profile: that is Default.
@@ -996,7 +997,7 @@ function Workspace({
           ? DEFAULT_PROVIDER_ACCOUNT_ID
           : undefined),
     };
-  }, [active?.id, active?.harness, active?.model, active?.busy, active?.blocks, active?.providerAccountId, active?.providerSessionId]);
+  }, [active?.id, active?.harness, active?.model, busySessionIds, active?.blocks, active?.providerAccountId, active?.providerSessionId]);
   const runningTerminals = useMemo(() => {
     const files: FilePaneTab[] = [];
     const dock = findProjectTerminal(projectTerminals, projectCwd);
