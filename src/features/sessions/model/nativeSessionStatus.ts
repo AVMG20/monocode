@@ -56,6 +56,15 @@ export function nativeSessionRunning(
   return map.get(id) === "running";
 }
 
+/** A native CLI mid-turn or waiting on the user: work a close would stop. */
+export function nativeSessionLive(
+  id: string,
+  map: NativeStatusMap = statuses,
+): boolean {
+  const status = map.get(id);
+  return status === "running" || status === "waiting";
+}
+
 export function nativeSessionWaiting(
   map: NativeStatusMap,
   id: string,

@@ -19,6 +19,7 @@ import {
   type ProjectTerminalDock,
 } from "../../features/projects/model/projectTerminal";
 import { type Session } from "../../features/sessions/model/session";
+import { nativeSessionLive } from "../../features/sessions/model/nativeSessionStatus";
 import {
   getSession,
   listInFlightSessions,
@@ -144,7 +145,12 @@ export async function reportQuitPoll(id: number): Promise<void> {
     liveWorkspace.flush();
     // Every running turn, not just the resumable ones `inFlightRefs` keeps:
     // an Inbox Ask still counts as work nobody agreed to throw away.
-    inFlight = liveWorkspace.sessions().filter(isInFlightSession).length;
+    inFlight = liveWorkspace
+      .sessions()
+      .filter(
+        (session) =>
+          isInFlightSession(session) || nativeSessionLive(session.id),
+      ).length;
   }
   await invoke("quit_poll_reply", { id, inFlight }).catch(() => undefined);
 }
@@ -440,7 +446,10 @@ async function confirmAndCloseWindow(
   quitDialogOpen = true;
   try {
     const refs = inFlightRefs(sessions, tabs);
-    if (refs.length > 0) {
+    if (
+      refs.length > 0 ||
+      sessions.some((session) => nativeSessionLive(session.id))
+    ) {
       const ok = await ask(
         "Close this window and stop its running chats? Other windows will stay open.",
         { title: "MonoCode", kind: "warning", okLabel: "Close window" },

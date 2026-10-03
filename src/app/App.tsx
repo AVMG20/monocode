@@ -310,6 +310,7 @@ import {
   type NativeSessionPatch,
 } from "../features/sessions/model/nativeSession";
 import {
+  nativeSessionLive,
   nativeStatusesSnapshot,
   nativeWaitingIds,
   subscribeNativeStatuses,
@@ -1150,7 +1151,10 @@ function Workspace({
         // calls JS `window.destroy`, which Tauri denies without a permission.
         event.preventDefault();
         const toTray = loadCloseToTray();
-        if (hasInFlightSessions(sessionsRef.current)) {
+        if (
+          hasInFlightSessions(sessionsRef.current) ||
+          sessionsRef.current.some((session) => nativeSessionLive(session.id))
+        ) {
           if (!toTray && !IS_MAC) {
             void closeBusyWindow();
             return;
@@ -4176,7 +4180,11 @@ function Workspace({
       let nextTabs = tabs.filter((tab) => !projectTabIds.has(tab.id));
       let nextSessions = sessions.filter((session) => {
         if (!projectSessionIds.has(session.id)) return true;
-        return !options.purgeData && session.busy;
+        // Running work outlives an archived project, native CLIs included.
+        return (
+          !options.purgeData &&
+          (session.busy || nativeSessionLive(session.id))
+        );
       });
       let nextActiveTabId = activeTabIdRef.current;
 
@@ -6160,14 +6168,6 @@ function Workspace({
         </div>
     </>
   );
-}
-/**
- * A native CLI that is mid-turn or waiting on the user. Like a busy chat it
- * keeps running in the background when its tab closes.
- */
-function nativeSessionLive(id: string): boolean {
-  const status = nativeStatusesSnapshot().get(id);
-  return status === "running" || status === "waiting";
 }
 
 function conversationTitle(session: Session): string {
