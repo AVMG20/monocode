@@ -1,6 +1,7 @@
 use tauri::Manager;
 
 mod account_identity;
+mod account_sync;
 mod automations;
 mod azure_devops;
 mod chat_background;

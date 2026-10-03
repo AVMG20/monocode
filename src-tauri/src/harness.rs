@@ -1045,6 +1045,15 @@ fn apply_provider_account(
     };
     match account.provider.as_str() {
         "claude" => {
+            // Pick up settings, MCP servers, plugins and skills changed in the
+            // default profile since the account last ran. A failed sync must
+            // not block the session.
+            let accounts_root = dir.ancestors().nth(2).unwrap_or(&dir);
+            if let Some(default) = crate::account_sync::DefaultProfile::locate(accounts_root) {
+                if let Err(error) = crate::account_sync::sync_claude_account(&default, &dir) {
+                    eprintln!("[harness] Account config sync skipped: {error}");
+                }
+            }
             // Claude scopes both its ordinary config and its macOS Keychain
             // credential to these exact strings. Setting both keeps profiles
             // isolated on every supported platform.
