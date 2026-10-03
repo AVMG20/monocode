@@ -818,6 +818,16 @@ pub fn harness_spawn(
         .stderr(Stdio::piped());
     prepare_child(&mut cmd, &command);
     apply_provider_account(&app, &mut cmd, account.as_ref())?;
+    let named_account = account
+        .as_ref()
+        .is_some_and(|account| account.id != DEFAULT_PROVIDER_ACCOUNT_ID);
+    if !named_account {
+        // The default account is the CLI's own folder (what native sessions
+        // use too), not one inherited from the shell that launched MonoCode.
+        for key in default_folder_overrides(binary_provider.as_deref().unwrap_or_default()) {
+            cmd.env_remove(key);
+        }
+    }
 
     let mut child =
         spawn_managed(&mut cmd).map_err(|e| format!("Failed to start {command}: {e}"))?;
@@ -907,36 +917,16 @@ pub fn harness_spawn(
     Ok(pid)
 }
 
-/// Where `account-folders.json` maps an account to a folder the user chose
-/// (for example `~/.claude-personal`), instead of a MonoCode-managed one.
-fn account_folders_file(app: &AppHandle) -> Result<PathBuf, String> {
-    Ok(app
-        .path()
-        .app_data_dir()
-        .map_err(|error| error.to_string())?
-        .join("provider-accounts")
-        .join("account-folders.json"))
+/// Variables that would point a CLI away from its own default folder.
+pub(crate) fn default_folder_overrides(provider: &str) -> &'static [&'static str] {
+    match provider {
+        "claude" => &["CLAUDE_CONFIG_DIR", "CLAUDE_SECURESTORAGE_CONFIG_DIR"],
+        "codex" => &["CODEX_HOME"],
+        _ => &[],
+    }
 }
 
-type AccountFolders = HashMap<String, HashMap<String, String>>;
-
-fn read_account_folders(app: &AppHandle) -> AccountFolders {
-    account_folders_file(app)
-        .ok()
-        .and_then(|path| std::fs::read_to_string(path).ok())
-        .and_then(|raw| serde_json::from_str(&raw).ok())
-        .unwrap_or_default()
-}
-
-/// The folder chosen for an account, exactly as the user wrote it (with `~`).
-fn custom_account_folder(app: &AppHandle, provider: &str, account_id: &str) -> Option<String> {
-    read_account_folders(app)
-        .get(provider)
-        .and_then(|accounts| accounts.get(account_id))
-        .cloned()
-}
-
-/// The provider CLI's own config folder, used when no override is set.
+/// The provider CLI's own config folder, which the default account uses.
 pub(crate) fn provider_default_folder(provider: &str) -> Option<PathBuf> {
     let home = PathBuf::from(dirs_home()?);
     match provider {
@@ -946,150 +936,11 @@ pub(crate) fn provider_default_folder(provider: &str) -> Option<PathBuf> {
     }
 }
 
-/// Expand `~` like a shell would, keeping the rest of the string as typed:
-/// Claude keys its macOS Keychain login by the exact folder string, so this
-/// must match what an alias such as `CLAUDE_CONFIG_DIR=~/.claude-personal`
-/// passes.
-fn resolve_account_folder(raw: &str) -> PathBuf {
-    let trimmed = raw.trim();
-    let trimmed = if trimmed.len() > 1 {
-        trimmed.trim_end_matches(['/', '\\'])
-    } else {
-        trimmed
-    };
-    expand_home(trimmed)
-}
-
-/// `true` when `folder` is the CLI's default, which must run without any
-/// override so it shares the login of the plain `claude` / `codex` command.
-fn is_default_folder(provider: &str, folder: &Path) -> bool {
-    provider_default_folder(provider).is_some_and(|default| default == folder)
-}
-
-#[cfg(test)]
-mod account_folder_tests {
-    use super::*;
-
-    #[test]
-    fn folders_keep_the_string_a_shell_alias_would_pass() {
-        let home = PathBuf::from(dirs_home().unwrap());
-        assert_eq!(
-            resolve_account_folder("~/.claude-personal/"),
-            home.join(".claude-personal")
-        );
-        assert_eq!(
-            resolve_account_folder(" /opt/claude-work "),
-            PathBuf::from("/opt/claude-work")
-        );
-    }
-
-    #[test]
-    fn the_clis_own_folder_runs_without_an_override() {
-        let home = PathBuf::from(dirs_home().unwrap());
-        assert!(is_default_folder("claude", &home.join(".claude")));
-        assert!(is_default_folder("codex", &home.join(".codex")));
-        assert!(!is_default_folder("claude", &home.join(".claude-personal")));
-    }
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ProviderAccountFolder {
-    provider: String,
-    account_id: String,
-    /// As chosen, e.g. `~/.claude-personal`.
-    path: String,
-}
-
-/// Every account folder the user chose.
-#[tauri::command]
-pub fn provider_account_folders(app: AppHandle) -> Vec<ProviderAccountFolder> {
-    let mut folders: Vec<ProviderAccountFolder> = read_account_folders(&app)
-        .into_iter()
-        .flat_map(|(provider, accounts)| {
-            accounts
-                .into_iter()
-                .map(move |(account_id, path)| ProviderAccountFolder {
-                    provider: provider.clone(),
-                    account_id,
-                    path,
-                })
-        })
-        .collect();
-    folders.sort_by(|a, b| (&a.provider, &a.account_id).cmp(&(&b.provider, &b.account_id)));
-    folders
-}
-
-/// Point an account at a folder of the user's (`None` restores the default:
-/// the CLI's own folder for the default account, a MonoCode-managed one for
-/// the others). The folder must exist; it is never created or deleted here.
-#[tauri::command]
-pub fn provider_account_set_folder(
-    app: AppHandle,
-    provider: String,
-    account_id: String,
-    path: Option<String>,
-) -> Result<(), String> {
-    if provider != "claude" && provider != "codex" {
-        return Err("Account folders are supported for Claude Code and Codex only".into());
-    }
-    if account_id != DEFAULT_PROVIDER_ACCOUNT_ID {
-        // Validates the id.
-        provider_account_path(&app, &provider, &account_id)?;
-    }
-    let mut folders = read_account_folders(&app);
-    match path
-        .map(|path| path.trim().to_string())
-        .filter(|path| !path.is_empty())
-    {
-        Some(path) => {
-            let resolved = resolve_account_folder(&path);
-            if !resolved.is_absolute() {
-                return Err("Choose a full folder path, like ~/.claude-personal".into());
-            }
-            if !resolved.is_dir() {
-                return Err(format!("{} is not a folder", resolved.display()));
-            }
-            folders
-                .entry(provider)
-                .or_default()
-                .insert(account_id, path);
-        }
-        None => {
-            if let Some(accounts) = folders.get_mut(&provider) {
-                accounts.remove(&account_id);
-            }
-        }
-    }
-    let file = account_folders_file(&app)?;
-    if let Some(parent) = file.parent() {
-        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
-    let json = serde_json::to_string_pretty(&folders).map_err(|error| error.to_string())?;
-    std::fs::write(&file, json).map_err(|error| format!("Could not save account folders: {error}"))
-}
-
-/// The config folder an account runs with, or `None` for the CLI's own
-/// default (no override). A folder the user chose wins over MonoCode's.
 pub(crate) fn provider_account_dir(
     app: &AppHandle,
     provider: &str,
     account_id: Option<&str>,
 ) -> Result<Option<PathBuf>, String> {
-    let id = account_id.unwrap_or(DEFAULT_PROVIDER_ACCOUNT_ID);
-    if let Some(raw) = custom_account_folder(app, provider, id) {
-        let folder = resolve_account_folder(&raw);
-        if is_default_folder(provider, &folder) {
-            return Ok(None);
-        }
-        if !folder.is_dir() {
-            return Err(format!(
-                "The folder for this account no longer exists: {}. Choose it again in Settings → Providers → Accounts.",
-                folder.display()
-            ));
-        }
-        return Ok(Some(folder));
-    }
     let Some(account_id) = account_id.filter(|id| *id != DEFAULT_PROVIDER_ACCOUNT_ID) else {
         return Ok(None);
     };
@@ -1140,12 +991,6 @@ pub fn provider_account_remove(
 ) -> Result<(), String> {
     let dir = provider_account_path(&app, &provider, &account_id)?;
     host.kill_account(&provider, &account_id);
-
-    // A folder the user chose (e.g. ~/.claude-personal) is theirs: forget the
-    // link, but never delete the folder or its login.
-    if custom_account_folder(&app, &provider, &account_id).is_some() {
-        return provider_account_set_folder(app, provider, account_id, None);
-    }
 
     #[cfg(target_os = "macos")]
     if provider == "claude" {

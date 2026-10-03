@@ -990,11 +990,13 @@ function Workspace({
       busy: active.busy,
       providerAccountId:
         active.providerAccountId ??
-        (active.blocks.some((block) => block.role === "user")
+        // A started session ran without a named profile: that is Default.
+        (active.providerSessionId ||
+        active.blocks.some((block) => block.role === "user")
           ? DEFAULT_PROVIDER_ACCOUNT_ID
           : undefined),
     };
-  }, [active?.id, active?.harness, active?.model, active?.busy, active?.blocks, active?.providerAccountId]);
+  }, [active?.id, active?.harness, active?.model, active?.busy, active?.blocks, active?.providerAccountId, active?.providerSessionId]);
   const runningTerminals = useMemo(() => {
     const files: FilePaneTab[] = [];
     const dock = findProjectTerminal(projectTerminals, projectCwd);
@@ -1545,7 +1547,10 @@ function Workspace({
       const currentId = active.providerAccountId ?? DEFAULT_PROVIDER_ACCOUNT_ID;
       if (currentId === accountId) return;
 
-      if (active.blocks.length === 0 && !active.busy) {
+      // Not started yet: the launcher simply starts with the chosen account.
+      const running =
+        !!active.providerSessionId && isNativeProvider(active.harness);
+      if (!running && active.blocks.length === 0 && !active.busy) {
         setSessions((current) =>
           current.map((session) =>
             session.id === active.id
@@ -1556,9 +1561,11 @@ function Workspace({
         return;
       }
 
-      // Provider thread ids are account-owned. Keep the current conversation
-      // pinned to its account and open a clean one for the selected profile.
-      const session = {
+      // A running CLI cannot change account, and its conversation belongs to
+      // the account that started it. Keep this tab as it is and start the
+      // CLI under the chosen account in a new one, so each tab's chip shows
+      // exactly the account its agent runs as.
+      const draft = {
         ...newSession(
           active.harness,
           active.cwd,
@@ -1568,6 +1575,7 @@ function Workspace({
         ),
         providerAccountId: accountId,
       };
+      const session = { ...draft, ...nativeLaunchPatch(draft) };
       const tab = newTab(session.id);
       setSessions((current) => [...current, session]);
       appendTab(tab, active.cwd);

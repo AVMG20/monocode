@@ -97,6 +97,11 @@ it("starts Claude Code with the chosen profile", async () => {
   expect(container.textContent).toContain("Profile");
   expect(button("Codex").disabled).toBe(true);
   await act(async () => button("Work").click());
+  expect(onPatch).toHaveBeenCalledWith(session.id, {
+    providerAccountId: work.id,
+  });
+  // The app applies the patch; the launcher then starts under that profile.
+  await render({ ...session, providerAccountId: work.id }, onPatch);
   await act(async () => button("Start Claude Code").click());
 
   expect(mocks.markFreshNativeLaunch).toHaveBeenCalledWith(session.id);

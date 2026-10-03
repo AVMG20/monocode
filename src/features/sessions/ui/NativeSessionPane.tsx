@@ -292,12 +292,16 @@ function NativeSessionLauncher({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [provider, accountsVersion],
   );
-  const [accountId, setAccountId] = useState<string>(() =>
-    supportsProviderAccounts(provider)
-      ? (session.providerAccountId ??
-          selectedProviderAccountId(provider, session.cwd))
-      : DEFAULT_PROVIDER_ACCOUNT_ID,
-  );
+  // The profile lives on the session, so the footer's account chip and this
+  // picker always show the same one, and it is what the CLI starts with.
+  const accountId = !supportsProviderAccounts(provider)
+    ? DEFAULT_PROVIDER_ACCOUNT_ID
+    : session.providerAccountId &&
+        accounts.some((account) => account.id === session.providerAccountId)
+      ? session.providerAccountId
+      : selectedProviderAccountId(provider, session.cwd);
+  const chooseAccount = (id: string) =>
+    onPatch(session.id, { providerAccountId: id });
   const startRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -315,18 +319,6 @@ function NativeSessionLauncher({
       alive = false;
     };
   }, []);
-
-  useEffect(() => {
-    if (!supportsProviderAccounts(provider)) {
-      setAccountId(DEFAULT_PROVIDER_ACCOUNT_ID);
-      return;
-    }
-    setAccountId((current) =>
-      providerAccounts(provider).some((account) => account.id === current)
-        ? current
-        : selectedProviderAccountId(provider, session.cwd),
-    );
-  }, [provider, session.cwd]);
 
   useEffect(() => {
     startRef.current?.focus();
@@ -379,7 +371,14 @@ function NativeSessionLauncher({
                   type="button"
                   disabled={!row.installed}
                   title={row.installed ? undefined : `${HARNESS_TITLE[row.id]} is not installed`}
-                  onClick={() => setProvider(row.id)}
+                  onClick={() => {
+                    setProvider(row.id);
+                    // Profiles belong to one CLI, so the choice starts over.
+                    onPatch(session.id, {
+                      harness: row.id,
+                      providerAccountId: undefined,
+                    });
+                  }}
                   className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-[13px] ${
                     provider === row.id
                       ? "border-content/30 bg-selection text-content"
@@ -403,7 +402,7 @@ function NativeSessionLauncher({
                 <button
                   key={account.id}
                   type="button"
-                  onClick={() => setAccountId(account.id)}
+                  onClick={() => chooseAccount(account.id)}
                   className={`rounded-lg border px-3 py-1.5 text-[13px] ${
                     accountId === account.id
                       ? "border-content/30 bg-selection text-content"

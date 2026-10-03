@@ -429,8 +429,6 @@ pub fn run() {
             harness_updates::harness_update_check_claim,
             harness_updates::harness_update,
             harness::provider_account_remove,
-            harness::provider_account_folders,
-            harness::provider_account_set_folder,
             account_identity::provider_account_identity,
             rate_limits::fetch_claude_usage,
             rate_limits::fetch_opencode_go_usage,

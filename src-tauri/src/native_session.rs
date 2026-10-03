@@ -142,7 +142,7 @@ pub fn native_session_spawn(
             // from the shell that launched MonoCode would silently run another
             // profile instead.
             env_remove.extend(
-                default_folder_overrides(&provider)
+                crate::harness::default_folder_overrides(&provider)
                     .iter()
                     .map(|key| key.to_string()),
             );
@@ -445,15 +445,6 @@ fn claude_args(conversation_id: &str, resume: bool, settings: &Path) -> Vec<Stri
         "--settings".into(),
         settings.to_string_lossy().into_owned(),
     ]
-}
-
-/// Variables that would point a CLI away from its own default folder.
-fn default_folder_overrides(provider: &str) -> &'static [&'static str] {
-    match provider {
-        "claude" => &["CLAUDE_CONFIG_DIR", "CLAUDE_SECURESTORAGE_CONFIG_DIR"],
-        "codex" => &["CODEX_HOME"],
-        _ => &[],
-    }
 }
 
 /// The default profile always runs with `~/.claude` (see

@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ConnectionsSettings } from "../../connections/ui/ConnectionsSettings";
-import { ask, open as openDialog } from "@tauri-apps/plugin-dialog";
+import { ask } from "@tauri-apps/plugin-dialog";
 import {
   ArrowDownCircle,
   Check,
@@ -215,11 +215,7 @@ import {
   type ProviderAccount,
   type ProviderAccountProvider,
 } from "../../providers/model/providerAccounts";
-import {
-  listProviderAccountFolders,
-  removeProviderAccountCredentials,
-  setProviderAccountFolder,
-} from "../../providers/model/providerAccountCredentials";
+import { removeProviderAccountCredentials } from "../../providers/model/providerAccountCredentials";
 import {
   identityKey,
   identityOrganizationTag,
@@ -3175,78 +3171,6 @@ function ProviderAccountsSettings() {
   const [editor, setEditor] = useState<AccountEditor | null>(null);
   const [working, setWorking] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [folders, setFolders] = useState<ReadonlyMap<string, string>>(
-    () => new Map(),
-  );
-  const reloadFolders = useCallback(() => {
-    void listProviderAccountFolders()
-      .then((rows) =>
-        setFolders(
-          new Map(
-            rows.map((row) => [`${row.provider}:${row.accountId}`, row.path]),
-          ),
-        ),
-      )
-      .catch(() => undefined);
-  }, []);
-  useEffect(reloadFolders, [reloadFolders]);
-  const folderOf = (account: ProviderAccount) =>
-    folders.get(`${account.provider}:${account.id}`);
-
-  /** Ask for an existing config folder, e.g. ~/.claude-personal. */
-  const pickFolder = async (
-    provider: ProviderAccountProvider,
-  ): Promise<string | null> => {
-    const picked = await openDialog({
-      directory: true,
-      multiple: false,
-      title: `Choose the ${HARNESS_TITLE[provider]} config folder for this account`,
-    });
-    return typeof picked === "string" ? picked : null;
-  };
-
-  const changeFolder = async (account: ProviderAccount, reset = false) => {
-    if (working) return;
-    const path = reset ? null : await pickFolder(account.provider);
-    if (!reset && !path) return;
-    const key = `folder:${account.provider}:${account.id}`;
-    setWorking(key);
-    setError(null);
-    try {
-      await setProviderAccountFolder(account.provider, account.id, path);
-      clearCachedRateLimits(account.provider, account.id);
-      reloadFolders();
-      setVersion((value) => value + 1);
-    } catch (caught) {
-      setError(
-        caught instanceof Error ? caught.message : String(caught),
-      );
-    } finally {
-      setWorking(null);
-    }
-  };
-
-  /** Add an account that runs with a folder the user already signed in to. */
-  const addWithFolder = async () => {
-    if (!editor || editor.accountId || !editor.label.trim() || working) return;
-    const path = await pickFolder(editor.provider);
-    if (!path) return;
-    setWorking(`add:${editor.provider}`);
-    setError(null);
-    try {
-      const account = newProviderAccount(editor.provider, editor.label);
-      await setProviderAccountFolder(account.provider, account.id, path);
-      saveProviderAccount(account);
-      reloadFolders();
-      setEditor(null);
-    } catch (caught) {
-      setError(
-        caught instanceof Error ? caught.message : String(caught),
-      );
-    } finally {
-      setWorking(null);
-    }
-  };
 
   useEffect(
     () => subscribeProviderAccounts(() => setVersion((value) => value + 1)),
@@ -3298,9 +3222,7 @@ function ProviderAccountsSettings() {
   const removeAccount = async (account: ProviderAccount) => {
     if (account.isDefault || working) return;
     const confirmed = await ask(
-      folderOf(account)
-        ? `Remove “${account.label}”? MonoCode stops using ${prettyCwd(folderOf(account)!)}; the folder and its sign-in stay as they are.`
-        : `Remove “${account.label}”? Its stored credentials will be deleted and any running turns for this account will stop. Existing conversations stay in history, but cannot continue until you switch accounts.`,
+      `Remove “${account.label}”? Its stored credentials will be deleted and any running turns for this account will stop. Existing conversations stay in history, but cannot continue until you switch accounts.`,
       {
         title: `Remove ${HARNESS_TITLE[account.provider]} account`,
         kind: "warning",
@@ -3431,48 +3353,14 @@ function ProviderAccountsSettings() {
                           }
                           className="truncate text-content/30"
                         />
-                        {folderOf(account) ? (
-                          <span
-                            className="truncate font-mono text-content/35"
-                            title={folderOf(account)}
-                          >
-                            {prettyCwd(folderOf(account)!)}
-                          </span>
-                        ) : null}
                       </div>
                     </div>
                     <AccountUsageMeters limits={limits} now={usage.now} />
-                    <div className="flex w-32 shrink-0 items-center justify-end gap-1">
+                    <div className="flex w-24 shrink-0 items-center justify-end gap-1">
                       {account.isDefault ? (
                         <span className="mr-1 text-[10px] font-medium uppercase tracking-wide text-content/30">
                           Default
                         </span>
-                      ) : null}
-                      <button
-                        type="button"
-                        disabled={Boolean(working)}
-                        aria-label={`Choose the config folder for ${account.label}`}
-                        title={
-                          folderOf(account)
-                            ? `Uses ${prettyCwd(folderOf(account)!)}. Choose another folder`
-                            : "Use an existing config folder (e.g. ~/.claude-personal)"
-                        }
-                        onClick={() => void changeFolder(account)}
-                        className="grid size-7 place-items-center rounded-md text-content/40 transition-transform duration-150 hover:bg-content/10 hover:text-content active:scale-[0.96] disabled:opacity-35"
-                      >
-                        <FolderOpen className="size-3.5" strokeWidth={1.75} />
-                      </button>
-                      {folderOf(account) ? (
-                        <button
-                          type="button"
-                          disabled={Boolean(working)}
-                          aria-label={`Stop using ${prettyCwd(folderOf(account)!)} for ${account.label}`}
-                          title="Go back to the default folder"
-                          onClick={() => void changeFolder(account, true)}
-                          className="grid size-7 place-items-center rounded-md text-content/40 transition-transform duration-150 hover:bg-content/10 hover:text-content active:scale-[0.96] disabled:opacity-35"
-                        >
-                          <RotateCcw className="size-3.5" strokeWidth={1.75} />
-                        </button>
                       ) : null}
                       <button
                         type="button"
@@ -3515,7 +3403,6 @@ function ProviderAccountsSettings() {
                   }
                   onCancel={() => setEditor(null)}
                   onSubmit={submitEditor}
-                  onUseFolder={() => void addWithFolder()}
                 />
               ) : null}
             </div>
@@ -3540,15 +3427,12 @@ function ProviderAccountEditor({
   onLabel,
   onCancel,
   onSubmit,
-  onUseFolder,
 }: {
   editor: AccountEditor;
   working: boolean;
   onLabel: (label: string) => void;
   onCancel: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  /** Add the account with a folder that is already signed in. */
-  onUseFolder?: () => void;
 }) {
   const adding = !editor.accountId;
   return (
@@ -3582,18 +3466,6 @@ function ProviderAccountEditor({
         >
           Cancel
         </button>
-        {adding && onUseFolder ? (
-          <button
-            type="button"
-            disabled={working || !editor.label.trim()}
-            title="Use a config folder you already signed in to, like ~/.claude-personal"
-            onClick={onUseFolder}
-            className="ml-1 flex h-6 shrink-0 items-center gap-1.5 rounded-[4.5px] bg-content/[0.05] px-2.5 text-[11px] text-content/60 transition-transform duration-150 hover:bg-content/10 hover:text-content active:scale-[0.97] disabled:opacity-40"
-          >
-            <FolderOpen className="size-3" strokeWidth={1.75} />
-            Use a folder…
-          </button>
-        ) : null}
         <button
           type="submit"
           disabled={working || !editor.label.trim()}
