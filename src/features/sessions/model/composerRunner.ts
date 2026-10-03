@@ -24,6 +24,20 @@ export const COLLECT_X = 10;
 export const COLLECT_POP_MS = 280;
 export const COLLECT_POP_PX = 16;
 
+/** Run-up to hop onto a pill sitting on the ledge, and the hop over its lip. */
+export const PLATFORM_LEAD = 22;
+export const PLATFORM_HOP = 9;
+/** Pills taller than this are walls, not steps. */
+const PLATFORM_MAX = 40;
+
+/** Subagents trail the mascot this far apart, replaying where it ran. */
+export const COMPANION_DELAY_MS = 240;
+export const COMPANION_SIZE = 12;
+/** How long a new companion takes to hop in from below the rim. */
+export const COMPANION_ENTER_MS = 420;
+/** Strolling pace while only background commands are left to watch. */
+export const RUNNER_IDLE_SPEED_PX = 55;
+
 export const EXIT_MS = 560;
 export const EXIT_PEAK = 44;
 export const EXIT_SINK = 20;
@@ -100,6 +114,14 @@ export type Obstacle = {
   height: number;
 };
 
+/** A pill on the ledge the mascot runs across, in track coordinates. */
+export type Platform = {
+  left: number;
+  right: number;
+  /** Its top, in px above the ledge. */
+  height: number;
+};
+
 export type Coin = {
   id: number;
   /** Center X in box coordinates. */
@@ -147,15 +169,43 @@ export function coinJumpPeak(coin: Coin): number {
   return Math.max(0, coin.height - RUNNER_SIZE / 2);
 }
 
+/**
+ * Ground under the mascot when pills sit on the ledge: their tops, with a
+ * run-up hop onto each one and a hop back down past its far edge.
+ */
+export function platformHeight(
+  x: number,
+  platforms: readonly Platform[],
+  lead = PLATFORM_LEAD,
+): number {
+  let height = 0;
+  for (const platform of platforms) {
+    if (x >= platform.left && x <= platform.right) {
+      height = Math.max(height, platform.height);
+      continue;
+    }
+    const gap = x < platform.left ? platform.left - x : x - platform.right;
+    if (gap >= lead) continue;
+    const t = 1 - gap / lead;
+    height = Math.max(
+      height,
+      platform.height * t + PLATFORM_HOP * 4 * t * (1 - t),
+    );
+  }
+  return height;
+}
+
 /** Mario parabola: 0 at the ends, `height` at the midpoint. */
 export function jumpHeight(
   x: number,
   obstacle: Obstacle | null,
   coins: readonly Coin[] = [],
+  platforms: readonly Platform[] = [],
 ): number {
-  let height = obstacle
-    ? arc(x, obstacle.left, obstacle.right, obstacle.height)
-    : 0;
+  let height = Math.max(
+    platformHeight(x, platforms),
+    obstacle ? arc(x, obstacle.left, obstacle.right, obstacle.height) : 0,
+  );
   for (const coin of coins) {
     height = Math.max(
       height,
@@ -177,16 +227,21 @@ export function runnerPose(
   obstacle: Obstacle | null,
   coins: readonly Coin[] = [],
   inset = RUNNER_INSET,
+  platforms: readonly Platform[] = [],
 ): RunnerPose {
   const trackWidth = Math.max(0, boxWidth - inset * 2);
   const { t, facing } = pingPong(distance, trackWidth);
   const x = inset + t;
-  const y = jumpHeight(x, obstacle, coins);
+  const y = jumpHeight(x, obstacle, coins, platforms);
   return { x, y, facing, airborne: y > 0.5 };
 }
 
 /** Keep a position in the same relative spot when the composer width changes. */
-export function scaleTrackX(x: number, fromWidth: number, toWidth: number): number {
+export function scaleTrackX(
+  x: number,
+  fromWidth: number,
+  toWidth: number,
+): number {
   if (fromWidth <= 0) return 0;
   return x * (toWidth / fromWidth);
 }
@@ -218,10 +273,11 @@ export function poseAt(
   obstacle: Obstacle | null,
   coins: readonly Coin[] = [],
   inset = RUNNER_INSET,
+  platforms: readonly Platform[] = [],
 ): RunnerPose {
   const trackWidth = Math.max(0, boxWidth - inset * 2);
   const x = inset + Math.min(trackWidth, Math.max(0, along));
-  const y = jumpHeight(x, obstacle, coins);
+  const y = jumpHeight(x, obstacle, coins, platforms);
   return { x, y, facing, airborne: y > 0.5 };
 }
 
@@ -377,9 +433,7 @@ export type RunnerTrack = {
 
 /** Prefer the top edge of a control stacked on the composer. */
 export function runnerTrack(box: Rect, ledge: Rect | null): RunnerTrack {
-  const ledgeWidth = ledge
-    ? (ledge.width ?? ledge.right - ledge.left)
-    : 0;
+  const ledgeWidth = ledge ? (ledge.width ?? ledge.right - ledge.left) : 0;
   if (!ledge || ledgeWidth <= 0) {
     return {
       left: box.left,
@@ -392,4 +446,57 @@ export function runnerTrack(box: Rect, ledge: Rect | null): RunnerTrack {
     top: ledge.top,
     width: ledgeWidth,
   };
+}
+
+/**
+ * Pills resting on the ledge — artifact chips and the like — as steps the
+ * mascot hops onto and runs across instead of running through them.
+ */
+export function platformsFromRects(
+  track: RunnerTrack,
+  rects: readonly Rect[],
+): Platform[] {
+  const platforms: Platform[] = [];
+  for (const rect of rects) {
+    if (rect.right <= track.left || rect.left >= track.left + track.width)
+      continue;
+    // Resting on the ledge: its bottom a few px above the track, not floating.
+    if (rect.bottom > track.top + 2 || rect.bottom < track.top - 14) continue;
+    const height = track.top - rect.top;
+    if (height <= 0 || height > PLATFORM_MAX) continue;
+    platforms.push({
+      left: rect.left - track.left,
+      right: rect.right - track.left,
+      height,
+    });
+  }
+  return platforms;
+}
+
+export type TrailPoint = {
+  at: number;
+  x: number;
+  y: number;
+  facing: 1 | -1;
+  /** Height the sprite is sinking into, when it hops down into a pill. */
+  ground?: number;
+};
+
+/** Where the mascot was `delay` ms ago, for a companion replaying its run. */
+export function trailAt(
+  trail: readonly TrailPoint[],
+  at: number,
+): TrailPoint | null {
+  if (trail.length === 0) return null;
+  for (let i = trail.length - 1; i >= 0; i--) {
+    if (trail[i].at <= at) return trail[i];
+  }
+  return trail[0];
+}
+
+/** A companion popping up from behind the rim with a little hop. */
+export function companionEnterY(elapsedMs: number): number {
+  if (elapsedMs >= COMPANION_ENTER_MS) return 0;
+  const t = Math.max(0, elapsedMs / COMPANION_ENTER_MS);
+  return exitJumpY(1 - t, 18, COMPANION_SIZE);
 }

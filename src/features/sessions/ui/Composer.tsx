@@ -110,7 +110,7 @@ import {
 } from "../../skills/model/skills";
 import { AccessPicker } from "./AccessPicker";
 import { BackgroundTasksBar } from "./BackgroundTasksBar";
-import { ComposerRunner } from "./ComposerRunner";
+import { ComposerRunner, type RunnerCompanion } from "./ComposerRunner";
 import { ContextMeter } from "./ContextMeter";
 import { AttachmentChip } from "./AttachmentChip";
 import { BranchPicker } from "../../source-control/ui/BranchPicker";
@@ -261,6 +261,12 @@ type Props = {
   /** Work the agent left running after it yielded. */
   backgroundTasks?: BackgroundTask[];
   onStopBackgroundTask?: (taskId: string) => void;
+  /** Main and its running subagents, docked above the background tasks. */
+  subagents?: ReactNode;
+  /** Running subagents, tagging along behind the composer mascot. */
+  runnerCompanions?: RunnerCompanion[];
+  /** The agent is at work, not just waiting on background commands. */
+  working?: boolean;
   usageLimit?: UsageLimit;
   hotkeys?: boolean;
   onFocus: () => void;
@@ -560,6 +566,9 @@ export function Composer({
   queueStatus,
   backgroundTasks,
   onStopBackgroundTask,
+  subagents,
+  runnerCompanions,
+  working = true,
   usageLimit,
   onFocus,
   onCwdChange,
@@ -2020,15 +2029,16 @@ export function Composer({
           onDismiss={onUsageLimitDismiss}
         />
       ) : null}
-      {backgroundTasks?.length ? (
+      {backgroundTasks?.length || subagents ? (
         <BackgroundTasksBar
-          tasks={backgroundTasks}
+          tasks={backgroundTasks ?? []}
           onStopTask={onStopBackgroundTask}
           onStopAll={onStop}
+          subagents={subagents}
         />
       ) : null}
       <MessageQueue
-        joined={!!backgroundTasks?.length}
+        joined={!!backgroundTasks?.length || !!subagents}
         messages={queuedMessages}
         status={queueStatus}
         onDelete={onDeleteQueuedMessage}
@@ -2703,6 +2713,8 @@ export function Composer({
             boxRef={boxRef}
             cwd={cwd}
             busy={busy}
+            working={working}
+            companions={runnerCompanions}
             enabled={enabled}
             onExited={() => setRunnerLive(false)}
           />

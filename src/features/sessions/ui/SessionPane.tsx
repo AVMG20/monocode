@@ -3,6 +3,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -10,7 +11,8 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { Composer } from "./Composer";
-import { RunningSubagents } from "./RunningSubagents";
+import { RunningSubagents, runningSubagents } from "./RunningSubagents";
+import { subagentName } from "../model/transcriptActivity";
 import { SessionArtifacts } from "./SessionArtifacts";
 import type { Worktree } from "../../source-control/model/worktrees";
 import {
@@ -47,10 +49,12 @@ import {
   type WorkspaceMode,
   type ComposerTurnOptions,
   harnessSupportsAttachments,
+  hasPendingApproval,
+  sessionWorking,
 } from "../model/session";
 import { sessionHasBtwThreads, supportsBtwHarness } from "../model/btw";
 import { BtwSheet, useBtwConversation } from "./BtwSheet";
-import { AgentTranscript } from "./AgentTranscript";
+import { AgentTranscript, SubagentTranscript } from "./AgentTranscript";
 import { PooledTranscript, type TranscriptPool } from "./TranscriptPool";
 import { TranscriptFind } from "./TranscriptFind";
 import {
@@ -412,6 +416,67 @@ const LocalSessionPane = memo(function LocalSessionPane({
   useEffect(() => {
     setEditingLastTurn(false);
   }, [session.id, editLastTurnSupported]);
+  // A delegated run swapped in for the transcript from the composer dock.
+  const [viewedSubagentId, setViewedSubagentId] = useState<string | null>(null);
+  useEffect(() => setViewedSubagentId(null), [session.id]);
+  const liveSubagents = useMemo(
+    () => (session.busy ? runningSubagents(session.blocks) : []),
+    [session.busy, session.blocks],
+  );
+  const viewedSubagent = viewedSubagentId
+    ? session.blocks.find((block) => block.id === viewedSubagentId)
+    : undefined;
+  useEffect(() => {
+    if (viewedSubagentId && !viewedSubagent) setViewedSubagentId(null);
+  }, [viewedSubagentId, viewedSubagent]);
+  // A finished run stays listed while it is open, so Main is still there to
+  // swap back to.
+  const subagentRuns = useMemo(
+    () =>
+      viewedSubagent && !liveSubagents.includes(viewedSubagent)
+        ? session.blocks.filter(
+            (block) =>
+              block === viewedSubagent || liveSubagents.includes(block),
+          )
+        : liveSubagents,
+    [viewedSubagent, liveSubagents, session.blocks],
+  );
+  const liveSubagentIds = useMemo(
+    () => new Set(liveSubagents.map((block) => block.id)),
+    [liveSubagents],
+  );
+  // A background run's own task, matched by the description both carry, so
+  // its line can stop it and the commands below do not list it twice.
+  const subagentTasks = useMemo(() => {
+    const tasks = new Map<string, string>();
+    for (const task of session.backgroundTasks ?? []) {
+      if (!task.agent) continue;
+      const run = subagentRuns.find(
+        (block) =>
+          !tasks.has(block.id) &&
+          (task.description === block.tool?.title ||
+            task.description === subagentName(block)),
+      );
+      if (run) tasks.set(run.id, task.id);
+    }
+    return tasks;
+  }, [session.backgroundTasks, subagentRuns]);
+  const subagentTaskIds = new Set(subagentTasks.values());
+  const runnerCompanions = useMemo(
+    () =>
+      liveSubagents.map((block) => ({
+        id: block.id,
+        name: subagentName(block),
+      })),
+    [liveSubagents],
+  );
+  // Approvals and questions only show in Main, so a run waiting on one must
+  // not leave the reader looking somewhere else.
+  const needsAnswer =
+    hasPendingApproval(session.blocks) || !!session.pendingQuestion;
+  useEffect(() => {
+    if (needsAnswer) setViewedSubagentId(null);
+  }, [needsAnswer]);
   const modelWelcomeSequence = useRef(0);
   const [modelWelcome, setModelWelcome] = useState<{
     kind: "astra" | "opus";
@@ -493,6 +558,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   );
   useEffect(() => {
     if (!visible || !navigatorReady || !jumpRequest) return;
+    setViewedSubagentId(null);
     const frame = requestAnimationFrame(() => {
       if (navigateBlock(jumpRequest.blockId, jumpRequest.query)) {
         clearTranscriptJump(session.id, jumpRequest.token);
@@ -679,11 +745,46 @@ const LocalSessionPane = memo(function LocalSessionPane({
       }
       onSubmit={(text, attachments, options) => {
         if (!dockComposer) composerDockMotion.captureLaunch();
+        setViewedSubagentId(null);
         return onSubmit(session.id, text, attachments, options);
       }}
       onBtwCommand={btw.openWith}
       onStop={() => onStop(session.id)}
-      backgroundTasks={session.backgroundTasks}
+      backgroundTasks={
+        subagentTaskIds.size
+          ? session.backgroundTasks?.filter(
+              (task) => !subagentTaskIds.has(task.id),
+            )
+          : session.backgroundTasks
+      }
+      working={sessionWorking(session)}
+      runnerCompanions={runnerCompanions}
+      subagents={
+        subagentRuns.length ? (
+          <RunningSubagents
+            runs={subagentRuns}
+            liveIds={liveSubagentIds}
+            viewedId={viewedSubagent ? viewedSubagent.id : null}
+            // Approvals and questions show in Main only; stay there until
+            // they are answered.
+            onView={(blockId) => {
+              if (blockId === null || !needsAnswer)
+                setViewedSubagentId(blockId);
+            }}
+            stoppable={new Set(subagentTasks.keys())}
+            onStop={
+              onStopBackgroundTask &&
+              !remote &&
+              canStopHarnessBackgroundTask(session.harness)
+                ? (blockId) => {
+                    const taskId = subagentTasks.get(blockId);
+                    if (taskId) onStopBackgroundTask(session.id, taskId);
+                  }
+                : undefined
+            }
+          />
+        ) : undefined
+      }
       onStopBackgroundTask={
         onStopBackgroundTask &&
         !remote &&
@@ -724,12 +825,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
       onEditingLastTurnChange={setEditingLastTurn}
     >
       <SessionArtifacts blocks={session.blocks} />
-      {session.busy ? (
-        <RunningSubagents
-          blocks={session.blocks}
-          onSelect={(blockId) => navigateBlock(blockId)}
-        />
-      ) : null}
     </Composer>
   );
 
@@ -861,113 +956,134 @@ const LocalSessionPane = memo(function LocalSessionPane({
             )
           ) : (
             <>
-              <PooledTranscript
-                pool={transcriptPool}
-                sessionId={session.id}
-                onMouseDown={focusPane}
+              {/* Kept mounted under a viewed subagent, so Main comes back
+                  where it was left. */}
+              <div
+                className={`contents ${viewedSubagent ? "invisible" : ""}`}
+                aria-hidden={viewedSubagent ? true : undefined}
               >
-                <AgentTranscript
-                  blocks={session.blocks}
-                  busy={!!session.busy}
-                  visible={visible}
-                  cwd={workCwd}
-                  harness={session.harness}
-                  model={session.model}
-                  modelSettings={session.modelSettings}
-                  pendingQuestion={!!session.pendingQuestion}
-                  backgroundTasks={session.backgroundTasks}
-                  onApproval={session.worktreeRemoved ? undefined : approve}
-                  onAddToChat={addSelectionToChat}
-                  onReferenceImage={
-                    imageReferencesSupported ? referenceImage : undefined
-                  }
-                  onSaveNote={notesEnabled ? saveNote : undefined}
-                  onSendDraft={
-                    draftBlock
-                      ? (block) =>
-                          onSubmit(
-                            session.id,
-                            block.text,
-                            block.attachments ?? [],
-                            {
-                              draftBlockId: block.id,
-                              ...(block.appRequestId
-                                ? { appRequestId: block.appRequestId }
-                                : {}),
-                            },
-                          )
-                      : undefined
-                  }
-                  onRemoveDraft={
-                    draftBlock
-                      ? (block) => onRemoveDraft(session.id, block.id)
-                      : undefined
-                  }
-                  onSaveSelectionNote={
-                    notesEnabled ? saveSelectionNote : undefined
-                  }
-                  onOpenFile={onOpenFile}
-                  onOpenDiff={onOpenDiff}
-                  onOpenPlan={openPlan}
-                  onBuildPlan={session.worktreeRemoved ? undefined : buildPlan}
-                  planBuildTargets={!remote}
-                  onSecondOpinion={
-                    !session.inboxAsk &&
-                    !session.worktreeRemoved &&
-                    onSecondOpinion
-                      ? (target, turn) =>
-                          onSecondOpinion(session.id, target, turn)
-                      : undefined
-                  }
-                  onHandoff={
-                    !session.inboxAsk && !session.worktreeRemoved && onHandoff
-                      ? (target, turn) => onHandoff(session.id, target, turn)
-                      : undefined
-                  }
-                  onJumpToBottomChange={setShowJumpToBottom}
-                  onJumpToBottomReady={onJumpToBottomReady}
-                  onRevealReady={onRevealReady}
-                  onNavigateReady={onNavigateReady}
-                  onScrollerChange={setTranscriptScroller}
-                  editingLastTurn={editingLastTurn}
-                  onEditLastTurn={
-                    editLastTurnSupported
-                      ? () => {
-                          onFocus(session.id);
-                          recallLastTurnRef.current?.();
-                        }
-                      : undefined
-                  }
-                  latestTurnAccessory={
-                    !showChangedFilesCard ||
-                    remote ||
-                    session.inboxAsk ||
-                    session.worktreeRemoved ||
-                    draftBlock ? undefined : (
-                      <SessionReview
-                        sessionId={session.id}
-                        cwd={workCwd}
-                        enabled={visible}
-                        busy={!!session.busy}
-                        undoLocked={
-                          reviewUndoLocked ||
-                          orchestrationRuns.some(
-                            (run) =>
-                              (run.status === "active" ||
-                                run.status === "paused") &&
-                              (run.leadId === session.id ||
-                                run.tasks.some(
-                                  (task) => task.sessionId === session.id,
-                                )),
-                          )
-                        }
-                        onOpenDiff={onOpenDiff}
-                      />
-                    )
-                  }
-                />
-              </PooledTranscript>
-              {!session.inboxAsk ? (
+                <PooledTranscript
+                  pool={transcriptPool}
+                  sessionId={session.id}
+                  onMouseDown={focusPane}
+                >
+                  <AgentTranscript
+                    blocks={session.blocks}
+                    busy={!!session.busy}
+                    visible={visible}
+                    cwd={workCwd}
+                    harness={session.harness}
+                    model={session.model}
+                    modelSettings={session.modelSettings}
+                    pendingQuestion={!!session.pendingQuestion}
+                    backgroundTasks={session.backgroundTasks}
+                    onApproval={session.worktreeRemoved ? undefined : approve}
+                    onAddToChat={addSelectionToChat}
+                    onReferenceImage={
+                      imageReferencesSupported ? referenceImage : undefined
+                    }
+                    onSaveNote={notesEnabled ? saveNote : undefined}
+                    onSendDraft={
+                      draftBlock
+                        ? (block) =>
+                            onSubmit(
+                              session.id,
+                              block.text,
+                              block.attachments ?? [],
+                              {
+                                draftBlockId: block.id,
+                                ...(block.appRequestId
+                                  ? { appRequestId: block.appRequestId }
+                                  : {}),
+                              },
+                            )
+                        : undefined
+                    }
+                    onRemoveDraft={
+                      draftBlock
+                        ? (block) => onRemoveDraft(session.id, block.id)
+                        : undefined
+                    }
+                    onSaveSelectionNote={
+                      notesEnabled ? saveSelectionNote : undefined
+                    }
+                    onOpenFile={onOpenFile}
+                    onOpenDiff={onOpenDiff}
+                    onOpenPlan={openPlan}
+                    onBuildPlan={
+                      session.worktreeRemoved ? undefined : buildPlan
+                    }
+                    planBuildTargets={!remote}
+                    onSecondOpinion={
+                      !session.inboxAsk &&
+                      !session.worktreeRemoved &&
+                      onSecondOpinion
+                        ? (target, turn) =>
+                            onSecondOpinion(session.id, target, turn)
+                        : undefined
+                    }
+                    onHandoff={
+                      !session.inboxAsk && !session.worktreeRemoved && onHandoff
+                        ? (target, turn) => onHandoff(session.id, target, turn)
+                        : undefined
+                    }
+                    onJumpToBottomChange={setShowJumpToBottom}
+                    onJumpToBottomReady={onJumpToBottomReady}
+                    onRevealReady={onRevealReady}
+                    onNavigateReady={onNavigateReady}
+                    onScrollerChange={setTranscriptScroller}
+                    editingLastTurn={editingLastTurn}
+                    onEditLastTurn={
+                      editLastTurnSupported
+                        ? () => {
+                            onFocus(session.id);
+                            recallLastTurnRef.current?.();
+                          }
+                        : undefined
+                    }
+                    latestTurnAccessory={
+                      !showChangedFilesCard ||
+                      remote ||
+                      session.inboxAsk ||
+                      session.worktreeRemoved ||
+                      draftBlock ? undefined : (
+                        <SessionReview
+                          sessionId={session.id}
+                          cwd={workCwd}
+                          enabled={visible}
+                          busy={!!session.busy}
+                          undoLocked={
+                            reviewUndoLocked ||
+                            orchestrationRuns.some(
+                              (run) =>
+                                (run.status === "active" ||
+                                  run.status === "paused") &&
+                                (run.leadId === session.id ||
+                                  run.tasks.some(
+                                    (task) => task.sessionId === session.id,
+                                  )),
+                            )
+                          }
+                          onOpenDiff={onOpenDiff}
+                        />
+                      )
+                    }
+                  />
+                </PooledTranscript>
+              </div>
+              {viewedSubagent ? (
+                <div className="absolute inset-0 z-20">
+                  <SubagentTranscript
+                    key={viewedSubagent.id}
+                    block={viewedSubagent}
+                    cwd={workCwd}
+                    live={liveSubagentIds.has(viewedSubagent.id)}
+                    onOpenFile={onOpenFile}
+                    onOpenDiff={onOpenDiff}
+                  />
+                </div>
+              ) : null}
+              {!session.inboxAsk && !viewedSubagent ? (
                 <TranscriptFind
                   blocks={session.blocks}
                   visible={visible}
@@ -985,10 +1101,10 @@ const LocalSessionPane = memo(function LocalSessionPane({
                 blocks={session.blocks}
                 scope={transcriptScope}
                 scroller={transcriptScroller}
-                visible={visible}
+                visible={visible && !viewedSubagent}
                 revealBlock={revealBlock}
               />
-              {showJumpToBottom ? (
+              {showJumpToBottom && !viewedSubagent ? (
                 <div className="pointer-events-none absolute inset-x-0 bottom-2 z-30 flex justify-center">
                   <button
                     type="button"

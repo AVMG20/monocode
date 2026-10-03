@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  COMPANION_ENTER_MS,
+  PLATFORM_LEAD,
+  companionEnterY,
+  platformHeight,
+  platformsFromRects,
+  trailAt,
   COIN_FIRST_MAX_MS,
   COIN_FIRST_MIN_MS,
   COIN_GAP_MAX_MS,
@@ -193,7 +199,9 @@ describe("composerRunner", () => {
   it("knocks the mascot back, shakes, then finishes the stun", () => {
     expect(recoilAlong(70, 1, 0, 200)).toBe(70);
     expect(recoilAlong(70, 1, CRASH_RECOIL_MS, 200)).toBe(70 - CRASH_RECOIL_PX);
-    expect(recoilAlong(70, -1, CRASH_RECOIL_MS, 200)).toBe(70 + CRASH_RECOIL_PX);
+    expect(recoilAlong(70, -1, CRASH_RECOIL_MS, 200)).toBe(
+      70 + CRASH_RECOIL_PX,
+    );
     expect(recoilAlong(4, 1, CRASH_RECOIL_MS, 200)).toBe(0);
     expect(recoilAlong(190, -1, CRASH_RECOIL_MS, 200)).toBe(200);
 
@@ -254,5 +262,50 @@ describe("composerRunner", () => {
     expect(pose.x).toBe(RUNNER_INSET + 50);
     expect(pose.facing).toBe(1);
     expect(pose.y).toBe(0);
+  });
+});
+
+describe("composer runner platforms and companions", () => {
+  const pill = { left: 100, right: 180, height: 30 };
+
+  it("runs across a pill's top and hops on and off its edges", () => {
+    expect(platformHeight(140, [pill])).toBe(30);
+    expect(platformHeight(pill.left - PLATFORM_LEAD, [pill])).toBe(0);
+    expect(platformHeight(pill.right + PLATFORM_LEAD, [pill])).toBe(0);
+    const runUp = platformHeight(pill.left - PLATFORM_LEAD / 2, [pill]);
+    expect(runUp).toBeGreaterThan(15);
+    expect(runUp).toBeLessThan(30);
+    expect(
+      poseAt(140 - RUNNER_INSET, 1, 400, null, [], RUNNER_INSET, [pill]).y,
+    ).toBe(30);
+    expect(jumpHeight(140, null, [], [pill])).toBe(30);
+  });
+
+  it("only treats pills resting on the ledge as steps", () => {
+    const track = { left: 50, top: 300, width: 400 };
+    expect(
+      platformsFromRects(track, [
+        { left: 60, right: 140, top: 270, bottom: 294 },
+        { left: 200, right: 260, top: 100, bottom: 124 },
+        { left: 600, right: 700, top: 270, bottom: 294 },
+      ]),
+    ).toEqual([{ left: 10, right: 90, height: 30 }]);
+  });
+
+  it("replays the trail a beat behind", () => {
+    const trail = [
+      { at: 0, x: 10, y: 0, facing: 1 as const },
+      { at: 100, x: 26, y: 0, facing: 1 as const },
+      { at: 200, x: 42, y: 4, facing: 1 as const },
+    ];
+    expect(trailAt(trail, 150)?.x).toBe(26);
+    expect(trailAt(trail, -50)?.x).toBe(10);
+    expect(trailAt([], 0)).toBeNull();
+  });
+
+  it("pops a companion up from behind the rim", () => {
+    expect(companionEnterY(0)).toBeLessThan(0);
+    expect(companionEnterY(COMPANION_ENTER_MS / 2)).toBeGreaterThan(0);
+    expect(companionEnterY(COMPANION_ENTER_MS)).toBe(0);
   });
 });

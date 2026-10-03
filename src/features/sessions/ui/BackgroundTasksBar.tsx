@@ -1,6 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { BackgroundTask } from "../model/session";
-import { ChevronDown, ChevronUp, Square, Terminal } from "../../../shared/ui/icons";
+import {
+  ChevronDown,
+  ChevronUp,
+  Square,
+  Terminal,
+} from "../../../shared/ui/icons";
 
 type Props = {
   tasks: BackgroundTask[];
@@ -8,18 +13,22 @@ type Props = {
   onStopTask?: (taskId: string) => void;
   /** Stops everything left running, and the turn waiting on it. */
   onStopAll?: () => void;
+  /** Main and the subagents it is waiting on, listed above the tasks. */
+  subagents?: ReactNode;
 };
 
 /**
  * What the agent left running after it yielded: dev servers, watchers,
  * monitors. Docked on the composer rather than folded into the last reply,
  * since that reply is finished and the work outlives it, and each one can be
- * stopped from here.
+ * stopped from here. Running subagents share the dock, always on top and
+ * divided from the commands.
  */
 export function BackgroundTasksBar({
   tasks,
   onStopTask,
   onStopAll,
+  subagents,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [stopping, setStopping] = useState<ReadonlySet<string>>(new Set());
@@ -36,7 +45,7 @@ export function BackgroundTasksBar({
     if (!key) setStoppingAll(false);
   }, [key]);
 
-  if (tasks.length === 0) return null;
+  if (tasks.length === 0 && !subagents) return null;
 
   const multiple = tasks.length > 1;
   const showRows = !multiple || expanded;
@@ -56,8 +65,13 @@ export function BackgroundTasksBar({
   return (
     <div className="px-2 text-content/55" data-background-tasks>
       <div
+        data-background-tasks-card
         className="relative z-0 rounded-t-[10px] border border-b-0 border-content/10 bg-content/3 px-2 py-1"
       >
+        {subagents}
+        {subagents && tasks.length > 0 ? (
+          <div role="separator" className="my-1 border-t border-stroke" />
+        ) : null}
         {multiple ? (
           <div
             className={`flex h-7 items-center gap-2 text-[12px] ${
@@ -83,14 +97,18 @@ export function BackgroundTasksBar({
             {stopAll ? (
               <StopButton
                 label="Stop all"
-                title="Stop all background tasks"
+                title={
+                  subagents
+                    ? "Stop the turn, its subagents, and all background tasks"
+                    : "Stop all background tasks"
+                }
                 busy={stoppingAll}
                 onClick={stopAll}
               />
             ) : null}
           </div>
         ) : null}
-        {showRows ? (
+        {showRows && tasks.length > 0 ? (
           <div className={multiple ? "max-h-32 overflow-y-auto" : undefined}>
             {tasks.map((task, index) => (
               <div
@@ -119,9 +137,7 @@ export function BackgroundTasksBar({
                     label="Stop"
                     title={`Stop ${task.description || "background task"}`}
                     busy={stopping.has(task.id) || stoppingAll}
-                    onClick={() =>
-                      stopTask ? stopTask(task.id) : stopAll?.()
-                    }
+                    onClick={() => (stopTask ? stopTask(task.id) : stopAll?.())}
                   />
                 ) : null}
               </div>
