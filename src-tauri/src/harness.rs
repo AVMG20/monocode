@@ -98,7 +98,7 @@ fn antigravity_args() -> Vec<String> {
 
 struct LiveChild {
     cwd: PathBuf,
-    stdin: Mutex<ChildStdin>,
+    stdin: Mutex<Option<ChildStdin>>,
     pid: u32,
     account: Option<HarnessAccount>,
 }
@@ -792,6 +792,7 @@ pub fn harness_spawn(
     account: Option<HarnessAccount>,
     binary_provider: Option<String>,
     binary_path: Option<String>,
+    no_input: Option<bool>,
 ) -> Result<u32, String> {
     let workdir = expand_home(&cwd);
     if !workdir.is_dir() {
@@ -813,7 +814,14 @@ pub fn harness_spawn(
     let mut cmd = Command::new(&command);
     cmd.args(&args)
         .current_dir(&workdir)
-        .stdin(Stdio::piped())
+        // A child that reads no input gets EOF on stdin: `claude auth login`
+        // otherwise keeps waiting on its "paste code" prompt after the
+        // browser sign-in has finished.
+        .stdin(if no_input.unwrap_or(false) {
+            Stdio::null()
+        } else {
+            Stdio::piped()
+        })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     prepare_child(&mut cmd, &command);
@@ -833,10 +841,7 @@ pub fn harness_spawn(
         spawn_managed(&mut cmd).map_err(|e| format!("Failed to start {command}: {e}"))?;
     let pid = child.id();
 
-    let stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| "Failed to open harness stdin".to_string())?;
+    let stdin = child.stdin.take();
     let stdout = child
         .stdout
         .take()
@@ -1084,6 +1089,9 @@ pub async fn harness_write(
         .ok_or_else(|| "Harness process is not running".to_string())?;
     tauri::async_runtime::spawn_blocking(move || {
         let mut stdin = live.stdin.lock().unwrap_or_else(|e| e.into_inner());
+        let stdin = stdin
+            .as_mut()
+            .ok_or_else(|| "Harness process takes no input".to_string())?;
         stdin
             .write_all(line.as_bytes())
             .and_then(|_| stdin.write_all(b"\n"))
@@ -2990,7 +2998,7 @@ mod tests {
         (
             Arc::new(LiveChild {
                 cwd: PathBuf::from("/test"),
-                stdin: Mutex::new(stdin),
+                stdin: Mutex::new(Some(stdin)),
                 pid,
                 account: None,
             }),
@@ -3094,7 +3102,7 @@ mod tests {
         let writer = thread::spawn(move || {
             let payload = vec![b'x'; 8 * 1024 * 1024];
             let mut stdin = live.stdin.lock().unwrap_or_else(|e| e.into_inner());
-            let _ = stdin.write_all(&payload);
+            let _ = stdin.as_mut().map(|stdin| stdin.write_all(&payload));
         });
         thread::sleep(Duration::from_millis(200));
         // Kill needs neither the stdin mutex nor the writer's thread.
@@ -3151,7 +3159,7 @@ mod tests {
         (
             Arc::new(LiveChild {
                 cwd: PathBuf::from("/test"),
-                stdin: Mutex::new(stdin),
+                stdin: Mutex::new(Some(stdin)),
                 pid,
                 account: None,
             }),

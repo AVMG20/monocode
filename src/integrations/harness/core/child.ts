@@ -287,6 +287,8 @@ export async function spawnChild(
   cwd: string,
   account?: { provider: "claude" | "codex"; id: string },
   binaryProvider?: ConfigurableBinaryProvider,
+  /** Give the child EOF on stdin, for commands that read no input. */
+  noInput = false,
 ): Promise<void> {
   livePid.delete(sessionId);
   pendingExit.delete(sessionId);
@@ -301,6 +303,7 @@ export async function spawnChild(
     account,
     binaryProvider,
     binaryPath,
+    noInput,
   });
   if (typeof pid !== "number" || pid <= 0) return;
   livePid.set(sessionId, pid);
