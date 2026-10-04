@@ -399,6 +399,7 @@ import {
   supportsProviderAccounts,
   type ProviderAccountProvider,
 } from "../features/providers/model/providerAccounts";
+import { setWorkingUsageAccounts } from "../features/providers/model/rateLimitsPolling";
 import {
   HARNESSES,
   HARNESS_LABEL,
@@ -1707,7 +1708,6 @@ function Workspace({
       id: active.id,
       harness: active.harness,
       model: active.model,
-      busy: active.busy,
       authRequired: latestTurnNeedsHarnessLogin(active.blocks),
       providerAccountId:
         active.providerAccountId ??
@@ -1715,7 +1715,33 @@ function Workspace({
           ? DEFAULT_PROVIDER_ACCOUNT_ID
           : undefined),
     };
-  }, [active?.id, active?.harness, active?.model, active?.busy, active?.blocks, active?.providerAccountId]);
+  }, [active?.id, active?.harness, active?.model, active?.blocks, active?.providerAccountId]);
+  // Every working Claude or Codex session keeps its account's usage fresh,
+  // whichever session is on screen.
+  const workingUsageKeys = sessions
+    .flatMap((session) =>
+      sessionWorking(session) &&
+      (session.harness === "claude" || session.harness === "codex")
+        ? [
+            `${session.harness}:${session.providerAccountId ?? DEFAULT_PROVIDER_ACCOUNT_ID}`,
+          ]
+        : [],
+    )
+    .sort()
+    .join("\n");
+  useEffect(() => {
+    const accounts = workingUsageKeys
+      ? [...new Set(workingUsageKeys.split("\n"))].flatMap((key) => {
+          const split = key.indexOf(":");
+          const provider = key.slice(0, split) as "claude" | "codex";
+          const accountId = key.slice(split + 1);
+          return providerAccountExists(provider, accountId)
+            ? [{ provider, accountId }]
+            : [];
+        })
+      : [];
+    setWorkingUsageAccounts(accounts);
+  }, [workingUsageKeys]);
   const activeProviderSignInRequest = useMemo(() => {
     if (
       !active ||

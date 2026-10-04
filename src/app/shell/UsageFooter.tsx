@@ -46,13 +46,11 @@ import {
 } from "../../features/providers/model/providerAccounts";
 
 const CLOCK_MS = 30_000;
-const ACTIVE_USAGE_POLL_MS = 5 * 60_000;
 
 export type UsageFooterSession = {
   id?: string;
   harness: HarnessId;
   model?: string;
-  busy?: boolean;
   authRequired?: boolean;
   providerAccountId?: string;
 };
@@ -92,12 +90,6 @@ export function UsageFooter({
   const [refreshing, setRefreshing] = useState(false);
   const [, setAccountsVersion] = useState(0);
   const inflight = useRef<Promise<void> | null>(null);
-  const pollTimer = useRef<number | null>(null);
-  const running =
-    session?.busy === true &&
-    (session.harness === "claude" || session.harness === "codex");
-  const runningRef = useRef(running);
-  runningRef.current = running;
   const claudeAccountId =
     session?.harness === "claude" && session.providerAccountId
       ? session.providerAccountId
@@ -179,26 +171,6 @@ export function UsageFooter({
     wantCodex,
     wantOpencode,
   ]);
-
-  // A turn finishing leaves its next scheduled poll in place. That final poll
-  // catches the completed turn's usage, then stops unless work has resumed.
-  useEffect(() => {
-    return () => {
-      if (pollTimer.current !== null) window.clearInterval(pollTimer.current);
-      pollTimer.current = null;
-    };
-  }, [refresh, session?.id, session?.harness]);
-
-  useEffect(() => {
-    if (!running || pollTimer.current !== null) return;
-    pollTimer.current = window.setInterval(() => {
-      void refresh();
-      if (!runningRef.current && pollTimer.current !== null) {
-        window.clearInterval(pollTimer.current);
-        pollTimer.current = null;
-      }
-    }, ACTIVE_USAGE_POLL_MS);
-  }, [refresh, running, session?.id, session?.harness]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), CLOCK_MS);

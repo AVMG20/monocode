@@ -15,6 +15,7 @@ import {
 const snapshots = new Map<string, ProviderRateLimits>();
 const pending = new Map<string, Promise<ProviderRateLimits>>();
 const queuedRefreshes = new Map<string, Promise<ProviderRateLimits>>();
+const refreshedAt = new Map<string, number>();
 const listeners = new Set<() => void>();
 let allSnapshots: Record<string, ProviderRateLimits> = {};
 
@@ -120,10 +121,27 @@ export function loadRateLimits(
       return result;
     } finally {
       pending.delete(key);
+      refreshedAt.set(key, Date.now());
     }
   })();
   pending.set(key, run);
   return run;
+}
+
+/** When the account's last fetch finished, or null if it never ran. */
+export function lastRateLimitsRefresh(
+  provider: RateLimitProvider,
+  accountId = "default",
+): number | null {
+  return refreshedAt.get(keyFor(provider, accountId)) ?? null;
+}
+
+/** The account's fetch in progress, if one is running. */
+export function pendingRateLimits(
+  provider: RateLimitProvider,
+  accountId = "default",
+): Promise<ProviderRateLimits> | undefined {
+  return pending.get(keyFor(provider, accountId));
 }
 
 /** Also used when an account is removed and by tests that need a clean cache. */
@@ -134,10 +152,12 @@ export function clearCachedRateLimits(
   if (provider && accountId) {
     const key = keyFor(provider, accountId);
     snapshots.delete(key);
+    refreshedAt.delete(key);
     const { [key]: _removed, ...rest } = allSnapshots;
     allSnapshots = rest;
   } else {
     snapshots.clear();
+    refreshedAt.clear();
     allSnapshots = {};
   }
   for (const listener of listeners) listener();
