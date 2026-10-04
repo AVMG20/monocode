@@ -80,6 +80,12 @@ const RANDOM: Record<RandomActKind, (stage: Stage, view: ActView) => Act> = {
   coinSteal: coinStealAct,
 };
 
+/**
+ * Laps toward the next random event. Shared and kept across turns, so short
+ * turns add up instead of each starting the count over.
+ */
+const laps = { count: 0, target: 0 };
+
 /** Signal events waiting their turn; more than this and the rest are dropped. */
 const MAX_CUES = 3;
 
@@ -105,6 +111,12 @@ export type Director = {
   clear(): void;
 };
 
+/** Start the lap count over; for tests. */
+export function resetLaps() {
+  laps.count = 0;
+  laps.target = 0;
+}
+
 export function createDirector(stage: Stage): Director {
   let main: Act | null = null;
   let ambient: Act[] = [];
@@ -112,8 +124,7 @@ export function createDirector(stage: Stage): Director {
   let cues: Cue[] = [];
   let seen: RunnerSignals | null = null;
   let startedAt: number | null = null;
-  let bounces = 0;
-  let bounceTarget = nextBounceTarget(stage.random);
+  if (laps.target === 0) laps.target = nextBounceTarget(stage.random);
   let recent: RandomActKind[] = [];
   let sweating = false;
   let nextBreather = 0;
@@ -178,10 +189,10 @@ export function createDirector(stage: Stage): Director {
 
   const roll = (view: ActView, input: FrameInput) => {
     if (!input.bounced || !input.working || main || cues.length) return;
-    bounces += 1;
-    if (bounces < bounceTarget) return;
-    bounces = 0;
-    bounceTarget = nextBounceTarget(stage.random);
+    laps.count += 1;
+    if (laps.count < laps.target) return;
+    laps.count = 0;
+    laps.target = nextBounceTarget(stage.random);
     const kind = pickRandomAct(
       {
         width: view.width,
@@ -232,7 +243,6 @@ export function createDirector(stage: Stage): Director {
       cues = [];
       seen = null;
       startedAt = null;
-      bounces = 0;
       sweating = false;
       nextBreather = 0;
       night = false;

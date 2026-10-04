@@ -6,12 +6,13 @@ import {
   type RandomActKind,
   type RunnerSignals,
 } from "../model/runnerEvents";
-import { createDirector } from "./runnerDirector";
+import { createDirector, resetLaps } from "./runnerDirector";
 import type { ActView, LiveCoin, Stage } from "./runnerStage";
 
 afterEach(() => {
   vi.useRealTimers();
   document.body.innerHTML = "";
+  resetLaps();
 });
 
 type Rig = ReturnType<typeof rig>;
@@ -187,6 +188,34 @@ describe("createDirector", () => {
     expect(r.layer.style.transform).toContain("scale(");
     for (let i = 0; i < 100; i++) r.step({ ...NO_RUNNER_SIGNALS, compactions: 1 });
     expect(r.layer.style.transform).toBe("");
+  });
+
+  it("keeps counting laps across turns", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 0, 1, 12));
+    const r = rig(() => 0);
+    const view: ActView = {
+      now: 0,
+      dt: 16,
+      left: 0,
+      top: 300,
+      width: 600,
+      pose: { x: 300, y: 0, facing: 1, airborne: false },
+      platforms: [],
+      companions: [],
+    };
+    const lap = (director = r.director, now = 0) =>
+      director.frame(
+        { ...view, now },
+        { signals: NO_RUNNER_SIGNALS, working: true, bounced: true },
+      );
+    lap();
+    lap();
+    r.director.clear();
+    expect(r.back.childElementCount).toBe(0);
+    // A new turn picks up on the third lap instead of starting over.
+    lap(createDirector(r.stage), 16);
+    expect(r.back.childElementCount).toBeGreaterThan(0);
   });
 
   it("does not replay signals that were already there when it started", () => {
