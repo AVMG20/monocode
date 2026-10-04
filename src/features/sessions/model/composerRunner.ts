@@ -150,7 +150,7 @@ export function pingPong(
   return { t: cycle - d, facing: -1 };
 }
 
-function arc(
+export function arc(
   x: number,
   left: number,
   right: number,

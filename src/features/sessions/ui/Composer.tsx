@@ -111,6 +111,7 @@ import {
 import { AccessPicker } from "./AccessPicker";
 import { BackgroundTasksBar } from "./BackgroundTasksBar";
 import { ComposerRunner, type RunnerCompanion } from "./ComposerRunner";
+import type { RunnerSignals } from "../model/runnerEvents";
 import { ContextMeter } from "./ContextMeter";
 import { AttachmentChip } from "./AttachmentChip";
 import { BranchPicker } from "../../source-control/ui/BranchPicker";
@@ -265,6 +266,8 @@ type Props = {
   subagents?: ReactNode;
   /** Running subagents, tagging along behind the composer mascot. */
   runnerCompanions?: RunnerCompanion[];
+  /** What the turn is up to, for the mascot's events. */
+  runnerSignals?: RunnerSignals;
   /** The agent is at work, not just waiting on background commands. */
   working?: boolean;
   usageLimit?: UsageLimit;
@@ -568,6 +571,7 @@ export function Composer({
   onStopBackgroundTask,
   subagents,
   runnerCompanions,
+  runnerSignals,
   working = true,
   usageLimit,
   onFocus,
@@ -2715,6 +2719,7 @@ export function Composer({
             busy={busy}
             working={working}
             companions={runnerCompanions}
+            signals={runnerSignals}
             enabled={enabled}
             onExited={() => setRunnerLive(false)}
           />

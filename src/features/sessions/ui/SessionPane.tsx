@@ -17,6 +17,7 @@ import {
   subagentBackgroundTasks,
 } from "./RunningSubagents";
 import { subagentName } from "../model/transcriptActivity";
+import { NO_RUNNER_SIGNALS, runnerSignals } from "../model/runnerEvents";
 import { SessionArtifacts } from "./SessionArtifacts";
 import type { Worktree } from "../../source-control/model/worktrees";
 import {
@@ -464,6 +465,13 @@ const LocalSessionPane = memo(function LocalSessionPane({
       })),
     [liveSubagents],
   );
+  const runnerSignalsNow = useMemo(
+    () =>
+      session.busy
+        ? runnerSignals(session.blocks, session.pendingQuestion != null)
+        : NO_RUNNER_SIGNALS,
+    [session.busy, session.blocks, session.pendingQuestion],
+  );
   // Approvals and questions only show in Main, so a run waiting on one must
   // not leave the reader looking somewhere else.
   const needsAnswer =
@@ -753,6 +761,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       }
       working={sessionWorking(session)}
       runnerCompanions={runnerCompanions}
+      runnerSignals={runnerSignalsNow}
       subagents={
         subagentRuns.length ? (
           <RunningSubagents

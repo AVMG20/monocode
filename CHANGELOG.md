@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Images and videos an agent's reply refers to (markdown images or links, inline code, or plain paths) show as thumbnails under the reply. Clicking one opens a lightbox that pages through every image and video in the chat, with arrow buttons, ←/→ keys, and a thumbnail strip. Videos stream from disk and play with native controls.
+- The composer mascot reacts to what the turn is doing: a failed tool sends in a goomba to stomp (a denied approval, a spiky one it bumps into), waiting on an approval or question sits it under a ? block it bonks once you answer, written files drop bricks to hop over, a web call brings a bird with a letter, compaction squeezes the ledge, and long turns make it sweat and stop for a breather. A subagent that reports back runs over for a high five. Every 3 to 10 laps something random happens: zombies it zaps with lasers, a coin streak, a mushroom or star power-up, a pipe warp, a Boo, a gust of wind, a sneeze, a dance, a butterfly, a banana peel, a rain cloud, a moonwalk, and a yawn and stars late at night. With subagents along, the crew joins in: a trip, a wave, a totem, a group photo, a stolen coin.
 - Each image or video in the chat, including generated images, has a ⋯ menu to reveal it in the file manager, save a copy, or use it as a reference: the file is attached to the next prompt like an upload, so several can be added and each removed again.
 
 ### Changed
