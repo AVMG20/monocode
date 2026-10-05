@@ -146,6 +146,32 @@ it("renders assigned projects in persistent collapsible groups", async () => {
   expect(button("personal")).toBeDefined();
 });
 
+it("reopens a collapsed group even when storage rejects the write", async () => {
+  saveProjectGroups([
+    { id: "clients", name: "Client work", collapsed: true, colorIndex: 4 },
+  ]);
+  saveProjectGroupAssignments({ [pathKey("/work/client")]: "clients" });
+  await renderRail();
+  const header = () => button("Client work, 1 project");
+  expect(header().getAttribute("aria-expanded")).toBe("false");
+
+  const setItem = vi
+    .spyOn(localStorage, "setItem")
+    .mockImplementation(() => {
+      throw new DOMException("full", "QuotaExceededError");
+    });
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    act(() => header().click());
+    expect(header().getAttribute("aria-expanded")).toBe("true");
+    act(() => header().click());
+    expect(header().getAttribute("aria-expanded")).toBe("false");
+  } finally {
+    setItem.mockRestore();
+    warn.mockRestore();
+  }
+});
+
 it("creates, styles, assigns, and deletes a group from the rail", async () => {
   await renderRail();
   expect(sectionLabels()).toEqual(["Projects"]);

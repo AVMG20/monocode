@@ -465,12 +465,20 @@ export function ProjectRail({
                       onContextMenu={onProjectContextMenu}
                       onOpenMenu={projectMenu.open}
                       onReorder={onReorderProjects}
-                      onToggleCollapsed={() =>
+                      onToggleCollapsed={() => {
+                        // Flip what the rail shows, not what storage holds: a
+                        // failed or stale write must never leave the click inert.
+                        const collapsed = !group.collapsed;
+                        setProjectGroups((current) =>
+                          current.map((item) =>
+                            item.id === group.id ? { ...item, collapsed } : item,
+                          ),
+                        );
                         updateProjectGroup(group.id, (current) => ({
                           ...current,
-                          collapsed: !current.collapsed,
-                        }))
-                      }
+                          collapsed,
+                        }));
+                      }}
                       onOpenGroupMenu={(x, y) =>
                         projectMenu.openGroupMenu(group.id, x, y)
                       }

@@ -82,7 +82,8 @@ export function saveProjectGroups(groups: ProjectGroup[]): boolean {
     localStorage.setItem(GROUPS_KEY, JSON.stringify(normalized));
     notifyProjectPathsChanged();
     return true;
-  } catch {
+  } catch (error) {
+    console.warn("Could not save project groups", error);
     return false;
   }
 }
@@ -117,7 +118,8 @@ export function saveProjectGroupAssignments(
     localStorage.setItem(ASSIGNMENTS_KEY, JSON.stringify(assignments));
     notifyProjectPathsChanged();
     return true;
-  } catch {
+  } catch (error) {
+    console.warn("Could not save project groups", error);
     return false;
   }
 }

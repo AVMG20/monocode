@@ -1450,7 +1450,7 @@ export function Composer({
       );
       unlisten?.();
     };
-  }, [addAttachments, attachmentsSupported, enabled, remote]);
+  }, [addAttachments, attachmentsSupported, disabled, enabled, remote]);
   const restoreDraft = useCallback(
     (
       text: string,
