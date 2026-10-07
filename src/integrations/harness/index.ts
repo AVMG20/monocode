@@ -200,6 +200,7 @@ export type {
   HarnessEvent,
   SteerTurnInput,
 } from "./core/types";
+export { TurnNotReadyError } from "./core/types";
 export type {
   UserQuestion,
   UserQuestionPrompt,
