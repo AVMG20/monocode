@@ -1235,10 +1235,17 @@ function handleAgentLifecycle(
     }
     live.agentTasks.set(started.taskId, {
       taskId: started.taskId,
+      // A task listed first already has its row; only the Agent call that
+      // spawned it takes over. A resumed run names the SendMessage that woke
+      // it, and moving there would strand that row as a run that never ends.
       toolUseId:
-        started.toolUseId ??
+        (isAgentCall(live, started.toolUseId)
+          ? started.toolUseId
+          : undefined) ??
         existingTask?.toolUseId ??
-        unclaimedAgentCall(live, started.description),
+        started.toolUseId ??
+        unclaimedAgentCall(live, started.description) ??
+        agentRowId(started.description),
       description: started.description,
       backgrounded: started.backgrounded,
     });
@@ -1260,7 +1267,9 @@ function handleAgentLifecycle(
         progress.toolUseId ?? unclaimedAgentCall(live, task.description);
       if (task.toolUseId) syncBackgroundWait(live);
     }
-    const title = progress.description || task?.description || "Subagent";
+    // Progress can describe the step in flight rather than the run; the row
+    // keeps the name it started with.
+    const title = task?.description || progress.description || "Subagent";
     const detail =
       progress.summary ||
       progress.lastToolName ||
@@ -1346,7 +1355,8 @@ function handleAgentLifecycle(
     if (live.agentTasks.has(row.taskId)) continue;
     // The list carries no tool_use_id and often lands before task_started, so
     // find the Agent call that spawned it rather than opening a second row.
-    const toolUseId = unclaimedAgentCall(live, row.description);
+    const toolUseId =
+      unclaimedAgentCall(live, row.description) ?? agentRowId(row.description);
     live.agentTasks.set(row.taskId, {
       taskId: row.taskId,
       toolUseId,
@@ -1530,6 +1540,16 @@ function unclaimedAgentCall(
   return match;
 }
 
+function isAgentCall(live: Live, toolUseId: string | undefined): boolean {
+  const tool = toolUseId ? live.toolsById.get(toolUseId) : undefined;
+  return !!tool && isAgentToolName(tool.name);
+}
+
+/** The row a task gets when no Agent call in this turn spawned it. */
+function agentRowId(description: string): string {
+  return `agent:${description}`;
+}
+
 function upsertAgentTool(
   live: Live,
   callId: string | undefined,
@@ -1537,7 +1557,7 @@ function upsertAgentTool(
   status: string,
   detail?: string,
 ): void {
-  const id = callId ?? `agent:${title}`;
+  const id = callId ?? agentRowId(title);
   const existing = live.toolsById.get(id);
   if (!existing) {
     live.toolsById.set(id, {

@@ -1379,6 +1379,92 @@ describe("claude subagents", () => {
     });
   });
 
+  it("keeps a resumed subagent on its listed row when SendMessage wakes it", async () => {
+    const { events, turn } = await startTurn("s1");
+    const description = "Refactor shared modules";
+    emit({
+      type: "assistant",
+      session_id: "sess_1",
+      message: {
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_send",
+            name: "SendMessage",
+            input: { to: "a1", message: "Continue the refactor." },
+          },
+        ],
+      },
+    });
+    // The list lands before task_started, and the start names the
+    // SendMessage call rather than the Agent call of an earlier turn.
+    emit({
+      type: "system",
+      subtype: "background_tasks_changed",
+      tasks: [{ task_id: "a1", task_type: "local_agent", description }],
+    });
+    emit({
+      type: "system",
+      subtype: "task_started",
+      task_id: "a1",
+      tool_use_id: "toolu_send",
+      task_type: "local_agent",
+      description,
+      is_backgrounded: true,
+    });
+    emit({
+      type: "user",
+      session_id: "sess_1",
+      message: {
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "toolu_send",
+            content: "Resuming agent a1",
+          },
+        ],
+      },
+    });
+    emit({
+      type: "system",
+      subtype: "task_progress",
+      task_id: "a1",
+      tool_use_id: "toolu_send",
+      description: "Writing /tmp/notes.md",
+    });
+    emit({
+      type: "system",
+      subtype: "task_notification",
+      task_id: "a1",
+      tool_use_id: "toolu_send",
+      status: "completed",
+      summary: "Refactor done",
+    });
+    emit({
+      type: "system",
+      subtype: "background_tasks_changed",
+      tasks: [],
+    });
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    await turn;
+
+    const session = events.reduce(
+      applyHarnessEvent,
+      newSession("claude", "/repo"),
+    );
+    const runs = session.blocks.filter((block) => block.tool?.kind === "agent");
+    expect(runs).toHaveLength(1);
+    expect(runs[0].tool).toMatchObject({
+      callId: `agent:${description}`,
+      title: description,
+      status: "completed",
+    });
+    expect(
+      session.blocks.find((block) => block.tool?.callId === "toolu_send")?.tool
+        ?.status,
+    ).toBe("completed");
+  });
+
   it("stays busy after a parent result while a background subagent is running", async () => {
     const { events, turn } = await startTurn("s1");
     let settled = false;
@@ -2052,7 +2138,13 @@ describe("claude background tasks", () => {
       newSession("claude", "/repo"),
     );
     expect(session.backgroundTasks).toEqual([
-      { id: "a1", description: "Review today's commits", agent: true },
+      {
+        id: "a1",
+        description: "Review today's commits",
+        agent: true,
+        // The row opened for it, so its line can pair with the task.
+        callId: "agent:Review today's commits",
+      },
       { id: "b1", description: "Run demo server" },
     ]);
     expect(sessionWorking({ ...session, busy: true })).toBe(true);
