@@ -879,6 +879,8 @@ fn write_json_atomic(path: &Path, value: &Value) -> Result<(), String> {
 /// instead of a claude.ai sign-in.
 const ENDPOINT_TOKEN_ENV: &[&str] = &["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"];
 const ENDPOINT_URL_ENV: &str = "ANTHROPIC_BASE_URL";
+/// MonoCode's own endpoint settings, which Claude Code does not read.
+const ENDPOINT_FILE: &str = "monocode-endpoint.json";
 
 /// An account that reaches Claude with an API token. The token itself never
 /// leaves the host process.
@@ -887,6 +889,9 @@ const ENDPOINT_URL_ENV: &str = "ANTHROPIC_BASE_URL";
 pub(crate) struct ClaudeEndpoint {
     /// `None` for Anthropic's own API.
     pub base_url: Option<String>,
+    /// Where the gateway reports 5-hour / weekly usage, in the layout of
+    /// Anthropic's OAuth usage API. `None` when it reports none.
+    pub usage_url: Option<String>,
 }
 
 impl ClaudeEndpoint {
@@ -922,9 +927,39 @@ pub(crate) fn claude_account_endpoint(account_dir: &Path) -> Option<ClaudeEndpoi
     let settings = read_json(&account_dir.join("settings.json")).ok().flatten()?;
     let env = account_env(&settings)?;
     endpoint_token(env)?;
+    let usage_url = read_json(&account_dir.join(ENDPOINT_FILE))
+        .ok()
+        .flatten()
+        .and_then(|value| value.get("usageUrl")?.as_str().map(str::to_string))
+        .filter(|url| !url.trim().is_empty());
     Some(ClaudeEndpoint {
         base_url: env_str(env, ENDPOINT_URL_ENV).map(str::to_string),
+        usage_url,
     })
+}
+
+/// The token an endpoint account sends, for MonoCode's own usage requests.
+pub(crate) fn claude_account_token(account_dir: &Path) -> Option<String> {
+    let settings = read_json(&account_dir.join("settings.json")).ok().flatten()?;
+    endpoint_token(account_env(&settings)?).map(str::to_string)
+}
+
+fn http_url(url: &str) -> Result<(), String> {
+    let parsed = url::Url::parse(url).map_err(|_| format!("{url} is not a valid URL"))?;
+    if parsed.scheme() == "https" || parsed.scheme() == "http" {
+        Ok(())
+    } else {
+        Err(format!("{url} is not an http(s) URL"))
+    }
+}
+
+fn remove_if_present(path: &Path) -> Result<(), String> {
+    match std::fs::remove_file(path) {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+            Err(format!("Could not remove {}: {error}", path.display()))
+        }
+        _ => Ok(()),
+    }
 }
 
 /// Edit the `env` of an account's `settings.json`, keeping everything else.
@@ -951,20 +986,22 @@ fn edit_account_env(
 }
 
 /// Point an account at `base_url` (empty for Anthropic's own API) with
-/// `token`; an empty `token` keeps the one it has. The sync never copies
-/// these vars, so the account keeps them.
+/// `token`; an empty `token` keeps the one it has. `usage_url` (empty for
+/// none) is where MonoCode reads its usage. The sync never copies these
+/// vars, so the account keeps them.
 pub(crate) fn set_claude_account_endpoint(
     account_dir: &Path,
     base_url: &str,
     token: &str,
+    usage_url: &str,
 ) -> Result<(), String> {
     let base_url = base_url.trim().trim_end_matches('/');
     if !base_url.is_empty() {
-        let parsed =
-            url::Url::parse(base_url).map_err(|_| format!("{base_url} is not a valid URL"))?;
-        if parsed.scheme() != "https" && parsed.scheme() != "http" {
-            return Err(format!("{base_url} is not an http(s) URL"));
-        }
+        http_url(base_url)?;
+    }
+    let usage_url = usage_url.trim();
+    if !usage_url.is_empty() {
+        http_url(usage_url)?;
     }
     edit_account_env(account_dir, |env| {
         let token = match token.trim() {
@@ -985,7 +1022,13 @@ pub(crate) fn set_claude_account_endpoint(
             env.insert("ANTHROPIC_AUTH_TOKEN".into(), Value::String(token));
         }
         Ok(())
-    })
+    })?;
+    let file = account_dir.join(ENDPOINT_FILE);
+    if usage_url.is_empty() {
+        remove_if_present(&file)
+    } else {
+        write_json_atomic(&file, &serde_json::json!({ "usageUrl": usage_url }))
+    }
 }
 
 /// Take an account off its API endpoint, back to a claude.ai sign-in.
@@ -995,7 +1038,8 @@ pub(crate) fn clear_claude_account_endpoint(account_dir: &Path) -> Result<(), St
             env.remove(*name);
         }
         Ok(())
-    })
+    })?;
+    remove_if_present(&account_dir.join(ENDPOINT_FILE))
 }
 
 #[cfg(test)]
@@ -1233,7 +1277,7 @@ mod tests {
         let (default, account) = profile();
         write(&account.join("settings.json"), json!({ "model": "opus" }));
         assert_eq!(claude_account_endpoint(&account), None);
-        set_claude_account_endpoint(&account, " https://gw.example.dev/ ", " tok ").unwrap();
+        set_claude_account_endpoint(&account, " https://gw.example.dev/ ", " tok ", "").unwrap();
         write(
             &default.dir.join("settings.json"),
             json!({ "env": { "ANTHROPIC_AUTH_TOKEN": "default", "FOO": "1" } }),
@@ -1258,15 +1302,15 @@ mod tests {
     #[test]
     fn an_endpoint_edit_without_a_token_keeps_the_current_one() {
         let (_default, account) = profile();
-        set_claude_account_endpoint(&account, "https://gw.example.dev", "tok").unwrap();
-        set_claude_account_endpoint(&account, "", "").unwrap();
+        set_claude_account_endpoint(&account, "https://gw.example.dev", "tok", "").unwrap();
+        set_claude_account_endpoint(&account, "", "", "").unwrap();
         assert_eq!(
             read(&account.join("settings.json")),
             json!({ "env": { "ANTHROPIC_API_KEY": "tok" } })
         );
         assert_eq!(claude_account_endpoint(&account).unwrap().host(), "Anthropic API");
 
-        set_claude_account_endpoint(&account, "https://other.dev", "").unwrap();
+        set_claude_account_endpoint(&account, "https://other.dev", "", "").unwrap();
         assert_eq!(
             read(&account.join("settings.json")),
             json!({ "env": { "ANTHROPIC_BASE_URL": "https://other.dev", "ANTHROPIC_AUTH_TOKEN": "tok" } })
@@ -1280,7 +1324,7 @@ mod tests {
             &account.join("settings.json"),
             json!({ "model": "opus", "env": { "FOO": "1" } }),
         );
-        set_claude_account_endpoint(&account, "https://gw.example.dev", "tok").unwrap();
+        set_claude_account_endpoint(&account, "https://gw.example.dev", "tok", "").unwrap();
         clear_claude_account_endpoint(&account).unwrap();
         assert_eq!(
             read(&account.join("settings.json")),
@@ -1290,11 +1334,41 @@ mod tests {
     }
 
     #[test]
+    fn an_endpoint_remembers_where_it_reports_usage() {
+        let (_default, account) = profile();
+        set_claude_account_endpoint(
+            &account,
+            "https://gw.example.dev",
+            "tok",
+            " https://admin.example.dev/api/usage ",
+        )
+        .unwrap();
+        assert_eq!(
+            claude_account_endpoint(&account),
+            Some(ClaudeEndpoint {
+                base_url: Some("https://gw.example.dev".into()),
+                usage_url: Some("https://admin.example.dev/api/usage".into()),
+            })
+        );
+        assert_eq!(claude_account_token(&account).as_deref(), Some("tok"));
+
+        set_claude_account_endpoint(&account, "https://gw.example.dev", "", "").unwrap();
+        assert_eq!(claude_account_endpoint(&account).unwrap().usage_url, None);
+        set_claude_account_endpoint(&account, "https://gw.example.dev", "", "https://u.dev")
+            .unwrap();
+        clear_claude_account_endpoint(&account).unwrap();
+        assert!(!account.join(ENDPOINT_FILE).exists());
+        assert!(
+            set_claude_account_endpoint(&account, "https://gw.example.dev", "tok", "nope").is_err()
+        );
+    }
+
+    #[test]
     fn an_endpoint_needs_a_token_and_an_http_url() {
         let (_default, account) = profile();
-        assert!(set_claude_account_endpoint(&account, "https://gw.example.dev", " ").is_err());
-        assert!(set_claude_account_endpoint(&account, "ftp://gw.example.dev", "tok").is_err());
-        assert!(set_claude_account_endpoint(&account, "not a url", "tok").is_err());
+        assert!(set_claude_account_endpoint(&account, "https://gw.example.dev", " ", "").is_err());
+        assert!(set_claude_account_endpoint(&account, "ftp://gw.example.dev", "tok", "").is_err());
+        assert!(set_claude_account_endpoint(&account, "not a url", "tok", "").is_err());
     }
 
     #[test]

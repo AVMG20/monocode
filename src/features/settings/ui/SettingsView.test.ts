@@ -448,10 +448,11 @@ describe("settings pages", () => {
     )!;
     expect(submit.textContent).toBe("Add");
     expect(submit.disabled).toBe(true);
-    await setValue(
-      container.querySelector<HTMLInputElement>('input[type="url"]')!,
-      "https://gw.example.dev",
+    const [baseUrl, usageUrl] = container.querySelectorAll<HTMLInputElement>(
+      'input[type="url"]',
     );
+    await setValue(baseUrl!, "https://gw.example.dev");
+    await setValue(usageUrl!, "https://admin.example.dev/api/usage");
     await setValue(
       container.querySelector<HTMLInputElement>('input[type="password"]')!,
       "secret",
@@ -466,6 +467,7 @@ describe("settings pages", () => {
       accountId: added!.id,
       baseUrl: "https://gw.example.dev",
       token: "secret",
+      usageUrl: "https://admin.example.dev/api/usage",
     });
   });
 

@@ -1006,16 +1006,18 @@ pub fn provider_account_endpoint(
 }
 
 /// Set up a Claude account to use an API endpoint and token instead of a
-/// claude.ai sign-in. An empty token keeps the current one.
+/// claude.ai sign-in. An empty token keeps the current one, and an empty
+/// usage URL means the gateway reports no usage.
 #[tauri::command(async)]
 pub fn provider_account_set_endpoint(
     app: AppHandle,
     account_id: String,
     base_url: String,
     token: String,
+    usage_url: String,
 ) -> Result<(), String> {
     let dir = provider_account_path(&app, "claude", &account_id)?;
-    crate::account_sync::set_claude_account_endpoint(&dir, &base_url, &token)
+    crate::account_sync::set_claude_account_endpoint(&dir, &base_url, &token, &usage_url)
 }
 
 /// Take a Claude account off its API endpoint, back to a claude.ai sign-in.

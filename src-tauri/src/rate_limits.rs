@@ -30,6 +30,8 @@ pub struct ClaudeUsageFetch {
     pub http_status: Option<u16>,
     pub body: Option<String>,
     pub error: Option<String>,
+    /// How an API-token account reaches Claude, e.g. "API token · host".
+    pub endpoint: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -393,6 +395,7 @@ fn usage_result(
         http_status,
         body,
         error,
+        endpoint: None,
     }
 }
 
@@ -410,17 +413,19 @@ pub async fn fetch_claude_usage(
 }
 
 fn fetch_claude_usage_sync(config_dir: Option<PathBuf>) -> Result<ClaudeUsageFetch, String> {
-    // An account on an API token has no claude.ai plan usage to show.
-    if let Some(endpoint) = config_dir
-        .as_deref()
-        .and_then(crate::account_sync::claude_account_endpoint)
-    {
-        return Ok(usage_result(
-            "endpoint",
-            None,
-            None,
-            Some(format!("API token · {}", endpoint.host())),
-        ));
+    // An account on an API token has no claude.ai plan; its gateway may
+    // report usage in the same layout instead.
+    if let Some(dir) = config_dir.as_deref() {
+        if let Some(endpoint) = crate::account_sync::claude_account_endpoint(dir) {
+            let label = format!("API token · {}", endpoint.host());
+            let token = crate::account_sync::claude_account_token(dir);
+            let mut result = match (endpoint.usage_url.as_deref(), token) {
+                (Some(url), Some(token)) => fetch_endpoint_usage(url, &token),
+                _ => usage_result("endpoint", None, None, None),
+            };
+            result.endpoint = Some(label);
+            return Ok(result);
+        }
     }
     let Some(creds) = read_claude_credentials(config_dir.as_deref()) else {
         return Ok(usage_result(
@@ -470,6 +475,39 @@ fn fetch_usage_with_token(token: &str) -> ClaudeUsageFetch {
             None,
             None,
             Some(format!("Claude usage request failed: {error}")),
+        ),
+    }
+}
+
+/// Usage from a gateway's own endpoint, authorized with the account's token.
+fn fetch_endpoint_usage(url: &str, token: &str) -> ClaudeUsageFetch {
+    let agent = ureq::AgentBuilder::new().timeout(HTTP_TIMEOUT).build();
+    let result = agent
+        .get(url)
+        .set("Authorization", &format!("Bearer {token}"))
+        .set("Accept", "application/json")
+        .set("User-Agent", USER_AGENT)
+        .call();
+    match result {
+        Ok(response) => {
+            let http_status = response.status();
+            let body = response.into_string().unwrap_or_default();
+            usage_result("ok", Some(http_status), Some(body), None)
+        }
+        Err(ureq::Error::Status(status, response)) => {
+            let _ = response.into_string();
+            usage_result(
+                "error",
+                Some(status),
+                None,
+                Some(format!("Usage endpoint returned HTTP {status}")),
+            )
+        }
+        Err(error) => usage_result(
+            "error",
+            None,
+            None,
+            Some(format!("Usage endpoint unreachable: {error}")),
         ),
     }
 }

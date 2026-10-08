@@ -51,7 +51,44 @@ vi.mock("../../../integrations/harness/core/jsonRpc", () => ({
   },
 }));
 
-import { fetchCodexRateLimits } from "./rateLimitsFetch";
+import { invoke } from "@tauri-apps/api/core";
+import { fetchClaudeRateLimits, fetchCodexRateLimits } from "./rateLimitsFetch";
+
+describe("fetchClaudeRateLimits", () => {
+  const endpoint = "API token · gw.example.dev";
+
+  it("reads a gateway's usage in Claude's layout", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce({
+      status: "ok",
+      endpoint,
+      body: JSON.stringify({
+        five_hour: { utilization: 42, resets_at: null },
+        seven_day: null,
+      }),
+    });
+    const limits = await fetchClaudeRateLimits("account-gw");
+    expect(limits.status).toBe("ok");
+    expect(limits.session?.usedPercent).toBe(42);
+  });
+
+  it("reads a gateway with nothing to report as a working token", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce({
+      status: "ok",
+      endpoint,
+      body: JSON.stringify({ five_hour: null, seven_day: null }),
+    });
+    const limits = await fetchClaudeRateLimits("account-gw");
+    expect(limits.status).toBe("untracked");
+    expect(limits.error).toBe(endpoint);
+  });
+
+  it("reads a token profile without a usage URL as untracked", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce({ status: "endpoint", endpoint });
+    const limits = await fetchClaudeRateLimits("account-gw");
+    expect(limits.status).toBe("untracked");
+    expect(limits.error).toBe(endpoint);
+  });
+});
 
 describe("fetchCodexRateLimits", () => {
   beforeEach(() => {

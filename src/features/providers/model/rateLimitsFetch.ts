@@ -80,6 +80,8 @@ type ClaudeUsageFetch = {
   httpStatus?: number | null;
   body?: string | null;
   error?: string | null;
+  /** Set for an API-token profile, e.g. "API token · host". */
+  endpoint?: string | null;
 };
 
 export async function fetchClaudeRateLimits(
@@ -89,16 +91,21 @@ export async function fetchClaudeRateLimits(
     const result = await invoke<ClaudeUsageFetch>("fetch_claude_usage", {
       accountId,
     });
+    const endpoint = result.endpoint?.trim();
     if (result.status === "ok" && result.body) {
       const parsed = parseClaudeOAuthUsage(result.body);
       if (parsed.session || parsed.weekly) return parsed;
+      // A gateway with nothing to report yet still works on its token.
+      if (endpoint && parsed.status === "ok") {
+        return untrackedRateLimits("claude", endpoint);
+      }
       return {
         ...parsed,
         status: parsed.status === "ok" ? "ok" : parsed.status,
       };
     }
     if (result.status === "endpoint") {
-      return untrackedRateLimits("claude", result.error?.trim() || "API token");
+      return untrackedRateLimits("claude", endpoint || "API token");
     }
     if (result.status === "unavailable") {
       return unavailableRateLimits(

@@ -3399,6 +3399,7 @@ type AccountEditor = {
   auth?: "signin" | "token";
   baseUrl?: string;
   token?: string;
+  usageUrl?: string;
   /** The profile already has a token, so leaving `token` blank keeps it. */
   hasToken?: boolean;
 };
@@ -3436,6 +3437,7 @@ function ProviderAccountsSettings() {
                 ...current,
                 auth: "token",
                 baseUrl: endpoint.baseUrl ?? "",
+                usageUrl: endpoint.usageUrl ?? "",
                 hasToken: true,
               }
             : current,
@@ -3459,11 +3461,7 @@ function ProviderAccountsSettings() {
         const accountId = editor.accountId;
         if (accountCanUseToken(editor.provider, accountId)) {
           if (editor.auth === "token") {
-            await setClaudeAccountEndpoint(
-              accountId,
-              editor.baseUrl ?? "",
-              editor.token ?? "",
-            );
+            await setClaudeAccountEndpoint(accountId, editorEndpoint(editor));
           } else if (editor.hasToken && editor.auth === "signin") {
             await clearClaudeAccountEndpoint(accountId);
             await loginHarness(editor.provider, accountId);
@@ -3474,11 +3472,7 @@ function ProviderAccountsSettings() {
       } else {
         const account = newProviderAccount(editor.provider, editor.label);
         if (editor.auth === "token") {
-          await setClaudeAccountEndpoint(
-            account.id,
-            editor.baseUrl ?? "",
-            editor.token ?? "",
-          );
+          await setClaudeAccountEndpoint(account.id, editorEndpoint(editor));
         } else {
           await loginHarness(editor.provider, account.id);
         }
@@ -3706,6 +3700,14 @@ function accountCanUseToken(
   return provider === "claude" && accountId !== DEFAULT_PROVIDER_ACCOUNT_ID;
 }
 
+function editorEndpoint(editor: AccountEditor) {
+  return {
+    baseUrl: editor.baseUrl ?? "",
+    token: editor.token ?? "",
+    usageUrl: editor.usageUrl ?? "",
+  };
+}
+
 /** A name, plus a token for a profile that uses one and has none yet. */
 function accountEditorReady(editor: AccountEditor): boolean {
   if (!editor.label.trim()) return false;
@@ -3832,6 +3834,20 @@ function ProviderAccountEditor({
             />
           </label>
         </div>
+      ) : null}
+      {usesToken ? (
+        <label className={fieldClass}>
+          <span className="sr-only">Usage URL</span>
+          <input
+            type="url"
+            value={editor.usageUrl ?? ""}
+            disabled={working}
+            placeholder="Usage URL (optional, Claude usage format)"
+            spellCheck={false}
+            onChange={(event) => onChange({ usageUrl: event.target.value })}
+            className={inputClass}
+          />
+        </label>
       ) : null}
     </form>
   );
