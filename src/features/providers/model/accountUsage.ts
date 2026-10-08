@@ -61,6 +61,9 @@ export function accountStatus(
   limits: ProviderRateLimits | undefined,
   now: number,
 ): AccountStatus {
+  if (limits?.status === "untracked") {
+    return { tone: "ready", label: limits.error || "API token", detail: null };
+  }
   const headroom = accountHeadroom(limits, now);
   if (!limits || headroom == null) {
     if (!limits || limits.status === "idle" || limits.status === "fetching") {

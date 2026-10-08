@@ -6,6 +6,7 @@ import {
   parseCodexRateLimits,
   parseOpencodeGoUsage,
   unavailableRateLimits,
+  untrackedRateLimits,
   type ProviderRateLimits,
 } from "./rateLimits";
 import {
@@ -95,6 +96,9 @@ export async function fetchClaudeRateLimits(
         ...parsed,
         status: parsed.status === "ok" ? "ok" : parsed.status,
       };
+    }
+    if (result.status === "endpoint") {
+      return untrackedRateLimits("claude", result.error?.trim() || "API token");
     }
     if (result.status === "unavailable") {
       return unavailableRateLimits(

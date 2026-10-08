@@ -994,6 +994,37 @@ pub(crate) fn provider_account_path(
         .join(account_id))
 }
 
+/// The API endpoint a Claude account uses instead of a claude.ai sign-in,
+/// if any. The token stays on the host.
+#[tauri::command(async)]
+pub fn provider_account_endpoint(
+    app: AppHandle,
+    account_id: String,
+) -> Result<Option<crate::account_sync::ClaudeEndpoint>, String> {
+    let dir = provider_account_path(&app, "claude", &account_id)?;
+    Ok(crate::account_sync::claude_account_endpoint(&dir))
+}
+
+/// Set up a Claude account to use an API endpoint and token instead of a
+/// claude.ai sign-in. An empty token keeps the current one.
+#[tauri::command(async)]
+pub fn provider_account_set_endpoint(
+    app: AppHandle,
+    account_id: String,
+    base_url: String,
+    token: String,
+) -> Result<(), String> {
+    let dir = provider_account_path(&app, "claude", &account_id)?;
+    crate::account_sync::set_claude_account_endpoint(&dir, &base_url, &token)
+}
+
+/// Take a Claude account off its API endpoint, back to a claude.ai sign-in.
+#[tauri::command(async)]
+pub fn provider_account_clear_endpoint(app: AppHandle, account_id: String) -> Result<(), String> {
+    let dir = provider_account_path(&app, "claude", &account_id)?;
+    crate::account_sync::clear_claude_account_endpoint(&dir)
+}
+
 #[tauri::command(async)]
 pub fn provider_account_remove(
     app: AppHandle,

@@ -218,6 +218,7 @@ import {
   subscribeProjectProviders,
 } from "../../sessions/model/projectProviders";
 import {
+  DEFAULT_PROVIDER_ACCOUNT_ID,
   newProviderAccount,
   providerAccounts,
   PROVIDER_ACCOUNT_PROVIDERS,
@@ -228,7 +229,13 @@ import {
   type ProviderAccount,
   type ProviderAccountProvider,
 } from "../../providers/model/providerAccounts";
-import { removeProviderAccountCredentials } from "../../providers/model/providerAccountCredentials";
+import {
+  claudeAccountEndpoint,
+  clearClaudeAccountEndpoint,
+  removeProviderAccountCredentials,
+  setClaudeAccountEndpoint,
+} from "../../providers/model/providerAccountCredentials";
+import { loadRateLimits } from "../../providers/model/rateLimitsCache";
 import {
   identityKey,
   identityOrganizationTag,
@@ -3388,6 +3395,12 @@ type AccountEditor = {
   provider: ProviderAccountProvider;
   accountId?: string;
   label: string;
+  /** Named Claude profiles can use an API token instead of a sign-in. */
+  auth?: "signin" | "token";
+  baseUrl?: string;
+  token?: string;
+  /** The profile already has a token, so leaving `token` blank keeps it. */
+  hasToken?: boolean;
 };
 
 function ProviderAccountsSettings() {
@@ -3413,11 +3426,29 @@ function ProviderAccountsSettings() {
       accountId: account.id,
       label: account.label,
     });
+    if (!accountCanUseToken(account.provider, account.id)) return;
+    void claudeAccountEndpoint(account.id)
+      .then((endpoint) => {
+        if (!endpoint) return;
+        setEditor((current) =>
+          current?.accountId === account.id && current.auth === undefined
+            ? {
+                ...current,
+                auth: "token",
+                baseUrl: endpoint.baseUrl ?? "",
+                hasToken: true,
+              }
+            : current,
+        );
+      })
+      .catch(() => {
+        // Without the endpoint the editor still renames the profile.
+      });
   };
 
   const submitEditor = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!editor || !editor.label.trim() || working) return;
+    if (!editor || !accountEditorReady(editor) || working) return;
     const key = editor.accountId
       ? `rename:${editor.provider}:${editor.accountId}`
       : `add:${editor.provider}`;
@@ -3425,10 +3456,32 @@ function ProviderAccountsSettings() {
     setError(null);
     try {
       if (editor.accountId) {
-        renameProviderAccount(editor.provider, editor.accountId, editor.label);
+        const accountId = editor.accountId;
+        if (accountCanUseToken(editor.provider, accountId)) {
+          if (editor.auth === "token") {
+            await setClaudeAccountEndpoint(
+              accountId,
+              editor.baseUrl ?? "",
+              editor.token ?? "",
+            );
+          } else if (editor.hasToken && editor.auth === "signin") {
+            await clearClaudeAccountEndpoint(accountId);
+            await loginHarness(editor.provider, accountId);
+          }
+          void loadRateLimits(editor.provider, accountId, true);
+        }
+        renameProviderAccount(editor.provider, accountId, editor.label);
       } else {
         const account = newProviderAccount(editor.provider, editor.label);
-        await loginHarness(editor.provider, account.id);
+        if (editor.auth === "token") {
+          await setClaudeAccountEndpoint(
+            account.id,
+            editor.baseUrl ?? "",
+            editor.token ?? "",
+          );
+        } else {
+          await loginHarness(editor.provider, account.id);
+        }
         saveProviderAccount(account);
       }
       setEditor(null);
@@ -3539,9 +3592,9 @@ function ProviderAccountsSettings() {
                     key={account.id}
                     editor={editor}
                     working={Boolean(working)}
-                    onLabel={(label) =>
+                    onChange={(patch) =>
                       setEditor((current) =>
-                        current ? { ...current, label } : current,
+                        current ? { ...current, ...patch } : current,
                       )
                     }
                     onCancel={() => setEditor(null)}
@@ -3620,9 +3673,9 @@ function ProviderAccountsSettings() {
                 <ProviderAccountEditor
                   editor={editor}
                   working={Boolean(working)}
-                  onLabel={(label) =>
+                  onChange={(patch) =>
                     setEditor((current) =>
-                      current ? { ...current, label } : current,
+                      current ? { ...current, ...patch } : current,
                     )
                   }
                   onCancel={() => setEditor(null)}
@@ -3645,29 +3698,51 @@ function ProviderAccountsSettings() {
   );
 }
 
+/** Only named Claude profiles can swap their sign-in for an API token. */
+function accountCanUseToken(
+  provider: ProviderAccountProvider,
+  accountId: string | undefined,
+): boolean {
+  return provider === "claude" && accountId !== DEFAULT_PROVIDER_ACCOUNT_ID;
+}
+
+/** A name, plus a token for a profile that uses one and has none yet. */
+function accountEditorReady(editor: AccountEditor): boolean {
+  if (!editor.label.trim()) return false;
+  if (editor.auth !== "token" || editor.hasToken) return true;
+  return Boolean(editor.token?.trim());
+}
+
 function ProviderAccountEditor({
   editor,
   working,
-  onLabel,
+  onChange,
   onCancel,
   onSubmit,
 }: {
   editor: AccountEditor;
   working: boolean;
-  onLabel: (label: string) => void;
+  onChange: (patch: Partial<AccountEditor>) => void;
   onCancel: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   const adding = !editor.accountId;
+  const canUseToken = accountCanUseToken(editor.provider, editor.accountId);
+  const usesToken = canUseToken && editor.auth === "token";
+  // Leaving a token profile signs in with the browser on save.
+  const signsIn = adding
+    ? !usesToken
+    : Boolean(editor.hasToken) && editor.auth === "signin";
+  const fieldClass =
+    "flex h-8 min-w-0 flex-1 items-center overflow-hidden rounded-md border border-content/10 bg-content/[0.04] focus-within:border-accent/45";
+  const inputClass =
+    "h-full w-full bg-transparent px-2.5 text-[12px] text-content outline-none placeholder:text-content/25 disabled:opacity-50";
   return (
     <form
-      className="flex h-12 items-center border-b border-content/5 px-4 py-2 last:border-b-0"
+      className="flex flex-col gap-2 border-b border-content/5 px-4 py-2 last:border-b-0"
       onSubmit={onSubmit}
     >
-      <div
-        data-provider-account-editor-field
-        className="flex items-center pr-1 h-8 min-w-0 flex-1 overflow-hidden rounded-md border border-content/10 bg-content/[0.04] focus-within:border-accent/45"
-      >
+      <div data-provider-account-editor-field className={`${fieldClass} pr-1`}>
         <label className="h-full min-w-0 flex-1">
           <span className="sr-only">Account name</span>
           <input
@@ -3678,10 +3753,30 @@ function ProviderAccountEditor({
             disabled={working}
             placeholder="Work or Personal"
             aria-label={`${adding ? "New" : "Rename"} ${HARNESS_TITLE[editor.provider]} account`}
-            onChange={(event) => onLabel(event.target.value)}
-            className="h-full w-full bg-transparent px-2.5 text-[12px] text-content outline-none placeholder:text-content/25 disabled:opacity-50"
+            onChange={(event) => onChange({ label: event.target.value })}
+            className={inputClass}
           />
         </label>
+        {canUseToken ? (
+          <button
+            type="button"
+            disabled={working}
+            aria-pressed={usesToken}
+            title={
+              usesToken
+                ? "Sign in with a Claude account instead"
+                : "Use an API endpoint and token instead of signing in"
+            }
+            onClick={() => onChange({ auth: usesToken ? "signin" : "token" })}
+            className={`mr-1 flex h-6 shrink-0 items-center rounded-[4.5px] px-2.5 text-[11px] transition-transform duration-150 active:scale-[0.97] disabled:opacity-40 ${
+              usesToken
+                ? "bg-accent/15 text-accent"
+                : "bg-content/[0.05] text-content/45 hover:bg-content/10 hover:text-content"
+            }`}
+          >
+            API token
+          </button>
+        ) : null}
         <button
           type="button"
           disabled={working}
@@ -3692,17 +3787,52 @@ function ProviderAccountEditor({
         </button>
         <button
           type="submit"
-          disabled={working || !editor.label.trim()}
+          disabled={working || !accountEditorReady(editor)}
           className="ml-1 flex h-6 shrink-0 items-center gap-1.5 rounded-[4.5px] bg-content px-2.5 text-[11px] font-medium text-background-base transition-transform duration-150 hover:bg-content/85 active:scale-[0.97] disabled:cursor-default disabled:opacity-40"
         >
           {working ? <Loader className="size-3 animate-spin" /> : null}
-          {adding
+          {signsIn
             ? working
               ? "Waiting for browser…"
-              : "Sign in and add"
-            : "Save"}
+              : adding
+                ? "Sign in and add"
+                : "Sign in and save"
+            : adding
+              ? "Add"
+              : "Save"}
         </button>
       </div>
+      {usesToken ? (
+        <div className="flex gap-2">
+          <label className={fieldClass}>
+            <span className="sr-only">API base URL</span>
+            <input
+              type="url"
+              value={editor.baseUrl ?? ""}
+              disabled={working}
+              placeholder="Base URL (blank for api.anthropic.com)"
+              spellCheck={false}
+              onChange={(event) => onChange({ baseUrl: event.target.value })}
+              className={inputClass}
+            />
+          </label>
+          <label className={fieldClass}>
+            <span className="sr-only">API token</span>
+            <input
+              type="password"
+              value={editor.token ?? ""}
+              disabled={working}
+              placeholder={
+                editor.hasToken ? "New token (blank keeps current)" : "API token"
+              }
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(event) => onChange({ token: event.target.value })}
+              className={inputClass}
+            />
+          </label>
+        </div>
+      ) : null}
     </form>
   );
 }

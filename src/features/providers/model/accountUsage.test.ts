@@ -83,6 +83,22 @@ describe("accountStatus", () => {
     });
   });
 
+  it("reads an API-token account as ready under its endpoint", () => {
+    expect(
+      accountStatus(
+        limits(null, null, {
+          status: "untracked",
+          error: "API token · gw.example.dev",
+        }),
+        now,
+      ),
+    ).toEqual({
+      tone: "ready",
+      label: "API token · gw.example.dev",
+      detail: null,
+    });
+  });
+
   it("reads Running low at or below 20% headroom", () => {
     expect(accountStatus(limits(window(84)), now)).toEqual({
       tone: "low",

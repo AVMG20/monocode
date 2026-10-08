@@ -410,6 +410,18 @@ pub async fn fetch_claude_usage(
 }
 
 fn fetch_claude_usage_sync(config_dir: Option<PathBuf>) -> Result<ClaudeUsageFetch, String> {
+    // An account on an API token has no claude.ai plan usage to show.
+    if let Some(endpoint) = config_dir
+        .as_deref()
+        .and_then(crate::account_sync::claude_account_endpoint)
+    {
+        return Ok(usage_result(
+            "endpoint",
+            None,
+            None,
+            Some(format!("API token · {}", endpoint.host())),
+        ));
+    }
     let Some(creds) = read_claude_credentials(config_dir.as_deref()) else {
         return Ok(usage_result(
             "unavailable",

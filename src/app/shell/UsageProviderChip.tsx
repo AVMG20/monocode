@@ -242,6 +242,15 @@ export function UsageProviderChip({
           <span className="animate-pulse text-content/35">···</span>
         ) : disconnected ? (
           <span className="text-content/35">not connected</span>
+        ) : limits.status === "untracked" ? (
+          <>
+            {accounts.length > 1 && activeAccount ? (
+              <span className="max-w-24 truncate text-content/45">
+                {activeAccount.label}
+              </span>
+            ) : null}
+            <span className="text-content/35">API token</span>
+          </>
         ) : windows.length === 0 ? (
           <span className="text-content/35">{emptyUsageLabel(limits)}</span>
         ) : (
@@ -1090,6 +1099,18 @@ function EmptyUsageState({
   limits: ProviderRateLimits;
   loading: boolean;
 }) {
+  if (limits.status === "untracked") {
+    return (
+      <div className="rounded-lg bg-content/[0.04] px-3 py-4 text-center ring-1 ring-inset ring-content/[0.06]">
+        <p className="text-[11px] font-medium text-content/65">
+          {limits.error || "API token"}
+        </p>
+        <p className="mx-auto mt-1 max-w-[15rem] text-[10px] leading-4 text-content/40">
+          This profile uses an API token, so there is no plan usage to show.
+        </p>
+      </div>
+    );
+  }
   return (
     <div className="rounded-lg bg-content/[0.04] px-3 py-4 text-center ring-1 ring-inset ring-content/[0.06]">
       <p className="text-[11px] font-medium text-content/65">

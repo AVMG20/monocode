@@ -875,6 +875,129 @@ fn write_json_atomic(path: &Path, value: &Value) -> Result<(), String> {
     })
 }
 
+/// Env vars that make an account talk to an API endpoint with a token
+/// instead of a claude.ai sign-in.
+const ENDPOINT_TOKEN_ENV: &[&str] = &["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"];
+const ENDPOINT_URL_ENV: &str = "ANTHROPIC_BASE_URL";
+
+/// An account that reaches Claude with an API token. The token itself never
+/// leaves the host process.
+#[derive(Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ClaudeEndpoint {
+    /// `None` for Anthropic's own API.
+    pub base_url: Option<String>,
+}
+
+impl ClaudeEndpoint {
+    /// The base URL's host, or "Anthropic API" without one.
+    pub(crate) fn host(&self) -> String {
+        match &self.base_url {
+            Some(url) => url::Url::parse(url)
+                .ok()
+                .and_then(|parsed| parsed.host_str().map(str::to_string))
+                .unwrap_or_else(|| url.clone()),
+            None => "Anthropic API".to_string(),
+        }
+    }
+}
+
+fn account_env(settings: &Value) -> Option<&Map<String, Value>> {
+    settings.get("env")?.as_object()
+}
+
+fn env_str<'a>(env: &'a Map<String, Value>, name: &str) -> Option<&'a str> {
+    env.get(name)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+}
+
+fn endpoint_token(env: &Map<String, Value>) -> Option<&str> {
+    ENDPOINT_TOKEN_ENV.iter().find_map(|name| env_str(env, name))
+}
+
+/// The endpoint an account uses, or `None` for a claude.ai sign-in.
+pub(crate) fn claude_account_endpoint(account_dir: &Path) -> Option<ClaudeEndpoint> {
+    let settings = read_json(&account_dir.join("settings.json")).ok().flatten()?;
+    let env = account_env(&settings)?;
+    endpoint_token(env)?;
+    Some(ClaudeEndpoint {
+        base_url: env_str(env, ENDPOINT_URL_ENV).map(str::to_string),
+    })
+}
+
+/// Edit the `env` of an account's `settings.json`, keeping everything else.
+fn edit_account_env(
+    account_dir: &Path,
+    edit: impl FnOnce(&mut Map<String, Value>) -> Result<(), String>,
+) -> Result<(), String> {
+    let path = account_dir.join("settings.json");
+    let mut root = read_json(&path)?.unwrap_or_else(|| Value::Object(Map::new()));
+    let Some(map) = root.as_object_mut() else {
+        return Err(format!("{} is not a JSON object", path.display()));
+    };
+    let env = map
+        .entry("env")
+        .or_insert_with(|| Value::Object(Map::new()));
+    if !env.is_object() {
+        *env = Value::Object(Map::new());
+    }
+    edit(env.as_object_mut().expect("env is an object"))?;
+    if map.get("env").and_then(Value::as_object).is_some_and(Map::is_empty) {
+        map.remove("env");
+    }
+    write_json_atomic(&path, &root)
+}
+
+/// Point an account at `base_url` (empty for Anthropic's own API) with
+/// `token`; an empty `token` keeps the one it has. The sync never copies
+/// these vars, so the account keeps them.
+pub(crate) fn set_claude_account_endpoint(
+    account_dir: &Path,
+    base_url: &str,
+    token: &str,
+) -> Result<(), String> {
+    let base_url = base_url.trim().trim_end_matches('/');
+    if !base_url.is_empty() {
+        let parsed =
+            url::Url::parse(base_url).map_err(|_| format!("{base_url} is not a valid URL"))?;
+        if parsed.scheme() != "https" && parsed.scheme() != "http" {
+            return Err(format!("{base_url} is not an http(s) URL"));
+        }
+    }
+    edit_account_env(account_dir, |env| {
+        let token = match token.trim() {
+            "" => endpoint_token(env)
+                .map(str::to_string)
+                .ok_or("An API token is required")?,
+            token => token.to_string(),
+        };
+        for name in ENDPOINT_TOKEN_ENV {
+            env.remove(*name);
+        }
+        // Anthropic's API takes a key as `x-api-key`; gateways take a bearer token.
+        if base_url.is_empty() {
+            env.remove(ENDPOINT_URL_ENV);
+            env.insert("ANTHROPIC_API_KEY".into(), Value::String(token));
+        } else {
+            env.insert(ENDPOINT_URL_ENV.into(), Value::String(base_url.into()));
+            env.insert("ANTHROPIC_AUTH_TOKEN".into(), Value::String(token));
+        }
+        Ok(())
+    })
+}
+
+/// Take an account off its API endpoint, back to a claude.ai sign-in.
+pub(crate) fn clear_claude_account_endpoint(account_dir: &Path) -> Result<(), String> {
+    edit_account_env(account_dir, |env| {
+        for name in ENDPOINT_TOKEN_ENV.iter().chain([&ENDPOINT_URL_ENV]) {
+            env.remove(*name);
+        }
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1103,6 +1226,75 @@ mod tests {
             read(&account.join("plugins/installed_plugins.json")),
             json!({ "version": 2, "plugins": { "a@m": [] } })
         );
+    }
+
+    #[test]
+    fn an_endpoint_account_keeps_its_token_and_reports_its_host() {
+        let (default, account) = profile();
+        write(&account.join("settings.json"), json!({ "model": "opus" }));
+        assert_eq!(claude_account_endpoint(&account), None);
+        set_claude_account_endpoint(&account, " https://gw.example.dev/ ", " tok ").unwrap();
+        write(
+            &default.dir.join("settings.json"),
+            json!({ "env": { "ANTHROPIC_AUTH_TOKEN": "default", "FOO": "1" } }),
+        );
+        sync_claude_account(&default, &account).unwrap();
+        assert_eq!(
+            read(&account.join("settings.json")),
+            json!({
+                "model": "opus",
+                "env": {
+                    "ANTHROPIC_BASE_URL": "https://gw.example.dev",
+                    "ANTHROPIC_AUTH_TOKEN": "tok",
+                    "FOO": "1"
+                }
+            })
+        );
+        let endpoint = claude_account_endpoint(&account).unwrap();
+        assert_eq!(endpoint.base_url.as_deref(), Some("https://gw.example.dev"));
+        assert_eq!(endpoint.host(), "gw.example.dev");
+    }
+
+    #[test]
+    fn an_endpoint_edit_without_a_token_keeps_the_current_one() {
+        let (_default, account) = profile();
+        set_claude_account_endpoint(&account, "https://gw.example.dev", "tok").unwrap();
+        set_claude_account_endpoint(&account, "", "").unwrap();
+        assert_eq!(
+            read(&account.join("settings.json")),
+            json!({ "env": { "ANTHROPIC_API_KEY": "tok" } })
+        );
+        assert_eq!(claude_account_endpoint(&account).unwrap().host(), "Anthropic API");
+
+        set_claude_account_endpoint(&account, "https://other.dev", "").unwrap();
+        assert_eq!(
+            read(&account.join("settings.json")),
+            json!({ "env": { "ANTHROPIC_BASE_URL": "https://other.dev", "ANTHROPIC_AUTH_TOKEN": "tok" } })
+        );
+    }
+
+    #[test]
+    fn clearing_an_endpoint_keeps_the_other_settings() {
+        let (_default, account) = profile();
+        write(
+            &account.join("settings.json"),
+            json!({ "model": "opus", "env": { "FOO": "1" } }),
+        );
+        set_claude_account_endpoint(&account, "https://gw.example.dev", "tok").unwrap();
+        clear_claude_account_endpoint(&account).unwrap();
+        assert_eq!(
+            read(&account.join("settings.json")),
+            json!({ "model": "opus", "env": { "FOO": "1" } })
+        );
+        assert_eq!(claude_account_endpoint(&account), None);
+    }
+
+    #[test]
+    fn an_endpoint_needs_a_token_and_an_http_url() {
+        let (_default, account) = profile();
+        assert!(set_claude_account_endpoint(&account, "https://gw.example.dev", " ").is_err());
+        assert!(set_claude_account_endpoint(&account, "ftp://gw.example.dev", "tok").is_err());
+        assert!(set_claude_account_endpoint(&account, "not a url", "tok").is_err());
     }
 
     #[test]

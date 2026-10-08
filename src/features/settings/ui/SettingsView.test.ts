@@ -417,6 +417,58 @@ describe("settings pages", () => {
     expect(providerAccounts("codex")).toHaveLength(1);
   });
 
+  it("adds a Claude profile on an API token without signing in", async () => {
+    await render("providers");
+    const setValue = async (input: HTMLInputElement, value: string) => {
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(
+          HTMLInputElement.prototype,
+          "value",
+        )!.set!.call(input, value);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    };
+    const addButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "Add account",
+    )!;
+    await act(async () => addButton.click());
+    await setValue(
+      container.querySelector<HTMLInputElement>(
+        '[aria-label="New Claude Code account"]',
+      )!,
+      "Gateway",
+    );
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('button[aria-pressed="false"]')!
+        .click(),
+    );
+    const submit = container.querySelector<HTMLButtonElement>(
+      'button[type="submit"]',
+    )!;
+    expect(submit.textContent).toBe("Add");
+    expect(submit.disabled).toBe(true);
+    await setValue(
+      container.querySelector<HTMLInputElement>('input[type="url"]')!,
+      "https://gw.example.dev",
+    );
+    await setValue(
+      container.querySelector<HTMLInputElement>('input[type="password"]')!,
+      "secret",
+    );
+    await act(async () => submit.click());
+
+    const added = providerAccounts("claude").find(
+      (account) => account.label === "Gateway",
+    );
+    expect(added).toBeDefined();
+    expect(invoke).toHaveBeenCalledWith("provider_account_set_endpoint", {
+      accountId: added!.id,
+      baseUrl: "https://gw.example.dev",
+      token: "secret",
+    });
+  });
+
   it("validates and stores Codex and OpenCode binary overrides", async () => {
     let failAutoCodex = false;
     vi.mocked(invoke).mockImplementation(async (command, args) => {
