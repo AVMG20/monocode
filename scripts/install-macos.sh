@@ -30,14 +30,9 @@ if [ ! -d "$BUILT" ]; then
 fi
 IDENTIFIER="$(defaults read "$BUILT/Contents/Info" CFBundleIdentifier)"
 
-# A previous install goes to the Trash rather than away, so an upstream copy
-# can still be recovered.
-if [ -d "$DEST" ]; then
-  TRASHED="$HOME/.Trash/MonoCode $(date +%Y%m%d-%H%M%S).app"
-  mv "$DEST" "$TRASHED"
-  "$LSREGISTER" -u "$TRASHED" >/dev/null 2>&1 || true
-  echo "Moved the previous install to $TRASHED"
-fi
+# Replaced in place: a copy moved to the Trash gets registered again by
+# LaunchServices and would keep competing for notification clicks.
+rm -rf "$DEST"
 ditto "$BUILT" "$DEST"
 
 # Forget every other bundle registered under this identifier, including the
