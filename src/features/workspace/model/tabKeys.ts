@@ -59,19 +59,6 @@ export type TabCommand =
   | { activate: number }
   | { focus: FocusDir };
 
-/** Dock interaction must still be selected when the shortcut is handled. */
-export function newTabDestination(
-  target: Element | null,
-  projectTerminalFocused = false,
-): "session" | "terminal" {
-  if (target)
-    return projectTerminalFocused &&
-      target.closest("[data-project-terminal-dock]")
-      ? "terminal"
-      : "session";
-  return projectTerminalFocused ? "terminal" : "session";
-}
-
 export function tabCommand(e: KeyboardEvent): TabCommand | null {
   if (e.isComposing) return null;
 
