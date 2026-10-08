@@ -1236,15 +1236,20 @@ function defaultShortcutsFor(command: string): string[] {
 /** Chord to owning command, covering defaults, live overrides and Quick Composer. */
 function shortcutOwners(): Map<string, string> {
   const owners = new Map<string, string>();
+  const overrides = loadKeybindingOverrides();
   for (const row of KEYBINDINGS) {
     // The Quick Composer chord is stored separately from the table.
-    const chords =
-      row.command === QUICK_COMPOSER_COMMAND
-        ? [loadQuickComposerShortcut()]
-        : defaultShortcutsFor(row.command);
-    for (const chord of chords) owners.set(chord, row.command);
+    if (row.command === QUICK_COMPOSER_COMMAND) {
+      owners.set(loadQuickComposerShortcut(), row.command);
+      continue;
+    }
+    // A rebound or disabled command no longer holds its default chord.
+    if (overrides[row.command]) continue;
+    for (const chord of defaultShortcutsFor(row.command)) {
+      owners.set(chord, row.command);
+    }
   }
-  for (const [command, override] of Object.entries(loadKeybindingOverrides())) {
+  for (const [command, override] of Object.entries(overrides)) {
     if (override.shortcut) owners.set(override.shortcut, command);
   }
   return owners;

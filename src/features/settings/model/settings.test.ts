@@ -284,6 +284,18 @@ describe("keybinding overrides", () => {
     ).toThrow("Already used by Tab: Cycle Next");
   });
 
+  it("frees a default chord once its command is rebound or disabled", () => {
+    const mod = IS_MAC ? "Command" : "Control";
+    saveKeybindingOverride("Tab: New", { shortcut: `${mod}+KeyN` });
+    expect(
+      saveKeybindingOverride("Terminal: New Tab", { shortcut: `${mod}+KeyT` }),
+    ).toMatchObject({ "Terminal: New Tab": { shortcut: `${mod}+KeyT` } });
+    saveKeybindingOverride("App: Go to File", { disabled: true });
+    expect(
+      saveKeybindingOverride("App: Search", { shortcut: `${mod}+KeyP` }),
+    ).toMatchObject({ "App: Search": { shortcut: `${mod}+KeyP` } });
+  });
+
   it("protects every chord in the grouped tab activation range", () => {
     const mod = IS_MAC ? "Command" : "Control";
     for (const digit of [1, 4, 8]) {
