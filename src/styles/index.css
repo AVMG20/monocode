@@ -2050,6 +2050,24 @@ header[data-tauri-drag-region] button {
   font-size: 10px;
 }
 
+.markdown-code-numbered-line::before {
+  content: counter(line);
+  counter-increment: line;
+  display: inline-block;
+  text-align: right;
+  user-select: none;
+}
+
+.markdown-code-token {
+  color: var(--sdm-c, inherit);
+  background-color: var(--sdm-tbg, transparent);
+}
+
+html:not(.theme-light) .markdown-code-token {
+  color: var(--shiki-dark, var(--sdm-c, inherit));
+  background-color: var(--shiki-dark-bg, var(--sdm-tbg, transparent));
+}
+
 .agent-markdown [data-streamdown="table-wrapper"] > div {
   border: 0;
   border-radius: 0;
@@ -2065,6 +2083,9 @@ header[data-tauri-drag-region] button {
 .agent-markdown [data-streamdown="table-cell"] {
   padding: 8px 10px;
   font-size: 12px;
+  /* Keep columns readable; narrow panes use the table's existing scroller. */
+  min-width: 10rem;
+  vertical-align: top;
 }
 
 .agent-markdown [data-streamdown="horizontal-rule"] {
@@ -2858,6 +2879,11 @@ html.theme-light .mono-pill {
   overflow: auto;
   overscroll-behavior: contain;
   overflow-anchor: none;
+  scrollbar-width: none;
+}
+
+.zen-phase-body > .zen-phase-live::-webkit-scrollbar {
+  display: none;
 }
 
 /*

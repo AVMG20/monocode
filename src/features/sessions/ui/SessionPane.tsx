@@ -232,6 +232,8 @@ export type SessionPaneProps = {
     path?: string,
     session?: { sessionId: string; cwd: string },
   ) => void;
+  /** Offer committing a settled turn's changes from its review card. */
+  onCommitChanges?: (session: { sessionId: string; cwd: string }) => void;
   onOpenPlan: (sessionId: string, blockId: string) => void;
   onBuildPlan: (
     sessionId: string,
@@ -355,6 +357,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   onQuestionInteraction,
   onOpenFile,
   onOpenDiff,
+  onCommitChanges,
   onShowMonoActivity,
   monoActivityTurnId,
   onShowMonoSessions,
@@ -1167,7 +1170,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
                         !session.inboxAsk &&
                         !session.worktreeRemoved &&
                         onHandoff
-                          ? (target, turn) => onHandoff(session.id, target, turn)
+                          ? (target, turn) =>
+                              onHandoff(session.id, target, turn)
                           : undefined
                       }
                       onJumpToBottomChange={jumpVisibility.setVisible}
@@ -1177,7 +1181,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
                       onScrollerChange={setTranscriptScroller}
                       editingLastTurn={editingLastTurn}
                       onEditLastTurn={
-                        editLastTurnSupported && !monoTranscript.viewingOlderPage
+                        editLastTurnSupported &&
+                        !monoTranscript.viewingOlderPage
                           ? () => {
                               onFocus(session.id);
                               recallLastTurnRef.current?.();
@@ -1209,6 +1214,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                               )
                             }
                             onOpenDiff={onOpenDiff}
+                            onCommit={onCommitChanges}
                           />
                         )
                       }
@@ -1258,7 +1264,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
                     onJump={() => {
                       if (monoTranscript.viewingOlderPage) {
                         monoTranscript.latest();
-                        requestAnimationFrame(() => jumpToBottomRef.current?.());
+                        requestAnimationFrame(() =>
+                          jumpToBottomRef.current?.(),
+                        );
                       } else jumpToBottomRef.current?.();
                     }}
                   />

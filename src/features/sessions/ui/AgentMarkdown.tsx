@@ -55,6 +55,8 @@ import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 import { InboxMedia } from "../../inbox/ui/InboxMedia";
 import { rehypeHardBreaks } from "./hardBreaks";
 import { rehypeWordFade, usePacedText, useWordFading } from "./wordFade";
+import { isFenceBlock, parseStreamingMarkdown } from "./streamingMarkdown";
+import { HighlightedCodeBlock } from "./HighlightedCodeBlock";
 
 const MERMAID_BASE_CONFIG = {
   startOnLoad: false,
@@ -131,6 +133,7 @@ const FileOpenContext = createContext<{
 }>({});
 
 const RemoteMediaContext = createContext(false);
+const MarkdownFadeContext = createContext(false);
 
 const REVEAL_LABEL = IS_MAC
   ? "Reveal in Finder"
@@ -225,7 +228,9 @@ const LANGUAGE_FILE_NAMES: Record<string, string> = {
 const PLAINTEXT_FENCE_LANGUAGES = new Set(["text", "plaintext", "txt", ""]);
 
 function highlightLanguageFor(language: string): string {
-  return PLAINTEXT_FENCE_LANGUAGES.has(language.toLowerCase()) ? "js" : language;
+  return PLAINTEXT_FENCE_LANGUAGES.has(language.toLowerCase())
+    ? "js"
+    : language;
 }
 
 type MarkdownLinkProps = ComponentProps<"a"> & { node?: unknown };
@@ -378,8 +383,7 @@ function MarkdownCode({
       {previewable ? (
         <ArtifactPreview code={code} language={fence.language} />
       ) : null}
-      <CodeBlock
-        className={className}
+      <HighlightedCodeBlock
         code={code}
         isIncomplete={incomplete}
         language={highlightLanguageFor(fence.language)}
@@ -544,7 +548,14 @@ const MARKDOWN_COMPONENTS = {
  * comes from the block inside it.
  */
 function DirectionalBlock({ dir, ...props }: BlockProps) {
-  const block = <Block {...props} />;
+  const fading = useContext(MarkdownFadeContext);
+  // Streamdown retains a parsed prose tree after the fade plugin changes.
+  // Remount prose to remove its word spans, but keep literal fences mounted:
+  // rebuilding all their highlighted tokens at fade-end causes a long frame.
+  const fence = isFenceBlock(props.content);
+  const block = (
+    <Block key={fence ? "code" : fading ? "fade" : "plain"} {...props} />
+  );
   return dir ? (
     <div dir={dir} className="agent-markdown-block">
       {block}
@@ -659,22 +670,23 @@ export const AgentMarkdown = memo(function AgentMarkdown({
     <RemoteMediaContext.Provider value={remoteMedia}>
       <FileOpenContext.Provider value={fileOpen}>
         <>
-          <Streamdown
-            // Streamdown keeps a parsed tree while the text is unchanged, so
-            // the plugin swap has to remount it once the fade is over.
-            key={fading ? "fade" : "plain"}
-            BlockComponent={DirectionalBlock}
-            className={`agent-markdown min-w-0 font-sans text-sm leading-6 ${fading ? "word-fading" : ""} ${className ?? ""}`}
-            components={MARKDOWN_COMPONENTS}
-            controls={false}
-            dir="auto"
-            isAnimating={!!streaming || paced.revealing}
-            plugins={MARKDOWN_PLUGINS}
-            remarkPlugins={remarkPlugins}
-            rehypePlugins={rehypePlugins}
-          >
-            {paced.text}
-          </Streamdown>
+          <MarkdownFadeContext.Provider value={fading}>
+            <Streamdown
+              BlockComponent={DirectionalBlock}
+              className={`agent-markdown min-w-0 font-sans text-sm leading-6 ${fading ? "word-fading" : ""} ${className ?? ""}`}
+              components={MARKDOWN_COMPONENTS}
+              controls={false}
+              dir="auto"
+              isAnimating={!!streaming || paced.revealing}
+              parseIncompleteMarkdown={false}
+              parseMarkdownIntoBlocksFn={parseStreamingMarkdown}
+              plugins={MARKDOWN_PLUGINS}
+              remarkPlugins={remarkPlugins}
+              rehypePlugins={rehypePlugins}
+            >
+              {paced.text}
+            </Streamdown>
+          </MarkdownFadeContext.Provider>
           {fileMenu ? (
             <ExplorerMenu
               x={fileMenu.x}
