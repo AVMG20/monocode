@@ -72,7 +72,7 @@ describe("background work", () => {
     expect(session.backgroundTasks).toEqual([
       { id: "b1", description: "npm test" },
     ]);
-    expect(sessionWorking({ ...session, busy: true })).toBe(false);
+    expect(sessionWorking({ ...session, busy: true })).toBe(true);
 
     session = applyHarnessEvent(session, {
       type: "background.updated",
@@ -89,7 +89,7 @@ describe("background work", () => {
     expect(session.backgroundTasks).toBeUndefined();
   });
 
-  it("keeps a yielded turn working while a subagent still runs", () => {
+  it("keeps a yielded turn working while its background work runs", () => {
     let session = appendUser(newSession("claude", "/tmp"), "hi");
     session = applyHarnessEvent(session, {
       type: "background.updated",
@@ -104,7 +104,8 @@ describe("background work", () => {
       type: "background.updated",
       tasks: [{ id: "b1", description: "npm run dev" }],
     });
-    expect(sessionWorking({ ...session, busy: true })).toBe(false);
+    expect(sessionWorking({ ...session, busy: true })).toBe(true);
+    expect(sessionWorking(stopStreaming(session))).toBe(false);
   });
 });
 
