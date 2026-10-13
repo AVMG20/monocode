@@ -1,4 +1,17 @@
-import type { CSSProperties, ReactNode } from "react";
+import {
+  useContext,
+  useEffect,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
+import {
+  PROJECT_PANEL_MIN,
+  ProjectPanelWidth,
+  projectPanelDefault,
+  projectPanelMax,
+  projectPanelWidth,
+  rememberProjectPanelWidth,
+} from "../../coordinator/ui/projectPanelWidth";
 import { IconButton } from "../../../app/shell/TitleBar";
 import { useDragResize } from "../../../shared/hooks/useDragResize";
 import { PanelRightToggle } from "../../../shared/ui/icons";
@@ -23,22 +36,36 @@ export function MonoSidebar({
   windowControls?: ReactNode;
   children: ReactNode;
 }) {
-  // Readers (documents, diffs) need room; the turn sidebars stay narrow.
+  // Readers (documents, diffs) need room; the turn sidebars stay narrow. In
+  // a project every side panel shares one width instead.
   const reader = kind === "artifact" || kind === "changes";
+  const project = useContext(ProjectPanelWidth);
   const resize = useDragResize({
-    min: reader ? 360 : MIN_WIDTH,
-    max: () =>
-      reader
-        ? Math.min(840, Math.round(window.innerWidth * 0.58))
-        : Math.min(440, Math.round(window.innerWidth * 0.4)),
-    defaultWidth: reader ? 560 : MIN_WIDTH,
-    initial: reader ? rememberedArtifactWidth : rememberedWidth,
+    min: project ? PROJECT_PANEL_MIN : reader ? 360 : MIN_WIDTH,
+    max: project
+      ? projectPanelMax
+      : () =>
+          reader
+            ? Math.min(840, Math.round(window.innerWidth * 0.58))
+            : Math.min(440, Math.round(window.innerWidth * 0.4)),
+    defaultWidth: project ? projectPanelDefault() : reader ? 560 : MIN_WIDTH,
+    initial: project
+      ? projectPanelWidth()
+      : reader
+        ? rememberedArtifactWidth
+        : rememberedWidth,
     direction: "left",
     onCommit: (width) => {
-      if (reader) rememberedArtifactWidth = width;
+      if (project) rememberProjectPanelWidth(width);
+      else if (reader) rememberedArtifactWidth = width;
       else rememberedWidth = width;
     },
   });
+  // Kept mounted while hidden: catch up with the width the others left.
+  const { sync } = resize;
+  useEffect(() => {
+    if (project && open) sync(projectPanelWidth());
+  }, [project, open, sync]);
   return (
     <aside
       ref={resize.setPaneRef}

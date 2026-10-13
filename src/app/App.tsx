@@ -96,6 +96,7 @@ import { MonoSessionsPanel } from "../features/monos/ui/MonoSessionsPanel";
 import { ThreadsList } from "../features/coordinator/ui/ThreadsList";
 import { ThreadsButton } from "../features/coordinator/ui/ThreadsButton";
 import { ThreadPanel } from "../features/coordinator/ui/ThreadPanel";
+import { ProjectPanelWidth } from "../features/coordinator/ui/projectPanelWidth";
 import {
   monoSpawnedSessions,
   recordMonoSpawnedSession,
@@ -13611,39 +13612,41 @@ function Workspace({
                       ))}
                     </main>
                   </div>
-                  {monoCovers ? monoDetailsPanel : null}
-                  {monoCovers ? monoActivityPanel : null}
-                  {monoCovers ? monoSessionsPanel : null}
-                  {threadPanel}
-                  {monoViewMono &&
-                  monoArtifact &&
-                  monoArtifact.sessionId === monoViewSession?.id ? (
-                    <ArtifactPanel
-                      key={monoArtifact.id}
-                      id={monoArtifact.id}
-                      color={monoViewMono.color}
-                      onClose={onCloseMonoArtifact}
-                      onOpenFile={onOpenFile}
-                      windowControls={
-                        monoCovers && !IS_MAC ? <WindowControls /> : undefined
-                      }
-                    />
-                  ) : null}
-                  {monoViewMono &&
-                  monoChanges &&
-                  monoChanges.sessionId === monoViewSession?.id ? (
-                    <MonoChangesPanel
-                      sessionId={monoChanges.sessionId}
-                      cwd={monoChanges.cwd}
-                      request={monoChanges.request}
-                      color={monoViewMono.color}
-                      textHarness={monoViewSession?.harness}
-                      onClose={onCloseMonoChanges}
-                      windowControls={
-                        monoCovers && !IS_MAC ? <WindowControls /> : undefined
-                      }
-                    />
-                  ) : null}
+                  <ProjectPanelWidth.Provider value={!!viewedProject}>
+                    {monoCovers ? monoDetailsPanel : null}
+                    {monoCovers ? monoActivityPanel : null}
+                    {monoCovers ? monoSessionsPanel : null}
+                    {threadPanel}
+                    {monoViewMono &&
+                    monoArtifact &&
+                    monoArtifact.sessionId === monoViewSession?.id ? (
+                      <ArtifactPanel
+                        key={monoArtifact.id}
+                        id={monoArtifact.id}
+                        color={monoViewMono.color}
+                        onClose={onCloseMonoArtifact}
+                        onOpenFile={onOpenFile}
+                        windowControls={
+                          monoCovers && !IS_MAC ? <WindowControls /> : undefined
+                        }
+                      />
+                    ) : null}
+                    {monoViewMono &&
+                    monoChanges &&
+                    monoChanges.sessionId === monoViewSession?.id ? (
+                      <MonoChangesPanel
+                        sessionId={monoChanges.sessionId}
+                        cwd={monoChanges.cwd}
+                        request={monoChanges.request}
+                        color={monoViewMono.color}
+                        textHarness={monoViewSession?.harness}
+                        onClose={onCloseMonoChanges}
+                        windowControls={
+                          monoCovers && !IS_MAC ? <WindowControls /> : undefined
+                        }
+                      />
+                    ) : null}
+                  </ProjectPanelWidth.Provider>
                 </div>
               </div>
               {searchViewOpen ? (

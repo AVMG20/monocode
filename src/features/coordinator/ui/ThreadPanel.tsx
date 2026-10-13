@@ -14,17 +14,13 @@ import {
   type ThreadSteps,
 } from "../model/coordinator";
 import { ThreadStepsBar } from "./ThreadStepsBar";
-
-const MIN_WIDTH = 420;
-/** The width the user last dragged to, for the rest of this run. */
-let rememberedWidth: number | undefined;
-
-function defaultWidth(): number {
-  return Math.max(
-    MIN_WIDTH,
-    Math.min(960, Math.round(window.innerWidth * 0.5)),
-  );
-}
+import {
+  PROJECT_PANEL_MIN,
+  projectPanelDefault,
+  projectPanelMax,
+  projectPanelWidth,
+  rememberProjectPanelWidth,
+} from "./projectPanelWidth";
 
 const STATUS_PILL: Record<ThreadStatus, string> = {
   waiting: "border-amber-400/30 bg-amber-400/10 text-amber-400",
@@ -64,15 +60,12 @@ export function ThreadPanel({
   children: ReactNode;
 }) {
   const resize = useDragResize({
-    min: MIN_WIDTH,
-    max: () =>
-      Math.max(MIN_WIDTH, Math.min(1200, Math.round(window.innerWidth * 0.7))),
-    defaultWidth: defaultWidth(),
-    initial: rememberedWidth ?? defaultWidth(),
+    min: PROJECT_PANEL_MIN,
+    max: projectPanelMax,
+    defaultWidth: projectPanelDefault(),
+    initial: projectPanelWidth(),
     direction: "left",
-    onCommit: (width) => {
-      rememberedWidth = width;
-    },
+    onCommit: rememberProjectPanelWidth,
   });
   const status = thread?.status;
   const solved = status === "solved";

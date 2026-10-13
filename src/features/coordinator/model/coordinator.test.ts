@@ -208,7 +208,7 @@ describe("threadView", () => {
     expect(result).toMatchObject({ status: "busy", activity: "Run npm test" });
   });
 
-  it("is solved when marked or archived, and when left inactive for a day", () => {
+  it("is solved when marked or archived, and when left inactive for three days", () => {
     expect(
       threadView({
         thread: thread({ resolvedAt: NOW }),

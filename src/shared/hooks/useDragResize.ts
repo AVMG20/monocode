@@ -136,9 +136,23 @@ export function useDragResize({
     commit(defaultRef.current);
   };
 
+  /** Takes on a width set elsewhere, such as by a panel shown before it. */
+  const sync = useCallback(
+    (next: number) => {
+      const value = clamp(next);
+      if (value === widthRef.current) return;
+      widthRef.current = value;
+      const pane = paneRef.current;
+      if (pane) pane.style.width = `${value}px`;
+      setWidth(value);
+    },
+    [clamp],
+  );
+
   return {
     width,
     dragging,
+    sync,
     setPaneRef,
     onPointerDown,
     onDoubleClick,
