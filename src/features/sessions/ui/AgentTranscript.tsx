@@ -5,6 +5,7 @@ import {
   ChevronRight,
   CircleDashed,
   Copy,
+  CornerUpLeft,
   FilePlusCorner,
   ListBullet,
   Minus,
@@ -216,6 +217,8 @@ type Props = {
   onShowWork?: (turnId: string, blocks: Block[]) => void;
   activeWorkTurnId?: string;
   onShowSessions?: (turnId: string, blocks: Block[]) => void;
+  /** Extra content under a turn, such as a coordinator's thread handoffs. */
+  turnExtras?: (turn: Block[]) => ReactNode;
   activeSessionsTurnId?: string;
   /** Marks when each message was sent, for one conversation kept over days. */
   daySeparators?: boolean;
@@ -284,6 +287,7 @@ function AgentTranscriptComponent({
   onShowWork,
   activeWorkTurnId,
   onShowSessions,
+  turnExtras,
   activeSessionsTurnId,
   daySeparators = false,
   hideTurnMetrics = false,
@@ -1174,6 +1178,43 @@ function AgentTranscriptComponent({
                 next.block.role === "user"
               );
             };
+            // Extras (a coordinator's thread cards) sit under the reply that
+            // follows the work they came from, not after later replies.
+            const extrasAfter = new Map<number, ReactNode>();
+            let extrasTail: ReactNode = null;
+            if (turnExtras) {
+              const runOf = new Map<string, number>();
+              runs.forEach((run, index) =>
+                run.forEach((block) => runOf.set(block.id, index)),
+              );
+              let pending: Block[] = [];
+              let lastProse = -1;
+              let lastProseRun = -1;
+              const flush = () => {
+                if (pending.length && lastProse >= 0) {
+                  extrasAfter.set(lastProse, turnExtras(pending));
+                  pending = [];
+                }
+              };
+              items.forEach((item, index) => {
+                if (item.type === "block" && isProseBlock(item.block)) {
+                  const run = runOf.get(item.block.id) ?? lastProseRun;
+                  if (lastProse >= 0 && run !== lastProseRun) flush();
+                  lastProse = index;
+                  lastProseRun = run;
+                  return;
+                }
+                if (lastProse >= 0) {
+                  flush();
+                  lastProse = -1;
+                }
+                pending.push(
+                  ...(item.type === "block" ? [item.block] : item.blocks),
+                );
+              });
+              flush();
+              if (pending.length) extrasTail = turnExtras(pending);
+            }
             const renderItem = (item: TurnItem, itemIndex: number) =>
               item.type === "subagents" && !inlineWork ? (
                 <SubagentStack
@@ -1417,8 +1458,17 @@ function AgentTranscriptComponent({
                         {renderItem(item, itemIndex)}
                       </div>
                     );
-                    if (itemIndex !== foldLineAt) return row;
-                    return [foldLineRow, row];
+                    const extras = extrasAfter.get(itemIndex);
+                    const rows = extras
+                      ? [
+                          row,
+                          <div key={`${turnItemKey(item)}:extras`}>
+                            {extras}
+                          </div>,
+                        ]
+                      : [row];
+                    if (itemIndex !== foldLineAt) return rows;
+                    return [foldLineRow, ...rows];
                   })
                   .concat(foldLineAt >= items.length ? [foldLineRow] : [])}
                 {settled &&
@@ -1435,6 +1485,7 @@ function AgentTranscriptComponent({
                         <OrchestrationPreview block={block} busy={!!busy} />
                       </div>
                     ))}
+                {extrasTail}
                 {settled && artifacts.length > 0 ? (
                   <div
                     data-artifact-results
@@ -2294,6 +2345,8 @@ function UserMessageBlock({
     ? `${messageLink.beforeText}${messageLink.afterText}`
     : text;
   const chat = layout === "chat";
+  // A project coordinator passed this on from the user: quoted, not spoken.
+  const forwardedBy = block.draft ? undefined : block.forwardedBy;
   const messageAt = block.sentAt ?? block.startedAt;
   const chatSpacing = compactFollowUp
     ? "pt-1 pb-0"
@@ -2477,18 +2530,25 @@ function UserMessageBlock({
               data-monocode={monocode ? "true" : undefined}
               data-chat-message={photos.length ? undefined : block.id}
               data-chat-message-role={photos.length ? undefined : "user"}
+              data-forwarded-by={forwardedBy}
               className={`user-message-bubble relative min-w-0 px-3 py-2 font-sans text-content transition-[background-color] duration-200 ${
-                block.draft
+                block.draft || forwardedBy
                   ? "border border-dashed border-content/30 bg-content/4"
                   : "bg-content/10"
               } ${editing ? "edit-last-turn-bubble" : ""} ${
-                bubbleTail && chat && !block.draft && !compactFollowUp
+                bubbleTail &&
+                chat &&
+                !block.draft &&
+                !forwardedBy &&
+                !compactFollowUp
                   ? `agent-chat-bubble-tail-right ${singleLine ? "[--agent-bubble-radius:1.125rem]" : "[--agent-bubble-radius:0.75rem]"}`
                   : ""
               } ${
                 chat
-                  ? `w-fit max-w-[min(100%,36rem)] ${singleLine ? "rounded-full" : "rounded-xl"}`
-                  : "rounded-lg border border-content/10"
+                  ? `w-fit max-w-[min(100%,36rem)] ${singleLine && !forwardedBy ? "rounded-full" : "rounded-xl"}`
+                  : forwardedBy
+                    ? "rounded-lg"
+                    : "rounded-lg border border-content/10"
               }`}
               style={{ zIndex: stickyIndex }}
             >
@@ -2516,7 +2576,7 @@ function UserMessageBlock({
                   ref={(element) => {
                     textRef.current = element;
                   }}
-                  className="user-message-with-link min-w-0 whitespace-pre-wrap break-words font-sans text-sm"
+                  className={`user-message-with-link min-w-0 whitespace-pre-wrap break-words font-sans text-sm ${forwardedBy ? "italic text-content/80" : ""}`}
                   data-selectable-agent-response={block.id}
                 >
                   {messageLink.beforeText}
@@ -2529,7 +2589,7 @@ function UserMessageBlock({
                   ref={(element) => {
                     textRef.current = element;
                   }}
-                  className={`min-w-0 whitespace-pre-wrap break-words font-sans text-sm ${expanded ? "" : "line-clamp-4"}`}
+                  className={`min-w-0 whitespace-pre-wrap break-words font-sans text-sm ${forwardedBy ? "italic text-content/80" : ""} ${expanded ? "" : "line-clamp-4"}`}
                 >
                   {displayText}
                 </pre>
@@ -2611,6 +2671,14 @@ function UserMessageBlock({
             </div>
           )}
         </div>
+        {forwardedBy ? (
+          <div
+            className={`flex items-center gap-1 px-1 pt-1 font-sans text-[11px] text-content/45 ${chat ? "justify-end self-end" : "justify-end"}`}
+          >
+            <CornerUpLeft aria-hidden className="size-3 shrink-0" />
+            <span>Forwarded by {forwardedBy}</span>
+          </div>
+        ) : null}
         {deliveryControl}
         {!compactFollowUp &&
         (text || block.attachments?.length || messageAt != null || onEdit) ? (

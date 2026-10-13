@@ -1,5 +1,10 @@
 import { NO_BRANCH_LABEL } from "../../features/source-control/model/worktrees";
 import {
+  allProjectThreadIds,
+  projectThreadsSnapshot,
+  subscribeProjectThreads,
+} from "../../features/coordinator/model/coordinator";
+import {
   type WorktreeFocus,
   inWorktreeFocus,
   useWorktreeFocus,
@@ -179,7 +184,7 @@ import { SourceControl } from "../../features/source-control/ui/SourceControl";
 import { GithubStarPrompt } from "./GithubStarPrompt";
 import {
   isMonoSession,
-  listMonos,
+  listAgentMonos,
   monoLook,
   monosSnapshot,
   subscribeMonos,
@@ -187,6 +192,10 @@ import {
 import type { PickerMonos } from "../../features/projects/ui/SearchableProjectPicker";
 import { isHabitRun } from "../../features/monos/model/monoHabits";
 import type { MonoRailProps } from "./MonoRailSection";
+import {
+  CompactCoordinatorItems,
+  type CoordinatorRailProps,
+} from "./CoordinatorRailSection";
 import {
   refreshRemoteProjectSessions,
   remoteRequest,
@@ -340,6 +349,8 @@ type Props = {
   monos?: MonoRailProps;
   /** A Mono fills the main area, which has no project sidebar. */
   monoViewActive?: boolean;
+  /** The Claude Projects on the rail; absent while they are off. */
+  coordinators?: CoordinatorRailProps;
 };
 
 function SidebarComponent({
@@ -433,6 +444,7 @@ function SidebarComponent({
   onDismissUpdate,
   monos,
   monoViewActive = false,
+  coordinators,
 }: Props) {
   const remoteProject = isRemoteProjectPath(cwd);
   const tab: SidebarTabId = requestedTab;
@@ -640,6 +652,12 @@ function SidebarComponent({
   const worktreeFocus = useWorktreeFocus(cwd);
   const focusedWorktree = remoteProject ? undefined : worktreeFocus;
   useSyncExternalStore(subscribeMonos, monosSnapshot);
+  // A project's threads live in its threads list, not the workspace's.
+  const threadsSnap = useSyncExternalStore(
+    subscribeProjectThreads,
+    projectThreadsSnapshot,
+  );
+  const projectThreadIds = useMemo(() => allProjectThreadIds(), [threadsSnap]);
   const listedSessions = mergeFolderSessionSummaries(
     projectSessions,
     remoteProject ? [] : openSessions,
@@ -647,6 +665,7 @@ function SidebarComponent({
   ).filter(
     (session) =>
       !isMonoSession(session.id) &&
+      !projectThreadIds.has(session.id) &&
       !session.sidebarHidden &&
       !("ephemeral" in session && session.ephemeral) &&
       !isHabitRun(session.id) &&
@@ -788,6 +807,12 @@ function SidebarComponent({
   // A remembered Mono sits underneath these views; select it only while visible.
   const railMonos = monos
     ? { ...monos, activeId: otherViewActive ? undefined : monos.activeId }
+    : undefined;
+  const railCoordinators = coordinators
+    ? {
+        ...coordinators,
+        activeId: otherViewActive ? undefined : coordinators.activeId,
+      }
     : undefined;
   // A blank session has no project to browse, so the shell stands alone until
   // one is picked — whether or not the rail is open.
@@ -1895,7 +1920,10 @@ function SidebarComponent({
                                 const collapsed = !entry.collapsed;
                                 if (isReminders) {
                                   setReminderSessionsCollapsed(collapsed);
-                                  saveReminderSessionsCollapsed(cwd, collapsed);
+                                  saveReminderSessionsCollapsed(
+                                    cwd,
+                                    collapsed,
+                                  );
                                   return;
                                 }
                                 setPinnedSessionsCollapsed(collapsed);
@@ -2253,6 +2281,7 @@ function SidebarComponent({
           titleBarAbove={titleBarAbove}
           monos={railMonos}
           monoViewActive={monoViewActive}
+          coordinators={railCoordinators}
         />
       ) : null}
       {railMounted.current && onSelectProject && onOpenProject ? (
@@ -2292,6 +2321,7 @@ function SidebarComponent({
           onOpenWhatsNew={onOpenWhatsNew}
           onDismissUpdate={onDismissUpdate}
           monos={railMonos}
+          coordinators={railCoordinators}
         />
       ) : null}
       {sidebarVisible ? sidebarContent : null}
@@ -2496,6 +2526,8 @@ function CompactProjectRail({
   titleBarAbove,
   monos,
   monoViewActive = false,
+  coordinators,
+  onReselectCoordinator,
 }: {
   cwd: string;
   recents: RecentProject[];
@@ -2527,12 +2559,16 @@ function CompactProjectRail({
   monos?: MonoRailProps;
   /** A Mono fills the main area: no workspace tab is the current one. */
   monoViewActive?: boolean;
+  /** Claude Projects, as mascot buttons below the shortcuts. */
+  coordinators?: CoordinatorRailProps;
+  /** Choosing the open project again; toggles its threads drawer. */
+  onReselectCoordinator?: () => void;
 }) {
   const monosSnap = useSyncExternalStore(subscribeMonos, monosSnapshot);
   const pickerMonos = useMemo((): PickerMonos | undefined => {
     if (!monos) return undefined;
     return {
-      items: listMonos().map((mono) => ({
+      items: listAgentMonos().map((mono) => ({
         id: mono.id,
         ...monoLook(mono),
         status: monos.states.get(mono.id)?.status ?? "idle",
@@ -2655,7 +2691,20 @@ function CompactProjectRail({
           onClick={action(automationsActive, onOpenAutomations)}
         />
       </div>
-      <div className="min-h-2 flex-1" />
+      {coordinators ? (
+        <div className="flex min-h-2 w-full flex-1 flex-col items-center overflow-y-auto overscroll-none">
+          <div
+            aria-hidden
+            className="mx-auto my-1.5 h-px w-6 shrink-0 bg-stroke"
+          />
+          <CompactCoordinatorItems
+            {...coordinators}
+            onReselect={onReselectCoordinator}
+          />
+        </div>
+      ) : (
+        <div className="min-h-2 flex-1" />
+      )}
       <div className="flex w-full flex-col items-center gap-1 py-1.5">
         <CompactRailAction
           label={`Settings (${MOD},)`}

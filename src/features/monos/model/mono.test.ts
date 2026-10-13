@@ -15,10 +15,17 @@ it("is idle between turns", () => {
 });
 
 it("needs the user when a provider usage limit stops the conversation", () => {
-  expect(monoState({ blocks: [], busy: false, usageLimit: { resetsAt: 1000 } }))
-    .toEqual({ status: "needs-you", activity: "Usage limit reached" });
-  expect(monoState({ blocks: [], busy: false, worktreeRemoved: true, usageLimit: {} }))
-    .toEqual({ status: "idle" });
+  expect(
+    monoState({ blocks: [], busy: false, usageLimit: { resetsAt: 1000 } }),
+  ).toEqual({ status: "needs-you", activity: "Usage limit reached" });
+  expect(
+    monoState({
+      blocks: [],
+      busy: false,
+      worktreeRemoved: true,
+      usageLimit: {},
+    }),
+  ).toEqual({ status: "idle" });
 });
 
 it("names the step it is on while working", () => {

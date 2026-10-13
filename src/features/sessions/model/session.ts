@@ -278,6 +278,10 @@ export type QueuedMessage = {
   intent?: TurnIntent;
   /** An app notification that must wait for an idle Mono, never steer its work. */
   monoSessionCompletion?: MonoSessionCompletion;
+  /** Queued by a project coordinator into its busy thread; its name. */
+  forwardedBy?: string;
+  /** Stable CLI request that queued it, for safe retries. */
+  appRequestId?: string;
   /** Delivery failed; the message remains available to retry or edit. */
   error?: string;
 };
@@ -334,6 +338,8 @@ export type Block = {
   intent?: Extract<TurnIntent, "plan" | "orchestrate">;
   /** Stable CLI request that submitted this turn, for safe retries. */
   appRequestId?: string;
+  /** A project coordinator sent this turn into its thread; its name. */
+  forwardedBy?: string;
   /** Provider-reported token metrics for this user turn, when available. */
   turnMetrics?: TurnMetrics;
   tool?: {

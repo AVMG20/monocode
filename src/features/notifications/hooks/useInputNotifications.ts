@@ -1,10 +1,15 @@
 import { useEffect, useMemo, useRef } from "react";
-import { notifySession, pendingInputNotifications } from "../model/notifications";
+import {
+  notifySession,
+  pendingInputNotifications,
+} from "../model/notifications";
 import type { Session } from "../../sessions/model/session";
 
 export function useInputNotifications(
   sessions: Session[],
   activeSessionId: string | undefined,
+  /** Also on screen beside it, like a project's coordinator and thread. */
+  alsoVisibleId?: string,
 ) {
   const inputNotifications = useMemo(
     () => pendingInputNotifications(sessions),
@@ -26,8 +31,8 @@ export function useInputNotifications(
       void notifySession(
         session,
         event,
-        session.id === activeSessionId,
+        session.id === activeSessionId || session.id === alsoVisibleId,
       );
     }
-  }, [activeSessionId, inputNotifications]);
+  }, [activeSessionId, alsoVisibleId, inputNotifications]);
 }

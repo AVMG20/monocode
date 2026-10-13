@@ -1,4 +1,5 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import { ArrowUp, Plus } from "../../../shared/ui/icons";
 import { AttachmentChip } from "../../sessions/ui/AttachmentChip";
@@ -25,13 +26,15 @@ const DROP_STATE = { current: { attachmentsSupported: true, remote: false } };
 
 /** Tallest the field grows before it scrolls, in px. */
 const MAX_HEIGHT = 160;
-const INPUT_COLUMNS = "grid-cols-[1.625rem_minmax(0,1fr)_1.625rem]";
+const INPUT_COLUMNS = "grid-cols-[1.625rem_minmax(0,1fr)_auto]";
 const FIELD_CLASSES =
   "scrollbar-none block min-w-0 w-full resize-none bg-transparent py-1 text-[13px] leading-4.5 text-content outline-none placeholder:text-content/35";
 
 type Props = {
   sessionId: string;
   name: string;
+  /** Replaces the default "Message {name}" hint. */
+  placeholder?: string;
   enabled?: boolean;
   focusToken?: number;
   quoteRequest?: QuoteRequest;
@@ -43,6 +46,8 @@ type Props = {
     attachments: Attachment[],
   ) => boolean | void | Promise<boolean | void>;
   onFocus?: () => void;
+  /** Sits beside the send button, such as the context meter. */
+  accessory?: ReactNode;
 };
 
 /**
@@ -54,6 +59,7 @@ type Props = {
 export function MonoComposer({
   sessionId,
   name,
+  placeholder,
   enabled = true,
   focusToken,
   quoteRequest,
@@ -61,6 +67,7 @@ export function MonoComposer({
   onDraftChange,
   onSubmit,
   onFocus,
+  accessory,
 }: Props) {
   const [text, setText] = useState(() => getComposerDraft(sessionId) ?? "");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -311,7 +318,7 @@ export function MonoComposer({
             ref={field}
             rows={1}
             aria-label={`Message ${name}`}
-            placeholder={`Message ${name}`}
+            placeholder={placeholder ?? `Message ${name}`}
             disabled={!enabled || submitting}
             value={text}
             onFocus={onFocus}
@@ -335,15 +342,20 @@ export function MonoComposer({
             }}
             className={`${FIELD_CLASSES} row-start-1 ${stacked ? "col-span-3 col-start-1 px-1.5" : "col-start-2"}`}
           />
-          <button
-            type="submit"
-            aria-label="Send"
-            title={pendingReads ? "Reading attachments…" : "Send"}
-            disabled={!ready}
-            className={`primary-action col-start-3 grid size-6.5 place-items-center rounded-md transition-[background-color,color,transform] duration-150 active:scale-90 disabled:cursor-default ${stacked ? "row-start-2" : "row-start-1"}`}
+          <div
+            className={`col-start-3 flex items-center gap-1.5 justify-self-end ${stacked ? "row-start-2" : "row-start-1"}`}
           >
-            <ArrowUp className="size-3.5" strokeWidth={2} />
-          </button>
+            {accessory}
+            <button
+              type="submit"
+              aria-label="Send"
+              title={pendingReads ? "Reading attachments…" : "Send"}
+              disabled={!ready}
+              className="primary-action grid size-6.5 place-items-center rounded-md transition-[background-color,color,transform] duration-150 active:scale-90 disabled:cursor-default"
+            >
+              <ArrowUp className="size-3.5" strokeWidth={2} />
+            </button>
+          </div>
         </div>
       </div>
     </form>

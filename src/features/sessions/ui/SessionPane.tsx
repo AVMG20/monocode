@@ -1,4 +1,12 @@
 import { GripVertical, X } from "../../../shared/ui/icons";
+import { ThreadHandoffs } from "../../coordinator/ui/ThreadHandoffs";
+import { ContextMeter } from "./ContextMeter";
+import {
+  coordinatorCompactAt,
+  coordinatorContextUsage,
+  threadHandoffs,
+  type ThreadView,
+} from "../../coordinator/model/coordinator";
 import {
   memo,
   useCallback,
@@ -73,6 +81,7 @@ import {
 } from "../model/transcriptJump";
 import { EmptySession } from "./EmptySession";
 import {
+  isCoordinatorProject,
   monoForSession,
   monoLook,
   monosSnapshot,
@@ -133,6 +142,8 @@ import { RemoteSession } from "../../connections/ui/RemoteSession";
 import { isRemoteProjectPath } from "../../projects/model/recents";
 import type { HostSession } from "../../connections/model/protocol";
 
+const NO_THREADS: readonly ThreadView[] = [];
+
 export type SessionPaneProps = {
   session: Session;
   workspaceSwitchingSessionId?: string;
@@ -155,6 +166,9 @@ export type SessionPaneProps = {
     blocks: Block[],
   ) => void;
   monoSessionsTurnId?: string;
+  /** A project coordinator's threads, for the handoff cards in its chat. */
+  projectThreads?: readonly ThreadView[];
+  onOpenProjectThread?: (sessionId: string) => void;
   recents: RecentProject[];
   hideProjectPicker?: boolean;
   onFocus: (sessionId: string) => void;
@@ -362,6 +376,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
   monoActivityTurnId,
   onShowMonoSessions,
   monoSessionsTurnId,
+  projectThreads,
+  onOpenProjectThread,
   onOpenPlan,
   onBuildPlan,
   onSecondOpinion,
@@ -422,6 +438,22 @@ const LocalSessionPane = memo(function LocalSessionPane({
   useSyncExternalStore(subscribeMonos, monosSnapshot);
   const mono = monoForSession(session.id);
   const agent = mono ? monoLook(mono) : undefined;
+  const coordinator = isCoordinatorProject(mono);
+  // Under each of its replies, the coordinator shows the threads it started
+  // or messaged in that turn and what it told them.
+  const turnExtras = useMemo(
+    () =>
+      coordinator
+        ? (turn: Block[]) => (
+            <ThreadHandoffs
+              handoffs={threadHandoffs(turn)}
+              threads={projectThreads ?? NO_THREADS}
+              onOpenThread={onOpenProjectThread}
+            />
+          )
+        : undefined,
+    [coordinator, projectThreads, onOpenProjectThread],
+  );
   // A Mono shows only its own background, never the project's or the app's.
   const projectBackground = mono
     ? monoChatBackground(mono.id)
@@ -1022,7 +1054,11 @@ const LocalSessionPane = memo(function LocalSessionPane({
             {remoteSessionLoading ? null : isEmpty ? (
               agent ? (
                 <div className="scrollbar-none h-full min-h-0 overflow-y-auto">
-                  <MonoHeader agent={agent} greeting />
+                  <MonoHeader
+                    agent={agent}
+                    greeting
+                    coordinator={coordinator}
+                  />
                 </div>
               ) : session.inboxAsk ? (
                 <div className="scrollbar-none h-full min-h-0 overflow-y-auto">
@@ -1091,7 +1127,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
                           : undefined
                       }
                       agentMascot={agent}
-                      bottomAligned={!!agent}
+                      // A project's coordinator reads like a session: each
+                      // message starts at the top, the reply scrolls under it.
+                      bottomAligned={!!agent && !coordinator}
                       inlineWork={!!agent}
                       messageDeliveries={agent ? messageDeliveries : undefined}
                       onRetryMessage={
@@ -1111,6 +1149,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                           : undefined
                       }
                       activeSessionsTurnId={monoSessionsTurnId}
+                      turnExtras={turnExtras}
                       // A Mono's turn keeps copy, save as note and the time.
                       daySeparators={!!agent}
                       hideTurnMetrics={!!agent}
@@ -1326,6 +1365,11 @@ const LocalSessionPane = memo(function LocalSessionPane({
                     key={session.id}
                     sessionId={session.id}
                     name={agent.name}
+                    placeholder={
+                      coordinator
+                        ? "Ask the coordinator or start a task…"
+                        : undefined
+                    }
                     enabled={visible}
                     quoteRequest={quoteRequest}
                     onQuoteRequestConsumed={acknowledgeQuote}
@@ -1338,6 +1382,18 @@ const LocalSessionPane = memo(function LocalSessionPane({
                         : undefined
                     }
                     onFocus={() => onFocus(session.id)}
+                    accessory={
+                      <ContextMeter
+                        usage={
+                          coordinator
+                            ? coordinatorContextUsage(
+                                session.context,
+                                coordinatorCompactAt(mono?.compactAt),
+                              )
+                            : session.context
+                        }
+                      />
+                    }
                     onSubmit={(text, attachments) =>
                       onSubmit(session.id, text, attachments)
                     }

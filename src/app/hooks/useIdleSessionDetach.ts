@@ -34,6 +34,7 @@ export function useIdleSessionDetach({
   skipForgetSessionIds,
   persistSession,
   setSessions,
+  keepSessionIds,
 }: {
   sessions: Session[];
   sessionsRef: RefObject<Session[]>;
@@ -47,11 +48,15 @@ export function useIdleSessionDetach({
   skipForgetSessionIds: RefObject<Set<string>>;
   persistSession: (session: Session | undefined) => void;
   setSessions: Dispatch<SetStateAction<Session[]>>;
+  /** Shown outside the workspace tabs, like a thread beside its project. */
+  keepSessionIds?: ReadonlySet<string>;
 }) {
   // Dropping a session re-renders the whole app, so it waits until a switch
   // has painted, and a burst of switches pays for it once.
   const detachInputs = useRef({ orchestrationRuns, liveAgentsEnabled });
   detachInputs.current = { orchestrationRuns, liveAgentsEnabled };
+  const keepRef = useRef(keepSessionIds);
+  keepRef.current = keepSessionIds;
   const unseenFinishedRef = useRef(unseenFinishedIds);
   unseenFinishedRef.current = unseenFinishedIds;
   const detachTimer = useRef<number | null>(null);
@@ -69,7 +74,10 @@ export function useIdleSessionDetach({
       if (
         session.inboxAsk ||
         isMonoSession(session.id) ||
-        isHabitRun(session.id)
+        isHabitRun(session.id) ||
+        keepRef.current?.has(session.id) ||
+        // A coordinator's message waits in the queue for the thread to idle.
+        session.queuedMessages?.some((message) => message.forwardedBy)
       )
         visibleIds.add(session.id);
     }
@@ -142,6 +150,7 @@ export function useIdleSessionDetach({
     liveAgentsEnabled,
     orchestrationRuns,
     detachIdleSessions,
+    keepSessionIds,
   ]);
 
   useEffect(

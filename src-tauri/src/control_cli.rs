@@ -141,7 +141,7 @@ Actions:
                   Save an unsent draft in an idle project session. Existing
                   drafts are preserved; send or remove one in MonoCode first.
                   Reuse --request-id on retries.
-  sessions.start {"prompt":"...","harness":"codex","model":"codex:...",
+  sessions.start {"prompt":"...","title":"<short name>","harness":"codex","model":"codex:...",
                   "effort":"high","reveal":false,
                   "workspaceMode":"current","worktreeCwd":"<path>","draft":false,
                   "placement":"right",

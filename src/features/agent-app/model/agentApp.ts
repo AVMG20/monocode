@@ -105,7 +105,7 @@ export type AgentAppHost = {
     prompt: string,
     requestId: string,
     notifyMonoId?: string,
-  ): Promise<{ alreadySubmitted: boolean }>;
+  ): Promise<{ alreadySubmitted: boolean; queued?: boolean }>;
   draft(
     id: string,
     prompt: string,
@@ -180,6 +180,7 @@ const FIELDS = new Map<string, readonly string[]>([
     "sessions.start",
     [
       "prompt",
+      "title",
       "draft",
       "harness",
       "model",
@@ -399,6 +400,7 @@ function startLaunch(
 ): QuickLaunch {
   const cwd = requireProject(source, input, host);
   const prompt = agentPrompt(input.prompt);
+  const title = optionalString(input.title, "title", 120)?.trim();
   const draft = input.draft ?? false;
   if (typeof draft !== "boolean") throw new Error("draft must be a boolean");
   const harness = input.harness ?? source.harness;
@@ -468,6 +470,7 @@ function startLaunch(
   return {
     cwd,
     prompt,
+    ...(title ? { title } : {}),
     ...(host.monoOf?.(source.id)?.showStartedSessionsInSidebar === false
       ? { sidebarHidden: true }
       : {}),
@@ -1019,7 +1022,8 @@ export async function handleAgentApp(
         sessionId: id,
         submitted: true,
         ...result,
-        ...(notifyMonoId ? { notifyOnComplete: true } : {}),
+        // A queued message is delivered later with no completion report.
+        ...(notifyMonoId && !result.queued ? { notifyOnComplete: true } : {}),
       };
     }
     case "sessions.draft": {

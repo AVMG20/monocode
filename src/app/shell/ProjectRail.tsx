@@ -90,6 +90,10 @@ import {
 import { remoteProjectFor } from "../../features/connections/model/remoteProjects";
 import { useProjectMenu } from "./useProjectMenu";
 import { MonoRailSection, type MonoRailProps } from "./MonoRailSection";
+import {
+  CoordinatorRailSection,
+  type CoordinatorRailProps,
+} from "./CoordinatorRailSection";
 
 type Props = {
   visible?: boolean;
@@ -128,6 +132,8 @@ type Props = {
   onDismissUpdate?: () => void;
   /** The Monos section above the projects; absent while Monos are off. */
   monos?: MonoRailProps;
+  /** The Claude Projects section below the Monos; absent while it is off. */
+  coordinators?: CoordinatorRailProps;
 };
 
 export function ProjectRail({
@@ -166,6 +172,7 @@ export function ProjectRail({
   onOpenWhatsNew,
   onDismissUpdate,
   monos,
+  coordinators,
 }: Props) {
   const resize = useDragResize({
     min: PROJECT_RAIL_WIDTH_MIN,
@@ -335,7 +342,8 @@ export function ProjectRail({
     inboxActive ||
     notesActive ||
     automationsActive ||
-    !!monos?.activeId;
+    !!monos?.activeId ||
+    !!coordinators?.activeId;
   const pinnedIds = sections.pinned.map((item) => item.path);
   const projectIds = groupedProjectSections.ungrouped.map((item) => item.path);
   const pinnedSortable = useAnimatedReorder(pinnedIds, onReorderPinned, "y");
@@ -427,6 +435,7 @@ export function ProjectRail({
                 introAvailable={visible && !!monos.introAvailable}
               />
             ) : null}
+            {coordinators ? <CoordinatorRailSection {...coordinators} /> : null}
 
             {sections.pinned.length > 0 ? (
               <ProjectSection

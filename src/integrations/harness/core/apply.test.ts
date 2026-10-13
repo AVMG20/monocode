@@ -1638,3 +1638,20 @@ describe("subagent steps", () => {
     expect(session.blocks[0].agentRun?.steps).toHaveLength(1);
   });
 });
+
+describe("forwarded turns", () => {
+  it("keeps who forwarded a new or steered turn", () => {
+    const started = appendUser(newSession("claude", "/tmp"), "Fix it", [], {
+      appRequestId: "app-coordinator-1",
+      forwardedBy: "Checkout coordinator",
+    });
+    expect(started.blocks.at(-1)).toMatchObject({
+      appRequestId: "app-coordinator-1",
+      forwardedBy: "Checkout coordinator",
+    });
+    const steered = appendSteerUser(started, "Also this", [], {
+      forwardedBy: "Checkout coordinator",
+    });
+    expect(steered.blocks.at(-1)?.forwardedBy).toBe("Checkout coordinator");
+  });
+});

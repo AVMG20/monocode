@@ -71,6 +71,12 @@ export type QuickLaunch = {
   worktreeCwd?: string;
   /** Bring the new session forward instead of starting it quietly. */
   reveal: boolean;
+  /** The new session's name, in place of one generated from the prompt. */
+  title?: string;
+  /** A project's thread: kept out of the workspace tabs until opened there. */
+  detached?: boolean;
+  /** The project coordinator that wrote the prompt, shown on the turn. */
+  forwardedBy?: string;
 };
 
 /** The panel exists on macOS only; elsewhere the shortcut is never claimed. */

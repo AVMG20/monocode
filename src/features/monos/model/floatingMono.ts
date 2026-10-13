@@ -2,7 +2,7 @@ import type { ApprovalDecision } from "../../../integrations/harness";
 import type { Attachment, Session } from "../../sessions/model/session";
 import type { UserQuestionReply } from "../../sessions/model/userQuestion";
 import { displayAttachments } from "../../sessions/model/attachments";
-import { listMonos, monoLook } from "./mono";
+import { listAgentMonos, monoLook } from "./mono";
 import { pixelLayers } from "../../projects/model/pixelMascots";
 
 export const FLOATING_MONO_CHANGED = "mono_chat_changed";
@@ -40,7 +40,7 @@ export type FloatingMonoRequest = {
 
 export function floatingMonoRoster(enabled: boolean): FloatingMonoEntry[] {
   return enabled
-    ? listMonos().map((mono) => ({
+    ? listAgentMonos().map((mono) => ({
         id: mono.id,
         ...monoLook(mono),
         sessionId: mono.sessionId ?? null,

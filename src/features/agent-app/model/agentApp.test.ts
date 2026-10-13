@@ -485,6 +485,21 @@ describe("agent app commands", () => {
     );
   });
 
+  it("promises no completion report for a follow-up queued behind a busy turn", async () => {
+    const { source, host } = fixture();
+    host.isMono = (id) => id === source.id;
+    host.send = vi.fn(async () => ({ alreadySubmitted: false, queued: true }));
+    const result = await handleAgentApp(
+      source,
+      "queued-send",
+      "sessions.send",
+      { sessionId: "other", prompt: "Also this", notifyOnComplete: true },
+      host,
+    );
+    expect(result).toMatchObject({ submitted: true, queued: true });
+    expect(result).not.toHaveProperty("notifyOnComplete");
+  });
+
   it.each([
     { reveal: undefined },
     { reveal: true },

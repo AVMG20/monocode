@@ -3,6 +3,7 @@ import {
   type MonoLook,
   type MonoState,
 } from "../model/mono";
+import { projectName } from "../../../shared/lib/paths";
 import { PixelMascot } from "../../projects/ui/PixelMascot";
 import { MonoStatus } from "./MonoStatus";
 
@@ -11,6 +12,8 @@ type Props = {
   state?: MonoState;
   /** Before the first message the header fills the pane and says hello. */
   greeting?: boolean;
+  /** A Claude Project's coordinator: its project name over its folder. */
+  coordinator?: boolean;
 };
 
 /**
@@ -22,7 +25,9 @@ export function MonoHeader({
   agent,
   state = { status: "idle" },
   greeting = false,
+  coordinator = false,
 }: Props) {
+  const folder = coordinator ? agent.projects[0]?.path : undefined;
   return (
     <header
       className={`flex flex-col items-center px-6 text-center font-sans ${
@@ -40,11 +45,21 @@ export function MonoHeader({
           {agent.name}
         </h2>
       </div>
+      {folder ? (
+        <p
+          className="mt-1.5 max-w-sm truncate text-[12px] text-content/40"
+          title={folder}
+        >
+          {projectName(folder)}
+        </p>
+      ) : null}
       {greeting ? (
         <p className="mt-3 max-w-sm text-[13px] leading-relaxed text-content/50">
-          {agent.projects.length
-            ? `I can see every session, note and folder in ${monoProjectsPhrase(agent.projects)}. Ask what’s going on, or hand me work.`
-            : "Add the projects I should work on from my details, or just ask me something."}
+          {coordinator
+            ? "Tell me what you need. I answer quick questions myself and hand real work to threads; you’ll see them on the left."
+            : agent.projects.length
+              ? `I can see every session, note and folder in ${monoProjectsPhrase(agent.projects)}. Ask what’s going on, or hand me work.`
+              : "Add the projects I should work on from my details, or just ask me something."}
         </p>
       ) : (
         <MonoStatus

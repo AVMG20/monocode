@@ -56,15 +56,28 @@ export function SoulPage({
   agent,
   files,
   onBack,
+  coordinator = false,
 }: {
   monoId: string;
   agent: MonoLook;
   files: MonoFiles | undefined;
   onBack: () => void;
+  /** A project's instructions: they reach the coordinator and its threads. */
+  coordinator?: boolean;
 }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-mono-soul>
-      <PageHeader title="Soul" onBack={onBack} />
+      <PageHeader
+        title={coordinator ? "Instructions" : "Soul"}
+        onBack={onBack}
+      />
+      {coordinator ? (
+        <p className="shrink-0 border-b border-stroke px-4 py-2.5 text-[11.5px] leading-relaxed text-content/50">
+          What the coordinator and every thread should keep in mind: code style,
+          how to test, what not to touch. The coordinator passes the parts that
+          matter on to each thread.
+        </p>
+      ) : null}
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-none">
         {files ? (
           <FileField
@@ -73,9 +86,15 @@ export function SoulPage({
             file="soul"
             value={files.soul}
             hash={files.soulHash}
-            label={`${agent.name} soul`}
+            label={
+              coordinator ? `${agent.name} instructions` : `${agent.name} soul`
+            }
             author={agent.name}
-            placeholder="Who it is, and what it should always keep in mind"
+            placeholder={
+              coordinator
+                ? "What the coordinator and its threads should always keep in mind"
+                : "Who it is, and what it should always keep in mind"
+            }
           />
         ) : (
           <Empty>Loading…</Empty>

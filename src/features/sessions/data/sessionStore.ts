@@ -287,6 +287,14 @@ function sanitizeQueuedMessages(value: unknown): QueuedMessage[] {
         ...(noteCard ? { noteCard } : {}),
         ...(handoffCard ? { handoffCard } : {}),
         ...(completion ? { monoSessionCompletion: completion } : {}),
+        ...(typeof message.forwardedBy === "string" &&
+        message.forwardedBy.trim()
+          ? { forwardedBy: message.forwardedBy.trim().slice(0, 120) }
+          : {}),
+        ...(typeof message.appRequestId === "string" &&
+        /^[A-Za-z0-9_-]{1,512}$/.test(message.appRequestId)
+          ? { appRequestId: message.appRequestId }
+          : {}),
         ...(["default", "plan", "build", "orchestrate"].includes(
           message.intent ?? "",
         )
@@ -923,6 +931,12 @@ function sanitizeBlock(
     /^[A-Za-z0-9_-]{1,512}$/.test(block.appRequestId)
   )
     next.appRequestId = block.appRequestId;
+  if (
+    block.role === "user" &&
+    typeof block.forwardedBy === "string" &&
+    block.forwardedBy.trim()
+  )
+    next.forwardedBy = block.forwardedBy.trim().slice(0, 120);
   if (
     block.role === "user" &&
     typeof block.providerTurnId === "string" &&

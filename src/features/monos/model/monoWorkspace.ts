@@ -51,10 +51,13 @@ async function loadMonoSession(
     const existing = await host.load(mono.sessionId);
     if (existing) return existing;
   }
-  const home = await host.home();
+  // A project's coordinator works from the project's folder; a Mono belongs
+  // to no single project, so it starts in the home folder.
+  const folder = mono.kind === "project" ? mono.projects[0] : undefined;
+  const cwd = folder ?? (await host.home());
   // Removed while the home folder was looked up.
   if (!findMono(monoId)) return undefined;
-  const session: Session = { ...host.create(home), runtimeMode: "auto" };
+  const session: Session = { ...host.create(cwd), runtimeMode: "auto" };
   saveMonoSessionId(monoId, session.id);
   host.add(session);
   return session;
@@ -94,6 +97,8 @@ export function detachMonoTabs(
   activeTabId: string,
   fallbackCwd: string,
   createSession: (cwd: string) => Session,
+  /** The panes to take out; a Mono's own by default. */
+  detach: (sessionId: string) => boolean = isMonoSession,
 ) {
   let changed = false;
   const removedProjects = new Set<string>();
@@ -104,7 +109,7 @@ export function detachMonoTabs(
       : undefined;
   const regularTabs: WorkspaceTab[] = [];
   for (const tab of tabs) {
-    const agentIds = leafIds(tab.layout).filter(isMonoSession);
+    const agentIds = leafIds(tab.layout).filter(detach);
     if (agentIds.length === 0) {
       regularTabs.push(tab);
       continue;

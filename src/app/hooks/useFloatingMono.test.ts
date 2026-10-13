@@ -29,6 +29,8 @@ vi.mock("../../features/monos/model/mono", () => ({
   findMono: (id: string) => ({ id, sessionId: `chat-${id}` }),
   listMonos: () =>
     ["first", "second"].map((id) => ({ id, sessionId: `chat-${id}` })),
+  listAgentMonos: () =>
+    ["first", "second"].map((id) => ({ id, sessionId: `chat-${id}` })),
   monoLook: () => ({ name: "Mono", mascot: "crab", color: "#aaf" }),
 }));
 

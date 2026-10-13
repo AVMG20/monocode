@@ -27,7 +27,7 @@ const ACTION_LABELS: Record<string, string> = {
 };
 
 /** Conservatively parse one shell invocation; compound commands use the shell row. */
-function shellWords(command: string): string[] | undefined {
+export function shellWords(command: string): string[] | undefined {
   const words: string[] = [];
   let word = "";
   let started = false;

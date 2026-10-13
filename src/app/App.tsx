@@ -93,6 +93,9 @@ import { WindowControls } from "./shell/WindowControls";
 import { MonoDetails } from "../features/monos/ui/MonoDetails";
 import { MonoActivityPanel } from "../features/monos/ui/MonoActivityPanel";
 import { MonoSessionsPanel } from "../features/monos/ui/MonoSessionsPanel";
+import { ThreadsList } from "../features/coordinator/ui/ThreadsList";
+import { ThreadsButton } from "../features/coordinator/ui/ThreadsButton";
+import { ThreadPanel } from "../features/coordinator/ui/ThreadPanel";
 import {
   monoSpawnedSessions,
   recordMonoSpawnedSession,
@@ -441,6 +444,7 @@ import {
   sessionWorking,
   newDefaultSession,
   newSession,
+  newSessionForProject,
   retargetSessionToProject,
   removeSessionDraft,
   sessionDisplayTitle,
@@ -546,9 +550,14 @@ import {
   operatorEnabledInThread,
 } from "../features/sessions/model/operatorCommand";
 import {
+  createCoordinatorProject,
   createMono,
   findMono,
+  isCoordinatorProject,
+  isCoordinatorSession,
   isMonoSession,
+  listAgentMonos,
+  listCoordinatorProjects,
   listMonos,
   monoForSession,
   monoLook,
@@ -569,6 +578,24 @@ import {
   writeAgentFile,
 } from "../features/monos/model/monoFiles";
 import { useMonoHabits } from "./hooks/useMonoHabits";
+import { useCoordinatorThreads } from "./hooks/useCoordinatorThreads";
+import { useThreadPlans } from "./hooks/useThreadPlans";
+import {
+  addProjectThread,
+  coordinatorContext,
+  coordinatorCompactAt,
+  coordinatorOverBudget,
+  coordinatorPromptKey,
+  COORDINATOR_PROMPT_VERSION,
+  allProjectThreadIds,
+  forgetProjectThreads,
+  projectThreadsSnapshot,
+  subscribeProjectThreads,
+  projectForThread,
+  resolveProjectThread,
+  threadRules,
+  threadsBrief,
+} from "../features/coordinator/model/coordinator";
 import { useFloatingMono } from "./hooks/useFloatingMono";
 import {
   dropRelays,
@@ -835,6 +862,8 @@ type SubmitOptions = ComposerTurnOptions & {
   managed?: boolean;
   orchestrationRetry?: OrchestrationProposal;
   appRequestId?: string;
+  /** A project coordinator forwarded this turn into its thread. */
+  forwardedBy?: string;
   monoSessionCompletion?: Block["monoSessionCompletion"];
   onSettled?: (outcome: ControlOutcome) => void;
   /** Generate a fresh title even when this is not the session's first turn. */
@@ -1087,6 +1116,18 @@ function Workspace({
     () => windowTransfer?.activeTabId ?? resumed?.activeTabId ?? seed.tab.id,
   );
   const [monoViewId, setMonoViewId] = useState<string | null>(null);
+  /** The thread open beside each project's coordinator, by project id. */
+  const [openThreadIds, setOpenThreadIds] = useState<Record<string, string>>(
+    {},
+  );
+  const openThreadIdsRef = useRef(openThreadIds);
+  openThreadIdsRef.current = openThreadIds;
+  /** Projects whose threads panel is open on its list. */
+  const [threadListOpen, setThreadListOpen] = useState<Record<string, boolean>>(
+    {},
+  );
+  /** The open thread, rather than the coordinator, has the user's focus. */
+  const [threadPaneFocused, setThreadPaneFocused] = useState(false);
   const [monoDetailsOpen, setMonoDetailsOpen] = useState(false);
   const [monoArtifact, setMonoArtifact] = useState<{
     sessionId: string;
@@ -1379,12 +1420,38 @@ function Workspace({
     sessionsRef.current = [...sessions, ...migration.addedSessions];
     setTabs(migration.tabs);
     setSessions(sessionsRef.current);
+    activeTabIdRef.current = migration.activeTabId;
     setActiveTabIdState(migration.activeTabId);
     if (migration.agentViewId) {
       monoViewIdRef.current = migration.agentViewId;
       setMonoViewId(migration.agentViewId);
     }
   }, [tabs, sessions, activeTabId, projectCwd]);
+
+  // A project's thread lives in its project. Restoring the workspace brings
+  // back the threads that were running at quit as tabs; take them out once.
+  // Later, a thread the user moves to a tab on purpose stays there.
+  const threadTabsStripped = useRef(false);
+  useLayoutEffect(() => {
+    if (threadTabsStripped.current) return;
+    threadTabsStripped.current = true;
+    // Read through the refs: the Mono migration above may have run first.
+    const migration = detachMonoTabs(
+      tabsRef.current,
+      sessionsRef.current,
+      activeTabIdRef.current,
+      projectCwdRef.current,
+      (cwd) => newDefaultSession(cwd),
+      (id) => !!projectForThread(id),
+    );
+    if (!migration) return;
+    tabsRef.current = migration.tabs;
+    sessionsRef.current = [...sessionsRef.current, ...migration.addedSessions];
+    activeTabIdRef.current = migration.activeTabId;
+    setTabs(migration.tabs);
+    setSessions(sessionsRef.current);
+    setActiveTabIdState(migration.activeTabId);
+  }, []);
 
   const projectWorktree = useWorktreeFocus(projectCwd);
   /** Tab or session id -> the workspace it was opened or moved in. A tab
@@ -1474,7 +1541,12 @@ function Workspace({
   const foregroundSurfaceRef = useRef<{
     workspaceVisible: boolean;
     standaloneSessionId?: string;
+    /** A project's thread, open beside its coordinator. */
+    besideSessionId?: string;
   }>({ workspaceVisible: true });
+  const besideThreadId = monoViewId
+    ? openThreadIds[monoForSession(monoViewId)?.id ?? ""]
+    : undefined;
   foregroundSurfaceRef.current = {
     workspaceVisible:
       !searchViewOpen &&
@@ -1490,6 +1562,14 @@ function Workspace({
           !automationsViewOpen &&
           !settingsOpen
         ? (monoViewId ?? undefined)
+        : undefined,
+    besideSessionId:
+      !searchViewOpen &&
+      !inboxViewOpen &&
+      !notesViewOpen &&
+      !automationsViewOpen &&
+      !settingsOpen
+        ? besideThreadId
         : undefined,
   };
   const notesViewOpenRef = useRef(notesViewOpen);
@@ -1589,6 +1669,7 @@ function Workspace({
           // Standalone conversations live outside the workspace tab tree.
           return (
             foregroundSurfaceRef.current.standaloneSessionId === sessionId ||
+            foregroundSurfaceRef.current.besideSessionId === sessionId ||
             (foregroundSurfaceRef.current.workspaceVisible &&
               !!tab &&
               (leafIds(tab.layout).includes(sessionId) ||
@@ -1791,6 +1872,18 @@ function Workspace({
     ? sessions.find((session) => session.id === monoViewId)
     : undefined;
   const monoCovers = !!monoViewId;
+  // A project is a Mono of kind "project": its coordinator's chat is the
+  // Mono view, its threads fill the sidebar and one opens beside the chat.
+  const viewedMono = monoViewId ? monoForSession(monoViewId) : undefined;
+  const viewedProject = isCoordinatorProject(viewedMono)
+    ? viewedMono
+    : undefined;
+  const openThreadId = viewedProject
+    ? openThreadIds[viewedProject.id]
+    : undefined;
+  const openThreadSession = openThreadId
+    ? sessions.find((session) => session.id === openThreadId)
+    : undefined;
   const activeTabSessionIds = activeTab ? leafIds(activeTab.layout) : [];
   const activeLinkedWorkItemPanel = activeTab
     ? (linkedWorkItemPanels.get(activeTab.focusedId) ??
@@ -1961,25 +2054,29 @@ function Workspace({
     }
     return [];
   }, [active?.harness]);
+  // In a project the footer follows the coordinator, or the thread in focus.
+  const footerSession = viewedProject
+    ? ((threadPaneFocused ? openThreadSession : undefined) ?? monoViewSession)
+    : active;
   const usageSession = useMemo(() => {
-    if (!active) return undefined;
+    if (!footerSession) return undefined;
     return {
-      id: active.id,
-      harness: active.harness,
-      model: active.model,
-      authRequired: latestTurnNeedsHarnessLogin(active.blocks),
+      id: footerSession.id,
+      harness: footerSession.harness,
+      model: footerSession.model,
+      authRequired: latestTurnNeedsHarnessLogin(footerSession.blocks),
       providerAccountId:
-        active.providerAccountId ??
-        (active.blocks.some((block) => block.role === "user")
+        footerSession.providerAccountId ??
+        (footerSession.blocks.some((block) => block.role === "user")
           ? DEFAULT_PROVIDER_ACCOUNT_ID
           : undefined),
     };
   }, [
-    active?.id,
-    active?.harness,
-    active?.model,
-    active?.blocks,
-    active?.providerAccountId,
+    footerSession?.id,
+    footerSession?.harness,
+    footerSession?.model,
+    footerSession?.blocks,
+    footerSession?.providerAccountId,
   ]);
   // Every working Claude or Codex session keeps its account's usage fresh,
   // whichever session is on screen.
@@ -2078,7 +2175,11 @@ function Workspace({
 
   const activeSessionId = inboxViewOpen
     ? inboxAskPortal?.sessionId
-    : (monoViewSession?.id ?? active?.id);
+    : ((openThreadSession && threadPaneFocused
+        ? openThreadSession.id
+        : undefined) ??
+      monoViewSession?.id ??
+      active?.id);
   const activeSessionIdRef = useRef(activeSessionId);
   activeSessionIdRef.current = activeSessionId;
 
@@ -2088,7 +2189,15 @@ function Workspace({
     () => sessions.filter((session) => !session.ephemeral),
     [sessions],
   );
-  useInputNotifications(promptableSessions, activeSessionId);
+  // In a project the coordinator and the open thread are both on screen.
+  const besideSessionId = openThreadSession
+    ? activeSessionId === openThreadSession.id
+      ? monoViewSession?.id
+      : openThreadSession.id
+    : undefined;
+  const besideSessionIdRef = useRef(besideSessionId);
+  besideSessionIdRef.current = besideSessionId;
+  useInputNotifications(promptableSessions, activeSessionId, besideSessionId);
 
   // Cache the OS decision so a turn ending later can skip a denied banner.
   useEffect(() => {
@@ -2099,28 +2208,61 @@ function Workspace({
     busySessionIds,
     activeSessionId,
   );
+  const coordinatorThreads = useCoordinatorThreads(
+    sessions,
+    unseenFinishedIds,
+    monosSnap,
+  );
+  useThreadPlans(sessions);
+  const coordinatorThreadsRef = useRef(coordinatorThreads);
+  coordinatorThreadsRef.current = coordinatorThreads;
+  const keptThreadIds = useMemo(
+    () => new Set(Object.values(openThreadIds)),
+    [openThreadIds],
+  );
 
+  // Monos and Claude Projects show their own work: a coordinator and its
+  // threads stay off the folder's rail row. Running threads still list with
+  // the live agents, and open in their project from there.
+  const projectThreadsSnap = useSyncExternalStore(
+    subscribeProjectThreads,
+    projectThreadsSnapshot,
+  );
+  const monoSessionIds = useMemo(
+    () =>
+      new Set(
+        listMonos().flatMap((mono) => (mono.sessionId ? [mono.sessionId] : [])),
+      ),
+    // The roster is read through its snapshot.
+    [monosSnap],
+  );
+  const agentOwnedIds = useMemo(
+    () => new Set([...monoSessionIds, ...allProjectThreadIds()]),
+    // The threads are read through their snapshot.
+    [monoSessionIds, projectThreadsSnap],
+  );
   const liveAgents = useMemo(
     () =>
       liveAgentsEnabled
         ? liveAgentsFromSessions(
             promptableSessions,
             unseenFinishedIds,
-            new Set(
-              listMonos().flatMap((mono) =>
-                mono.sessionId ? [mono.sessionId] : [],
-              ),
-            ),
+            monoSessionIds,
           )
         : [],
-    [liveAgentsEnabled, promptableSessions, unseenFinishedIds, monosSnap],
+    [liveAgentsEnabled, promptableSessions, unseenFinishedIds, monoSessionIds],
   );
 
   const hiddenApprovalToasts = useMemo(
     () =>
       hiddenApprovalNotices(
         monoViewId
-          ? promptableSessions.filter((session) => session.id !== monoViewId)
+          ? promptableSessions.filter(
+              // The open thread is on screen beside its coordinator.
+              (session) =>
+                session.id !== monoViewId &&
+                session.id !== openThreadSession?.id,
+            )
           : promptableSessions,
         monoCovers ? "" : activeTabId,
         tabs,
@@ -2133,6 +2275,7 @@ function Workspace({
       composerFocused,
       monoViewId,
       monoCovers,
+      openThreadSession?.id,
     ],
   );
   const [reminderNoticesHeight, setReminderNoticesHeight] = useState(0);
@@ -2507,6 +2650,7 @@ function Workspace({
     skipForgetSessionIds,
     persistSession,
     setSessions,
+    keepSessionIds: keptThreadIds,
   });
 
   const activateTab = useCallback(
@@ -4031,6 +4175,7 @@ function Workspace({
       projectTerminalFocusedRef.current = false;
       if (paneId === monoViewIdRef.current) {
         setProjectTerminalFocused(false);
+        setThreadPaneFocused(false);
         setComposerFocused(true);
         return;
       }
@@ -4693,6 +4838,8 @@ function Workspace({
       monoViewIdRef.current = session.id;
       setMonoViewId(session.id);
       setProjectTerminalFocused(false);
+      // A project opens on its coordinator, not the thread beside it.
+      setThreadPaneFocused(false);
       setComposerFocused(true);
       setComposerFocusToken((token) => token + 1);
     },
@@ -4709,7 +4856,7 @@ function Workspace({
     if (!monosEnabled) return;
     const last = lastMonoIdRef.current;
     const monoId =
-      (last && findMono(last) ? last : undefined) ?? listMonos()[0]?.id;
+      (last && findMono(last) ? last : undefined) ?? listAgentMonos()[0]?.id;
     if (monoId) void onOpenMono(monoId);
   }, [closeMonoView, monosEnabled, onOpenMono]);
 
@@ -4792,9 +4939,41 @@ function Workspace({
     [invalidateLoadedSession, stopSessionForRemoval],
   );
 
+  /** A project's thread opens in its project, wherever it was picked from. */
+  const openThreadInProjectRef = useRef<
+    (projectId: string, sessionId: string) => Promise<void>
+  >(async () => {});
+  /** Threads the user asked to move into a workspace tab, just this once. */
+  const threadsToWorkspace = useRef(new Set<string>());
+  const threadProjectOf = useCallback((sessionId: string) => {
+    if (threadsToWorkspace.current.has(sessionId)) return undefined;
+    // One the user moved into a workspace tab stays there until closed.
+    if (findOpenSessionTab(tabsRef.current, sessionsRef.current, sessionId))
+      return undefined;
+    const projectId = projectForThread(sessionId);
+    return projectId && isCoordinatorProject(findMono(projectId))
+      ? projectId
+      : undefined;
+  }, []);
+  /** Opens a thread in its project; false for any other session. */
+  const routeThreadToProject = useCallback(
+    (sessionId: string) => {
+      const projectId = threadProjectOf(sessionId);
+      if (!projectId) return false;
+      void openThreadInProjectRef.current(projectId, sessionId);
+      return true;
+    },
+    [threadProjectOf],
+  );
+
   const onSelectHistorySession = useCallback(
     async (sessionId: string) => {
       workspaceNavigation.cancel();
+      const threadProject = threadProjectOf(sessionId);
+      if (threadProject) {
+        await openThreadInProjectRef.current(threadProject, sessionId);
+        return;
+      }
       let session = await ensureOpenSession(sessionId);
       if (!session || session.inboxAsk) return;
       const mono = monoForSession(session.id);
@@ -4830,6 +5009,7 @@ function Workspace({
     [
       appendTab,
       ensureOpenSession,
+      threadProjectOf,
       onOpenMono,
       focusOpenSession,
       replaceBlankPaneWithSession,
@@ -4837,19 +5017,158 @@ function Workspace({
     ],
   );
 
+  /** Opens one of a project's threads beside its coordinator. */
+  const onOpenProjectThread = useCallback(
+    async (projectId: string, sessionId: string) => {
+      const session = await ensureOpenSession(sessionId);
+      if (!session) return;
+      // One session, one pane: a thread open in a workspace tab moves here.
+      const host = tabsRef.current.find((tab) =>
+        leafIds(tab.layout).includes(sessionId),
+      );
+      if (host) {
+        const remaining = closeLeaf(host, sessionId);
+        let nextTabs: WorkspaceTab[];
+        if (remaining) {
+          nextTabs = tabsRef.current.map((tab) =>
+            tab.id === host.id
+              ? {
+                  ...tab,
+                  layout: remaining.layout,
+                  focusedId: remaining.focusedId,
+                }
+              : tab,
+          );
+        } else if (tabsRef.current.length > 1) {
+          nextTabs = tabsRef.current.filter((tab) => tab.id !== host.id);
+        } else {
+          const blank = newSessionForProject(session, session.cwd);
+          sessionsRef.current = [...sessionsRef.current, blank];
+          setSessions(sessionsRef.current);
+          nextTabs = [newTab(blank.id)];
+        }
+        tabsRef.current = nextTabs;
+        setTabs(nextTabs);
+        // Behind the project view; activating it the usual way would close it.
+        if (!nextTabs.some((tab) => tab.id === activeTabIdRef.current)) {
+          activeTabIdRef.current = nextTabs[nextTabs.length - 1].id;
+          setActiveTabIdState(activeTabIdRef.current);
+        }
+      }
+      setOpenThreadIds((previous) => ({ ...previous, [projectId]: sessionId }));
+      // Another project or view opened while it loaded: leave its focus be.
+      if (monoForSession(monoViewIdRef.current ?? "")?.id !== projectId) return;
+      setThreadPaneFocused(true);
+      setProjectTerminalFocused(false);
+      setComposerFocused(true);
+      setComposerFocusToken((token) => token + 1);
+    },
+    [ensureOpenSession],
+  );
+
+  openThreadInProjectRef.current = async (projectId, sessionId) => {
+    setSearchViewOpen(false);
+    setInboxViewOpen(false);
+    setNotesViewOpen(false);
+    setAutomationsViewOpen(false);
+    setSettingsOpen(false);
+    if (monoForSession(monoViewIdRef.current ?? "")?.id !== projectId)
+      await onOpenMono(projectId);
+    await onOpenProjectThread(projectId, sessionId);
+  };
+
+  const dropOpenThread = useCallback((projectId: string) => {
+    setOpenThreadIds((previous) => {
+      if (!(projectId in previous)) return previous;
+      const next = { ...previous };
+      delete next[projectId];
+      return next;
+    });
+    setThreadPaneFocused(false);
+    setComposerFocused(true);
+    setComposerFocusToken((token) => token + 1);
+  }, []);
+
+  /** Closes the threads panel, list and thread alike. */
+  const onCloseProjectThread = useCallback(
+    (projectId: string) => {
+      dropOpenThread(projectId);
+      setThreadListOpen((previous) =>
+        previous[projectId] ? { ...previous, [projectId]: false } : previous,
+      );
+    },
+    [dropOpenThread],
+  );
+
+  /** From an open thread back to the project's list of threads. */
+  const onBackToThreads = useCallback(
+    (projectId: string) => {
+      dropOpenThread(projectId);
+      setThreadListOpen((previous) => ({ ...previous, [projectId]: true }));
+    },
+    [dropOpenThread],
+  );
+
+  const onToggleThreads = useCallback(
+    (projectId: string) => {
+      if (openThreadIdsRef.current[projectId] || threadListOpen[projectId])
+        onCloseProjectThread(projectId);
+      else
+        setThreadListOpen((previous) => ({ ...previous, [projectId]: true }));
+    },
+    [onCloseProjectThread, threadListOpen],
+  );
+
+  /** Moves a thread out of the project view into a workspace tab. */
+  const onOpenThreadInWorkspace = useCallback(
+    async (projectId: string, sessionId: string) => {
+      onCloseProjectThread(projectId);
+      closeMonoView();
+      threadsToWorkspace.current.add(sessionId);
+      try {
+        await onSelectHistorySession(sessionId);
+      } finally {
+        threadsToWorkspace.current.delete(sessionId);
+      }
+    },
+    [closeMonoView, onCloseProjectThread, onSelectHistorySession],
+  );
+
+  const onCreateCoordinatorProject = useCallback(
+    (input: { name: string; path: string; instructions?: string }) => {
+      const project = createCoordinatorProject(input);
+      setRecents(rememberProject(input.path));
+      void onOpenMono(project.id);
+    },
+    [onOpenMono],
+  );
+
+  const onPickCoordinatorFolder = useCallback(async () => {
+    const [folder] = await pickFolders("Choose the project folder");
+    return folder ?? null;
+  }, []);
+
   const onOpenMonoLaunchedSession = useCallback(
     async (sessionId: string) => {
+      if (routeThreadToProject(sessionId)) return;
       const session = await ensureOpenSession(sessionId);
       if (!session) throw new Error("This session is no longer available.");
       closeMonoView();
       setSidebarTab("sessions", session.cwd);
       await onSelectHistorySession(sessionId);
     },
-    [ensureOpenSession, closeMonoView, setSidebarTab, onSelectHistorySession],
+    [
+      ensureOpenSession,
+      closeMonoView,
+      setSidebarTab,
+      onSelectHistorySession,
+      routeThreadToProject,
+    ],
   );
 
   const openReminderSession = useCallback(
     async (sessionId: string) => {
+      if (routeThreadToProject(sessionId)) return;
       const session = await ensureOpenSession(sessionId);
       if (!session)
         throw new Error("This conversation is no longer available.");
@@ -4864,7 +5183,7 @@ function Workspace({
       setRecents(rememberProject(session.cwd));
       await onSelectHistorySession(sessionId);
     },
-    [ensureOpenSession, onSelectHistorySession],
+    [ensureOpenSession, onSelectHistorySession, routeThreadToProject],
   );
 
   const ensureReminderSessionsSaved = useCallback(
@@ -5613,8 +5932,11 @@ function Workspace({
       const mono = findMono(monoId);
       if (!mono) return;
       const { name } = monoLook(mono);
+      const project = isCoordinatorProject(mono);
       const confirmed = await ask(
-        `Delete ${name}? Its conversation will be deleted and its habits stop. This can’t be undone.`,
+        project
+          ? `Delete the project ${name}? Its coordinator conversation will be deleted. Its threads stay as regular sessions in the folder. This can’t be undone.`
+          : `Delete ${name}? Its conversation will be deleted and its habits stop. This can’t be undone.`,
         { title: "MonoCode", kind: "warning" },
       );
       if (!confirmed) return;
@@ -5635,6 +5957,15 @@ function Workspace({
         }
       }
       removeMono(monoId);
+      if (project) {
+        forgetProjectThreads(monoId);
+        setOpenThreadIds((previous) => {
+          if (!(monoId in previous)) return previous;
+          const next = { ...previous };
+          delete next[monoId];
+          return next;
+        });
+      }
       if (lastMonoIdRef.current === monoId) lastMonoIdRef.current = undefined;
     },
     [closeMonoView, history, onRemoveHistorySession],
@@ -7220,9 +7551,17 @@ function Workspace({
       // A Mono's chat never ends, but the provider session behind it does:
       // once it fills most of the model's context window, this turn starts
       // a fresh one, briefed on where the conversation was.
+      // A project's coordinator only routes work, so it rotates much earlier.
       const monoRotationReason =
         mono && !pendingSwitch && !editedResend
-          ? rotationReason(current)
+          ? isCoordinatorSession(sessionId)
+            ? coordinatorOverBudget(
+                current,
+                coordinatorCompactAt(monoForSession(sessionId)?.compactAt),
+              )
+              ? ("context" as const)
+              : undefined
+            : rotationReason(current)
           : undefined;
       const monoRotation = monoRotationReason
         ? planRotation(
@@ -7293,6 +7632,7 @@ function Workspace({
         ...(options?.appRequestId
           ? { appRequestId: options.appRequestId }
           : {}),
+        ...(options?.forwardedBy ? { forwardedBy: options.forwardedBy } : {}),
         // The orchestrator writes these turns, not the user; hide them.
         ...(options?.managed || options?.monoSessionCompletion
           ? { internal: true }
@@ -7891,6 +8231,7 @@ function Workspace({
           // The agent's soul and memory live in its folder. A native session
           // is handed them once, and memory again only when it changes.
           const monoRecord = mono ? monoForSession(sessionId) : undefined;
+          const coordinator = isCoordinatorProject(monoRecord);
           const agentLook = monoRecord ? monoLook(monoRecord) : undefined;
           const agentFiles = monoRecord
             ? await loadMonoFiles(monoRecord.id).catch(() => undefined)
@@ -7902,7 +8243,11 @@ function Workspace({
               ...agentFiles,
               soulHash: `${agentFiles.soulHash}:${agentLook.name}:${agentLook.projects
                 .map((project) => project.path)
-                .join("|")}:${MONO_PROMPT_VERSION}`,
+                .join("|")}:${
+                coordinator
+                  ? `project-${COORDINATOR_PROMPT_VERSION}-${coordinatorPromptKey(monoRecord?.coordinatorPrompt)}`
+                  : MONO_PROMPT_VERSION
+              }`,
             };
           const agentPlan = handedFiles
             ? planAgentContext(
@@ -7929,7 +8274,36 @@ function Workspace({
             agentPlan &&
             (agentPlan.soul || agentPlan.memory)
           ) {
-            appContext.push(monoContext(agentLook, agentFiles, agentPlan));
+            appContext.push(
+              coordinator
+                ? coordinatorContext(
+                    agentLook,
+                    agentFiles,
+                    agentPlan,
+                    monoRecord?.coordinatorPrompt,
+                  )
+                : monoContext(agentLook, agentFiles, agentPlan),
+            );
+          }
+          // The coordinator sees where every thread stands on each turn, so
+          // routing a message rarely needs a CLI call.
+          if (coordinator && monoRecord && !rawCommand) {
+            appContext.push(
+              threadsBrief(
+                coordinatorThreadsRef.current.get(monoRecord.id) ?? [],
+              ),
+            );
+          }
+          // A coordinator's message asks the thread to work in visible steps.
+          if (options?.forwardedBy && !rawCommand) {
+            const owner = findMono(projectForThread(sessionId) ?? "");
+            appContext.push(
+              threadRules(
+                owner
+                  ? monoLook(owner).name
+                  : options.forwardedBy.replace(/ coordinator$/, ""),
+              ),
+            );
           }
           if (operatorCommand.matched || handAgent) {
             const cli = `${shellPath(await invoke<string>("app_cli_path"))} app`;
@@ -8065,7 +8439,9 @@ function Workspace({
             const finished = sessionsRef.current.find(
               (s) => s.id === sessionId,
             );
-            const visible = sessionId === activeSessionIdRef.current;
+            const visible =
+              sessionId === activeSessionIdRef.current ||
+              sessionId === besideSessionIdRef.current;
             // A habit's hidden run speaks through its Mono's chat instead.
             if (finished && !isHabitRun(sessionId))
               void announceSessionFinished(finished, visible);
@@ -8789,6 +9165,16 @@ function Workspace({
                 noteCard: head.noteCard,
                 handoffCard: head.handoffCard,
                 intent: head.intent,
+                ...(head.forwardedBy
+                  ? {
+                      forwardedBy: head.forwardedBy,
+                      // A busy session refuses a request ID, so a steer
+                      // goes without one.
+                      ...(head.appRequestId && !steering
+                        ? { appRequestId: head.appRequestId }
+                        : {}),
+                    }
+                  : {}),
                 ...(head.monoSessionCompletion
                   ? {
                       monoSessionCompletion: head.monoSessionCompletion,
@@ -8945,6 +9331,8 @@ function Workspace({
         noteCard: message.noteCard,
         handoffCard: message.handoffCard,
         intent: message.intent,
+        // Its request ID stays behind: a busy session refuses one.
+        ...(message.forwardedBy ? { forwardedBy: message.forwardedBy } : {}),
       });
     },
     [onSubmit, enqueueHarnessEvent, flushHarnessEvents],
@@ -10136,6 +10524,11 @@ function Workspace({
 
   const onOpenApprovalSession = useCallback(
     (sessionId: string) => {
+      const threadProject = threadProjectOf(sessionId);
+      if (threadProject) {
+        void openThreadInProjectRef.current(threadProject, sessionId);
+        return;
+      }
       const parentId =
         sessionsRef.current.find((session) => session.id === sessionId)
           ?.orchestrationLeadId ?? orchestrator.forSession(sessionId)?.leadId;
@@ -10146,7 +10539,7 @@ function Workspace({
         void onSelectHistorySession(sessionId);
       }
     },
-    [focusOpenSession, onSelectHistorySession],
+    [focusOpenSession, onSelectHistorySession, threadProjectOf],
   );
 
   useEffect(() => {
@@ -10578,6 +10971,15 @@ function Workspace({
         }
         const sourceMono =
           monoForSession(source.id) ?? findMono(habitRunMono(source.id) ?? "");
+        // A project's coordinator hands work to threads: they stay out of the
+        // workspace tabs, belong to the project, and show who sent each turn.
+        const sourceProject =
+          isCoordinatorProject(sourceMono) && monoForSession(source.id)
+            ? sourceMono
+            : undefined;
+        const forwardedBy = sourceProject
+          ? `${monoLook(sourceProject).name} coordinator`
+          : undefined;
         const canAccessProject = (cwd: string) =>
           canAccessAgentAppProject(source, cwd, sourceMono?.projects);
         const sourceTurn = turnGen.current.get(source.id) ?? 0;
@@ -10634,7 +11036,17 @@ function Workspace({
           payload.action,
           payload.input,
           {
-            start: async (launch, id, placement, notifyMonoId) => {
+            start: async (requested, id, requestedPlacement, notifyMonoId) => {
+              const launch = sourceProject
+                ? {
+                    ...requested,
+                    detached: true,
+                    reveal: false,
+                    forwardedBy,
+                  }
+                : requested;
+              const placement = sourceProject ? undefined : requestedPlacement;
+              if (sourceProject) addProjectThread(sourceProject.id, id);
               const rememberLaunch = () => {
                 if (!sourceTurnId) return;
                 const created =
@@ -10784,12 +11196,46 @@ function Workspace({
                   throw new Error("Request ID belongs to an unsent draft");
                 return { alreadySubmitted: true };
               }
+              // A coordinator's follow-up waits for a busy thread instead.
+              if (
+                sourceProject &&
+                target.queuedMessages?.some(
+                  (message) => message.appRequestId === requestId,
+                )
+              )
+                return { alreadySubmitted: true, queued: true };
+              if (sourceProject && target.busy) {
+                addProjectThread(sourceProject.id, id);
+                const queued = {
+                  id: crypto.randomUUID(),
+                  text: prompt,
+                  attachments: [],
+                  forwardedBy,
+                  appRequestId: requestId,
+                };
+                const enqueue = (session: Session) =>
+                  session.id === id
+                    ? {
+                        ...session,
+                        queuedMessages: [
+                          ...(session.queuedMessages ?? []),
+                          queued,
+                        ],
+                      }
+                    : session;
+                sessionsRef.current = sessionsRef.current.map(enqueue);
+                flushSync(() =>
+                  setSessions((previous) => previous.map(enqueue)),
+                );
+                return { alreadySubmitted: false, queued: true };
+              }
               if (target.busy)
                 throw new Error("Session is busy; try again when it finishes");
               if (sessionDraftBlock(target))
                 throw new Error(
                   "Session already has a draft; send or remove it first",
                 );
+              if (sourceProject) addProjectThread(sourceProject.id, id);
               const onSettled = notifyMonoId
                 ? monitorCompletion(
                     notifyMonoId,
@@ -10804,6 +11250,7 @@ function Workspace({
                     submit: (onSettled) =>
                       submitSessionRef.current(id, prompt, [], {
                         appRequestId: requestId,
+                        ...(forwardedBy ? { forwardedBy } : {}),
                         onSettled,
                       }),
                     onSettled,
@@ -10812,6 +11259,7 @@ function Workspace({
                   })
                 : await submitSessionRef.current(id, prompt, [], {
                     appRequestId: requestId,
+                    ...(forwardedBy ? { forwardedBy } : {}),
                   });
               if (!accepted) {
                 onSettled?.discard();
@@ -11436,13 +11884,14 @@ function Workspace({
   const onOpenInboxSession = useCallback(
     (sessionId: string) => {
       setInboxViewOpen(false);
+      if (routeThreadToProject(sessionId)) return;
       const cwd =
         sessionsRef.current.find((session) => session.id === sessionId)?.cwd ??
         history.find((session) => session.id === sessionId)?.cwd;
       setSidebarTab("sessions", cwd);
       void onSelectHistorySession(sessionId);
     },
-    [history, onSelectHistorySession],
+    [history, onSelectHistorySession, routeThreadToProject],
   );
 
   const onRepairChecks = useCallback(
@@ -11535,6 +11984,7 @@ function Workspace({
 
   const onOpenAutomationSession = useCallback(
     async (sessionId: string) => {
+      if (routeThreadToProject(sessionId)) return;
       const session = await ensureOpenSession(sessionId);
       if (!session)
         throw new Error("This conversation is no longer available.");
@@ -11549,7 +11999,7 @@ function Workspace({
       setRecents(rememberProject(session.cwd));
       await onSelectHistorySession(sessionId);
     },
-    [ensureOpenSession, onSelectHistorySession],
+    [ensureOpenSession, onSelectHistorySession, routeThreadToProject],
   );
 
   const openSettings = useCallback(
@@ -12384,6 +12834,14 @@ function Workspace({
     monoSessions,
     monoViewSession,
   );
+  // A thread beside the coordinator sits right of the Mono panels, so it
+  // holds the window controls unless an artifact or changes panel follows.
+  const threadPanelOpen =
+    monoCovers &&
+    !!viewedProject &&
+    (!!openThreadSession || !!threadListOpen[viewedProject.id]);
+  const monoPanelControls =
+    monoCovers && !IS_MAC && !threadPanelOpen ? <WindowControls /> : undefined;
   const monoSidebarOpen =
     monoDetailsOpen ||
     !!selectedMonoActivity ||
@@ -12421,7 +12879,8 @@ function Workspace({
         }
         onClose={() => setMonoDetailsOpen(false)}
         onReset={() => onResetMono(monoViewSession.id)}
-        windowControls={monoCovers && !IS_MAC ? <WindowControls /> : undefined}
+        coordinator={isCoordinatorProject(monoViewMono)}
+        windowControls={monoPanelControls}
       />
     ) : null;
   const monoActivityPanel =
@@ -12441,7 +12900,7 @@ function Workspace({
         }
         onOpenFile={onOpenFile}
         onOpenDiff={onOpenDiff}
-        windowControls={monoCovers && !IS_MAC ? <WindowControls /> : undefined}
+        windowControls={monoPanelControls}
       />
     ) : null;
   const monoSessionsPanel =
@@ -12454,7 +12913,7 @@ function Workspace({
         history={history}
         onOpenSession={onOpenMonoLaunchedSession}
         onClose={() => setMonoSessions(null)}
-        windowControls={monoCovers && !IS_MAC ? <WindowControls /> : undefined}
+        windowControls={monoPanelControls}
       />
     ) : null;
   const monoRail = useMemo(() => {
@@ -12471,6 +12930,149 @@ function Workspace({
     return { states, unseen };
     // The roster is read through its snapshot.
   }, [monosSnap, sessions, unseenFinishedIds]);
+  const chromeSurfaceOpenNow =
+    searchViewOpen ||
+    settingsOpen ||
+    inboxViewOpen ||
+    notesViewOpen ||
+    automationsViewOpen;
+  const coordinatorRail = useMemo(() => {
+    const counts = new Map<string, { waiting: number; busy: number }>();
+    const states = new Map<string, MonoState>();
+    const unseen = new Set<string>();
+    for (const project of listCoordinatorProjects()) {
+      const views = coordinatorThreads.get(project.id) ?? [];
+      counts.set(project.id, {
+        waiting: views.filter((view) => view.status === "waiting").length,
+        busy: views.filter((view) => view.status === "busy").length,
+      });
+      const session = project.sessionId
+        ? sessions.find((entry) => entry.id === project.sessionId)
+        : undefined;
+      if (session) states.set(project.id, monoState(session));
+      if (project.sessionId && unseenFinishedIds.has(project.sessionId))
+        unseen.add(project.id);
+    }
+    return { counts, states, unseen };
+    // The roster is read through its snapshot.
+  }, [monosSnap, sessions, unseenFinishedIds, coordinatorThreads]);
+  const viewedProjectThreads = useMemo(
+    () =>
+      viewedProject ? (coordinatorThreads.get(viewedProject.id) ?? []) : [],
+    [viewedProject?.id, coordinatorThreads],
+  );
+  const openThreadView = openThreadSession
+    ? viewedProjectThreads.find(
+        (view) => view.sessionId === openThreadSession.id,
+      )
+    : undefined;
+  const viewedProjectId = viewedProject?.id;
+  const openViewedProjectThread = useCallback(
+    (sessionId: string) => {
+      if (viewedProjectId) void onOpenProjectThread(viewedProjectId, sessionId);
+    },
+    [viewedProjectId, onOpenProjectThread],
+  );
+  const coordinatorsRail = useMemo(
+    () => ({
+      activeId: chromeSurfaceOpenNow ? undefined : viewedProjectId,
+      counts: coordinatorRail.counts,
+      states: coordinatorRail.states,
+      unseenIds: coordinatorRail.unseen,
+      onOpen: (projectId: string) => void onOpenMono(projectId),
+      onCreate: onCreateCoordinatorProject,
+      onDelete: (projectId: string) => void onDeleteMono(projectId),
+      recents,
+      onPickFolder: onPickCoordinatorFolder,
+    }),
+    [
+      chromeSurfaceOpenNow,
+      viewedProjectId,
+      coordinatorRail,
+      onOpenMono,
+      onCreateCoordinatorProject,
+      onDeleteMono,
+      recents,
+      onPickCoordinatorFolder,
+    ],
+  );
+  const threadPanel =
+    threadPanelOpen && viewedProject ? (
+      <ThreadPanel
+        color={viewedProject.color}
+        count={viewedProjectThreads.length}
+        thread={
+          openThreadSession
+            ? {
+                title: sessionDisplayTitle(
+                  openThreadSession.title,
+                  openThreadSession.harness,
+                ),
+                status: openThreadView?.status ?? "inactive",
+                steps: openThreadView?.steps,
+                onBack: () => onBackToThreads(viewedProject.id),
+                onResolve: (resolved) =>
+                  resolveProjectThread(
+                    viewedProject.id,
+                    openThreadSession.id,
+                    resolved,
+                  ),
+                onOpenInWorkspace: () =>
+                  void onOpenThreadInWorkspace(
+                    viewedProject.id,
+                    openThreadSession.id,
+                  ),
+              }
+            : undefined
+        }
+        onClose={() => onCloseProjectThread(viewedProject.id)}
+        windowControls={
+          !IS_MAC &&
+          !(monoArtifact && monoArtifact.sessionId === monoViewSession?.id) &&
+          !(monoChanges && monoChanges.sessionId === monoViewSession?.id) ? (
+            <WindowControls />
+          ) : undefined
+        }
+      >
+        {openThreadSession ? (
+          <div
+            className="flex h-full min-h-0 flex-col"
+            onPointerDownCapture={() => {
+              if (!threadPaneFocused) setThreadPaneFocused(true);
+            }}
+          >
+            <SessionPane
+              {...sessionPaneProps}
+              key={openThreadSession.id}
+              session={openThreadSession}
+              visible
+              focused={threadPaneFocused && !projectTerminalFocused}
+              inSplit={false}
+              addToChatTarget={threadPaneFocused}
+              composerFocused={
+                threadPaneFocused && composerFocused && !projectTerminalFocused
+              }
+              composerFocusToken={composerFocusToken}
+              onFocus={() => {
+                setThreadPaneFocused(true);
+                setProjectTerminalFocused(false);
+                setComposerFocused(true);
+              }}
+              onClose={() => onBackToThreads(viewedProject.id)}
+            />
+          </div>
+        ) : (
+          <ThreadsList
+            color={viewedProject.color}
+            views={viewedProjectThreads}
+            onOpenThread={openViewedProjectThread}
+            onResolve={(sessionId, resolved) =>
+              resolveProjectThread(viewedProject.id, sessionId, resolved)
+            }
+          />
+        )}
+      </ThreadPanel>
+    ) : null;
 
   const chromeSurfaceOpen =
     searchViewOpen ||
@@ -12492,6 +13094,17 @@ function Workspace({
           ? { look: monoLook(monoViewMono), state: monoState(monoViewSession) }
           : undefined
       }
+      monoAction={
+        monoCovers && viewedProject ? (
+          <ThreadsButton
+            open={threadPanelOpen}
+            waiting={coordinatorRail.counts.get(viewedProject.id)?.waiting ?? 0}
+            busy={coordinatorRail.counts.get(viewedProject.id)?.busy ?? 0}
+            onClick={() => onToggleThreads(viewedProject.id)}
+          />
+        ) : undefined
+      }
+      monoDetailsLabel={viewedProject ? "Project settings" : undefined}
       onShowMonoDetails={
         monoCovers && !monoDetailsOpen
           ? () => {
@@ -12503,7 +13116,10 @@ function Workspace({
             }
           : undefined
       }
-      hideWindowControls={monoCovers && monoSidebarOpen && !!monoDetailsPanel}
+      hideWindowControls={
+        monoCovers &&
+        ((monoSidebarOpen && !!monoDetailsPanel) || threadPanelOpen)
+      }
       activeId={monoViewSession ? "" : activeTabId}
       cwd={sidebarCwd}
       projectRailOpen={projectRailOpen}
@@ -12619,7 +13235,11 @@ function Workspace({
               textHarness={pickTextHarness(active?.harness)}
               recents={recents}
               busyProjectPaths={promptableSessions.flatMap((session) =>
-                sessionWorking(session) && session.cwd ? [session.cwd] : [],
+                sessionWorking(session) &&
+                session.cwd &&
+                !agentOwnedIds.has(session.id)
+                  ? [session.cwd]
+                  : [],
               )}
               liveAgents={liveAgents}
               onSelectAgent={onSelectLiveAgent}
@@ -12641,6 +13261,7 @@ function Workspace({
                   : undefined
               }
               monoViewActive={monoCovers}
+              coordinators={coordinatorsRail}
               onNew={onNew}
               openSessions={openProjectSessions}
               onNewTerminal={onNewTerminal}
@@ -12857,10 +13478,17 @@ function Workspace({
                               .filter((session) => isMonoSession(session.id))
                               .map((session) => {
                                 const visible = monoViewId === session.id;
+                                const threadFocused =
+                                  visible && !!threadPanel && threadPaneFocused;
                                 return (
                                   <div
                                     key={session.id}
                                     data-mono-view={session.id}
+                                    onPointerDownCapture={
+                                      threadFocused
+                                        ? () => setThreadPaneFocused(false)
+                                        : undefined
+                                    }
                                     aria-hidden={!visible}
                                     inert={!visible || undefined}
                                     className={
@@ -12874,14 +13502,19 @@ function Workspace({
                                       session={session}
                                       visible={visible}
                                       focused={
-                                        visible && !projectTerminalFocused
+                                        visible &&
+                                        !projectTerminalFocused &&
+                                        !threadFocused
                                       }
                                       inSplit={false}
-                                      addToChatTarget={visible}
+                                      addToChatTarget={
+                                        visible && !threadFocused
+                                      }
                                       composerFocused={
                                         visible &&
                                         composerFocused &&
-                                        !projectTerminalFocused
+                                        !projectTerminalFocused &&
+                                        !threadFocused
                                       }
                                       composerFocusToken={composerFocusToken}
                                       onShowMonoActivity={onShowMonoActivity}
@@ -12894,6 +13527,16 @@ function Workspace({
                                       onShowMonoSessions={onShowMonoSessions}
                                       monoSessionsTurnId={
                                         selectedMonoSessions?.turnId
+                                      }
+                                      projectThreads={
+                                        visible && viewedProject
+                                          ? viewedProjectThreads
+                                          : undefined
+                                      }
+                                      onOpenProjectThread={
+                                        visible && viewedProject
+                                          ? openViewedProjectThread
+                                          : undefined
                                       }
                                     />
                                   </div>
@@ -12934,6 +13577,7 @@ function Workspace({
                   {monoCovers ? monoDetailsPanel : null}
                   {monoCovers ? monoActivityPanel : null}
                   {monoCovers ? monoSessionsPanel : null}
+                  {threadPanel}
                   {monoViewMono &&
                   monoArtifact &&
                   monoArtifact.sessionId === monoViewSession?.id ? (
@@ -13086,11 +13730,15 @@ function Workspace({
               notesViewOpen ||
               automationsViewOpen ||
               settingsOpen ||
-              monoCovers ? null : (
+              (monoCovers && !viewedProject) ? null : (
                 <UsageFooter
                   providers={usageProviders}
                   session={usageSession}
-                  project={active?.cwd ?? projectCwd}
+                  project={
+                    viewedProject
+                      ? (viewedProject.projects[0] ?? projectCwd)
+                      : (active?.cwd ?? projectCwd)
+                  }
                   onSelectAccount={onSelectProviderAccount}
                   onManageAccounts={() =>
                     openSettings("providers", "provider-accounts")

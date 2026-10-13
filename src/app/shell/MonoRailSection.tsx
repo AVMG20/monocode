@@ -21,7 +21,7 @@ import {
   defaultMonoName,
   dismissMonoIntro,
   findMono,
-  listMonos,
+  listAgentMonos,
   MONO_STATUS_LABEL,
   monoIntroDismissed,
   nextMonoLook,
@@ -67,7 +67,7 @@ export function MonoRailSection({
   introAvailable = false,
 }: MonoRailProps) {
   const snapshot = useSyncExternalStore(subscribeMonos, monosSnapshot);
-  const monos = useMemo(() => listMonos(), [snapshot]);
+  const monos = useMemo(() => listAgentMonos(), [snapshot]);
   const [addButton, setAddButton] = useState<HTMLButtonElement | null>(null);
   // Shown once ever, and only the user's choice puts it away.
   const showIntro =

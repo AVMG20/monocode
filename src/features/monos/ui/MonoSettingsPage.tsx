@@ -14,7 +14,7 @@ import {
 } from "../model/mono";
 import { ColorPicker, MascotPicker, PageHeader } from "./monoPanelParts";
 
-export type SettingsPage = "habits" | "soul" | "memory" | "settings";
+export type SettingsPage = "habits" | "soul" | "memory" | "settings" | "prompt";
 
 /**
  * Who the Mono is: its face and name up top, then what it does, who it is,
@@ -26,9 +26,12 @@ export function MonoSettingsPage({
   onOpen,
   onBack,
   counts,
+  coordinator = false,
   children,
 }: {
   monoId: string;
+  /** A project's coordinator: its prompt and instructions, not a soul. */
+  coordinator?: boolean;
   agent: MonoLook;
   /** How many habits and facts it has, beside their rows once loaded. */
   counts?: { habits?: number; memory?: number };
@@ -71,20 +74,39 @@ export function MonoSettingsPage({
         {children}
 
         <nav className="flex flex-col gap-px border-t border-stroke p-2">
+          {coordinator ? (
+            <NavRow
+              label="Coordinator prompt"
+              description="How the coordinator answers, forwards work or starts threads."
+              onClick={() => onOpen("prompt")}
+            />
+          ) : null}
           <NavRow
-            label="Soul"
-            description="Defines who this bot is and the rules it follows. Always included in its context."
+            label={coordinator ? "Instructions" : "Soul"}
+            description={
+              coordinator
+                ? "Standing instructions for the coordinator and every thread."
+                : "Defines who this bot is and the rules it follows. Always included in its context."
+            }
             onClick={() => onOpen("soul")}
           />
           <NavRow
             label="Habits"
-            description="Recurring tasks this bot runs on its own."
+            description={
+              coordinator
+                ? "Recurring tasks the coordinator runs on its own."
+                : "Recurring tasks this bot runs on its own."
+            }
             count={counts?.habits}
             onClick={() => onOpen("habits")}
           />
           <NavRow
             label="Memory"
-            description="Facts and preferences this bot remembers."
+            description={
+              coordinator
+                ? "Decisions and preferences the project remembers."
+                : "Facts and preferences this bot remembers."
+            }
             count={counts?.memory}
             onClick={() => onOpen("memory")}
           />

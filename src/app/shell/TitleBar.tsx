@@ -98,6 +98,10 @@ type Props = {
    */
   mono?: { look: MonoLook; state: MonoState };
   onShowMonoDetails?: () => void;
+  /** Beside the details toggle, such as a project's threads button. */
+  monoAction?: ReactNode;
+  /** The details toggle's label; a project calls them its settings. */
+  monoDetailsLabel?: string;
   /** The full-height Mono details panel owns these while it is open. */
   hideWindowControls?: boolean;
   projectRailOpen?: boolean;
@@ -619,6 +623,8 @@ function TitleBarComponent({
   cwd,
   mono,
   onShowMonoDetails,
+  monoAction,
+  monoDetailsLabel = "Show Mono details",
   hideWindowControls = false,
   projectRailOpen = true,
   sessionSidebarOpen = true,
@@ -871,14 +877,17 @@ function TitleBarComponent({
     Boolean(onOpenInbox || onOpenNotes || onOpenSettings);
   const trailingControls =
     showTrailingActions ||
-    (mono && onShowMonoDetails) ||
+    (mono && (onShowMonoDetails || monoAction)) ||
     (!IS_MAC && !hideWindowControls) ? (
       <div className="flex h-full shrink-0 items-stretch">
-        {mono && onShowMonoDetails ? (
-          <div className="flex items-center px-3">
-            <IconButton label="Show Mono details" onClick={onShowMonoDetails}>
-              <PanelRightToggle className="size-3.5" strokeWidth={1.75} />
-            </IconButton>
+        {mono && (onShowMonoDetails || monoAction) ? (
+          <div className="flex items-center gap-1 px-3">
+            {monoAction}
+            {onShowMonoDetails ? (
+              <IconButton label={monoDetailsLabel} onClick={onShowMonoDetails}>
+                <PanelRightToggle className="size-3.5" strokeWidth={1.75} />
+              </IconButton>
+            ) : null}
           </div>
         ) : null}
         {showTrailingActions ? (

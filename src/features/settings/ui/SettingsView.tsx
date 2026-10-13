@@ -306,7 +306,7 @@ import { ProjectMascot } from "../../projects/ui/ProjectMascot";
 import { PixelMascot } from "../../projects/ui/PixelMascot";
 import {
   defaultMonoName,
-  listMonos,
+  listAgentMonos,
   monoLook,
   monoProjectsPhrase,
   monosSnapshot,
@@ -4165,7 +4165,7 @@ function MonosPage() {
     () => true,
   );
   const snapshot = useSyncExternalStore(subscribeMonos, monosSnapshot);
-  const monos = useMemo(() => listMonos(), [snapshot]);
+  const monos = useMemo(() => listAgentMonos(), [snapshot]);
 
   return (
     <>
