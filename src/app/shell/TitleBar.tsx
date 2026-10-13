@@ -102,6 +102,8 @@ type Props = {
   monoAction?: ReactNode;
   /** The details toggle's label; a project calls them its settings. */
   monoDetailsLabel?: string;
+  /** A gear for a project's settings; the panel toggle otherwise. */
+  monoDetailsIcon?: "panel" | "settings";
   /** The full-height Mono details panel owns these while it is open. */
   hideWindowControls?: boolean;
   projectRailOpen?: boolean;
@@ -625,6 +627,7 @@ function TitleBarComponent({
   onShowMonoDetails,
   monoAction,
   monoDetailsLabel = "Show Mono details",
+  monoDetailsIcon = "panel",
   hideWindowControls = false,
   projectRailOpen = true,
   sessionSidebarOpen = true,
@@ -885,7 +888,11 @@ function TitleBarComponent({
             {monoAction}
             {onShowMonoDetails ? (
               <IconButton label={monoDetailsLabel} onClick={onShowMonoDetails}>
-                <PanelRightToggle className="size-3.5" strokeWidth={1.75} />
+                {monoDetailsIcon === "settings" ? (
+                  <Settings className="size-3.5" strokeWidth={1.75} />
+                ) : (
+                  <PanelRightToggle className="size-3.5" strokeWidth={1.75} />
+                )}
               </IconButton>
             ) : null}
           </div>

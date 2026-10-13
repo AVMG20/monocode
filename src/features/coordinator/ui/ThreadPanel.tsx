@@ -15,17 +15,15 @@ import {
 } from "../model/coordinator";
 import { ThreadStepsBar } from "./ThreadStepsBar";
 
-const MIN_WIDTH = { list: 320, thread: 420 } as const;
-/** The widths the user last dragged to, for the rest of this run. */
-const rememberedWidth: { list?: number; thread?: number } = {};
+const MIN_WIDTH = 420;
+/** The width the user last dragged to, for the rest of this run. */
+let rememberedWidth: number | undefined;
 
-function defaultWidth(mode: "list" | "thread"): number {
-  return mode === "list"
-    ? 380
-    : Math.max(
-        MIN_WIDTH.thread,
-        Math.min(960, Math.round(window.innerWidth * 0.5)),
-      );
+function defaultWidth(): number {
+  return Math.max(
+    MIN_WIDTH,
+    Math.min(960, Math.round(window.innerWidth * 0.5)),
+  );
 }
 
 const STATUS_PILL: Record<ThreadStatus, string> = {
@@ -47,24 +45,10 @@ export type OpenThread = {
 
 /**
  * The panel beside the coordinator's chat: the project's threads, or one of
- * them, with a breadcrumb back to the list.
+ * them, with a breadcrumb back to the list. Both keep one width, so opening
+ * a thread or going back never resizes it.
  */
-export function ThreadPanel(props: {
-  color: string;
-  /** Threads in the list, shown beside its title. */
-  count?: number;
-  thread?: OpenThread;
-  onClose: () => void;
-  windowControls?: ReactNode;
-  children: ReactNode;
-}) {
-  const mode = props.thread ? "thread" : "list";
-  // Each mode keeps its own width: a list reads narrow, a thread needs room.
-  return <ThreadPanelFrame key={mode} mode={mode} {...props} />;
-}
-
-function ThreadPanelFrame({
-  mode,
+export function ThreadPanel({
   color,
   count,
   thread,
@@ -72,7 +56,6 @@ function ThreadPanelFrame({
   windowControls,
   children,
 }: {
-  mode: "list" | "thread";
   color: string;
   count?: number;
   thread?: OpenThread;
@@ -81,17 +64,14 @@ function ThreadPanelFrame({
   children: ReactNode;
 }) {
   const resize = useDragResize({
-    min: MIN_WIDTH[mode],
+    min: MIN_WIDTH,
     max: () =>
-      Math.max(
-        MIN_WIDTH[mode],
-        Math.min(1200, Math.round(window.innerWidth * 0.7)),
-      ),
-    defaultWidth: defaultWidth(mode),
-    initial: rememberedWidth[mode] ?? defaultWidth(mode),
+      Math.max(MIN_WIDTH, Math.min(1200, Math.round(window.innerWidth * 0.7))),
+    defaultWidth: defaultWidth(),
+    initial: rememberedWidth ?? defaultWidth(),
     direction: "left",
     onCommit: (width) => {
-      rememberedWidth[mode] = width;
+      rememberedWidth = width;
     },
   });
   const status = thread?.status;
@@ -101,7 +81,7 @@ function ThreadPanelFrame({
     <aside
       ref={resize.setPaneRef}
       aria-label={thread ? `Thread: ${thread.title}` : "Threads"}
-      data-thread-panel={mode}
+      data-thread-panel={thread ? "thread" : "list"}
       style={
         {
           "--mono-color": color,
