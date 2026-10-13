@@ -49,3 +49,16 @@ it("reads a checklist out of the model's reply", () => {
   expect(parsePlan("no json")).toBeNull();
   expect(parsePlan('{"steps":[]}')).toBeNull();
 });
+
+it("sends only new activity once there is a checklist, capped", () => {
+  const many = Array.from({ length: 40 }, (_, i) => `- ran: step ${i}`);
+  const prompt = planPrompt({
+    task: "Do it",
+    previous: [{ text: "Start", status: "in_progress" }],
+    activity: many,
+  });
+  expect(prompt).toContain("since the checklist was last updated");
+  expect(prompt).toContain("(10 earlier steps not shown)");
+  expect(prompt).not.toContain("step 9\n");
+  expect(prompt).toContain("step 39");
+});

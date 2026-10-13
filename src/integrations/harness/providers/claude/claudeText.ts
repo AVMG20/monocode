@@ -98,7 +98,7 @@ function textSettings(
   };
 }
 
-function pickTextModel(requested?: string): string {
+export function pickTextModel(requested?: string): string {
   const selected = requested?.trim();
   if (selected) return selected;
   const models = modelsFor("claude");

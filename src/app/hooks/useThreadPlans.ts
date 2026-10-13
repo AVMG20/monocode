@@ -11,24 +11,29 @@ import {
   subscribeProjectThreads,
 } from "../../features/coordinator/model/coordinator";
 import {
-  activityCount,
   activityLog,
   currentTurn,
   hasOwnTaskList,
   loadThreadPlan,
   parsePlan,
+  PLAN_SYSTEM,
   planPrompt,
+  proseCount,
   saveThreadPlan,
   subscribeThreadPlans,
   threadPlansSnapshot,
 } from "../../features/coordinator/model/threadPlan";
 import type { Block, Session } from "../../features/sessions/model/session";
-import { runClaudeTextPrompt } from "../../integrations/harness/providers/claude/claudeText";
+import { runClaudeOneShot } from "../../integrations/harness/providers/claude/claudeOneShot";
 
 /** A plan is brought up to date at most this often while a thread works. */
-const UPDATE_EVERY_MS = 20_000;
+const UPDATE_EVERY_MS = 45_000;
+/** Finished commands that make a step boundary on their own. */
+const MIN_NEW_STEPS = 3;
+/** Updates per turn while it runs; the final pass comes on top. */
+const MAX_UPDATES = 10;
 /** How often busy threads are looked at for new activity. */
-const CHECK_EVERY_MS = 8_000;
+const CHECK_EVERY_MS = 15_000;
 /** After a failed request, a thread is left alone this long. */
 const BACKOFF_MS = 60_000;
 const REQUEST_TIMEOUT_MS = 40_000;
@@ -57,7 +62,18 @@ export function useThreadPlans(sessions: readonly Session[]): void {
   const threadIds = useMemo(() => allProjectThreadIds(), [threadsSnap]);
   const inFlight = useRef(new Set<string>());
   const asked = useRef(
-    new Map<string, { turnId: string; count: number; at: number }>(),
+    new Map<
+      string,
+      {
+        turnId: string;
+        /** Activity lines already sent. */
+        lines: number;
+        /** Agent messages already seen. */
+        prose: number;
+        at: number;
+        updates: number;
+      }
+    >(),
   );
   const backoff = useRef(new Map<string, number>());
   const [tick, setTick] = useState(0);
@@ -88,35 +104,50 @@ export function useThreadPlans(sessions: readonly Session[]): void {
       const turnId = turn.user.id;
       const plan = loadThreadPlan(id);
       const current = plan?.turnId === turnId ? plan : undefined;
-      const count = activityCount(turn.work);
+      const lines = activityLog(turn.work);
+      const prose = proseCount(turn.work);
       const last = asked.current.get(id);
-      const lastForTurn = last?.turnId === turnId ? last : undefined;
+      const sent = last?.turnId === turnId ? last : undefined;
       let final = false;
       if (session.busy) {
-        // Started, or brought up to date when there is something new.
-        if (
-          lastForTurn &&
-          (now - lastForTurn.at < UPDATE_EVERY_MS ||
-            (current && lastForTurn.count === count))
-        )
-          continue;
+        if (sent) {
+          // Brought up to date at real step boundaries only: a few finished
+          // commands or a message from the agent, not more than every so
+          // often, and only so many times a turn.
+          const boundary =
+            lines.length - sent.lines >= MIN_NEW_STEPS || prose > sent.prose;
+          if (
+            sent.updates >= MAX_UPDATES ||
+            now - sent.at < UPDATE_EVERY_MS ||
+            (current && !boundary)
+          )
+            continue;
+        }
       } else {
         // Only a plan made while the turn ran is settled; old turns stay.
         if (!current || current.final) continue;
         final = true;
       }
       inFlight.current.add(id);
-      asked.current.set(id, { turnId, count, at: now });
+      asked.current.set(id, {
+        turnId,
+        lines: lines.length,
+        prose,
+        at: now,
+        updates: (sent?.updates ?? 0) + 1,
+      });
+      // The checklist carries what came before; send only what is new.
       const prompt = planPrompt({
         task: turn.user.text,
         previous: current?.items,
-        activity: activityLog(turn.work),
+        activity: current ? lines.slice(sent?.lines ?? 0) : lines,
         ...(final ? { finalReply: finalReply(turn.work) } : {}),
       });
-      void runClaudeTextPrompt({
-        cwd: session.worktreeCwd ?? session.cwd,
-        providerAccountId: session.providerAccountId,
+      void runClaudeOneShot({
         prompt,
+        system: PLAN_SYSTEM,
+        providerAccountId: session.providerAccountId,
+        fallbackCwd: session.worktreeCwd ?? session.cwd,
         timeoutMs: REQUEST_TIMEOUT_MS,
       })
         .then((output) => {
@@ -139,6 +170,14 @@ export function useThreadPlans(sessions: readonly Session[]): void {
         .catch((error: unknown) => {
           console.debug("[monocode] thread checklist", error);
           backoff.current.set(id, Date.now() + BACKOFF_MS);
+          // What failed to send is sent again with the next request.
+          const entry = asked.current.get(id);
+          if (entry?.turnId === turnId)
+            asked.current.set(id, {
+              ...entry,
+              lines: sent?.lines ?? 0,
+              prose: sent?.prose ?? 0,
+            });
         })
         .finally(() => {
           inFlight.current.delete(id);

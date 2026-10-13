@@ -92,8 +92,8 @@ function clip(text: string, max: number): string {
   return flat.length <= max ? flat : `${flat.slice(0, max - 1)}…`;
 }
 
-/** What the agent did in a turn, one line per step, newest kept. */
-export function activityLog(work: readonly Block[], max = 40): string[] {
+/** What the agent did in a turn, one line per step, oldest first. */
+export function activityLog(work: readonly Block[]): string[] {
   const lines: string[] = [];
   for (const block of work) {
     if (block.role === "tool" && block.tool?.title) {
@@ -102,16 +102,30 @@ export function activityLog(work: readonly Block[], max = 40): string[] {
           ? " (failed)"
           : "";
       lines.push(`- ran: ${clip(block.tool.title, 160)}${status}`);
-    } else if (
-      block.role === "assistant" &&
-      !block.tool &&
-      block.text.trim()
-    ) {
+    } else if (block.role === "assistant" && !block.tool && block.text.trim()) {
       lines.push(`- said: ${clip(block.text, 240)}`);
     }
   }
-  return lines.slice(-max);
+  return lines;
 }
+
+/** How often the agent wrote to the user in a turn: a natural step boundary. */
+export function proseCount(work: readonly Block[]): number {
+  return work.filter(
+    (block) =>
+      block.role === "assistant" &&
+      !block.tool &&
+      !block.streaming &&
+      !!block.text.trim(),
+  ).length;
+}
+
+/** The small model's whole system prompt; the request carries the rest. */
+export const PLAN_SYSTEM =
+  "You keep a short progress checklist for a coding agent. You only ever reply with the JSON object you are asked for.";
+
+/** Most activity lines one request carries. */
+const MAX_ACTIVITY_LINES = 30;
 
 /** How much the agent has done, to tell whether a plan is out of date. */
 export function activityCount(work: readonly Block[]): number {
@@ -126,6 +140,7 @@ export function activityCount(work: readonly Block[]): number {
 export function planPrompt(input: {
   task: string;
   previous?: readonly TaskListItem[];
+  /** Activity since the checklist was last updated, oldest first. */
   activity: readonly string[];
   /** The agent's final reply, once the turn has ended. */
   finalReply?: string;
@@ -136,15 +151,22 @@ export function planPrompt(input: {
       )
     : "(none yet)";
   return [
-    "You keep a short progress checklist for a coding agent, like the todo list a person glances at to see how far along the work is.",
+    "Keep the progress checklist for this coding agent, like the todo list a person glances at to see how far along the work is.",
     `The task the agent was given:\n<task>\n${clip(input.task, 3_000)}\n</task>`,
     `The current checklist. Keep its wording stable; change, add or drop steps only when the work clearly went another way:\n<checklist>${previous}</checklist>`,
-    `What the agent has done so far, oldest first:\n<activity>\n${input.activity.length ? input.activity.join("\n") : "(nothing yet)"}\n</activity>`,
+    `${input.previous?.length ? "What the agent has done since the checklist was last updated" : "What the agent has done so far"}, oldest first:\n<activity>\n${activityText(input.activity)}\n</activity>`,
     input.finalReply !== undefined
       ? `The agent has finished. Its final reply:\n<reply>\n${clip(input.finalReply, 2_000)}\n</reply>\nMark every step the reply or activity shows as done completed, and leave none in progress.`
       : "The agent is still working: exactly one step is in_progress, the one it is on now.",
     'Reply with JSON only, no prose: {"steps":[{"text":"...","status":"pending"|"in_progress"|"completed"}]}. Use 3 to 7 steps covering the whole task from start to finish, each a concrete outcome under 60 characters ("Render the current machines", "Fix the lang label", "Run the tests"). Mark a step completed only when the activity shows it done.',
   ].join("\n\n");
+}
+
+function activityText(lines: readonly string[]): string {
+  if (!lines.length) return "(nothing new)";
+  const kept = lines.slice(-MAX_ACTIVITY_LINES);
+  const dropped = lines.length - kept.length;
+  return `${dropped ? `(${dropped} earlier steps not shown)\n` : ""}${kept.join("\n")}`;
 }
 
 const STATUSES: readonly TaskListItemStatus[] = [
