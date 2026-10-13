@@ -208,7 +208,7 @@ describe("threadView", () => {
     expect(result).toMatchObject({ status: "busy", activity: "Run npm test" });
   });
 
-  it("is solved when marked, archived or quiet for a week, before unseen", () => {
+  it("is solved when marked or archived, and when left inactive for a day", () => {
     expect(
       threadView({
         thread: thread({ resolvedAt: NOW }),
@@ -224,13 +224,14 @@ describe("threadView", () => {
         now: NOW,
       }).status,
     ).toBe("solved");
-    const quiet = threadView({
+    const quiet = {
       thread: thread({ addedAt: NOW - AUTO_RESOLVE_MS - 1 }),
       summary: summary({ updatedAt: NOW - AUTO_RESOLVE_MS - 1 }),
-      unseen: true,
       now: NOW,
-    });
-    expect(quiet.status).toBe("solved");
+    };
+    expect(threadView(quiet).status).toBe("solved");
+    // An unread reply still waits for the user, however old.
+    expect(threadView({ ...quiet, unseen: true }).status).toBe("waiting");
     const recent = threadView({
       thread: thread({ addedAt: NOW - AUTO_RESOLVE_MS }),
       summary: summary({ updatedAt: NOW - AUTO_RESOLVE_MS }),

@@ -80,8 +80,8 @@ export type ThreadSteps = {
   items: TaskListItem[];
 };
 
-/** Threads with no activity for this long count as solved. */
-export const AUTO_RESOLVE_MS = 7 * 24 * 60 * 60 * 1000;
+/** Inactive threads with no activity for this long count as solved. */
+export const AUTO_RESOLVE_MS = 24 * 60 * 60 * 1000;
 
 /**
  * The coordinator only routes work, so its own context should stay small:
@@ -111,7 +111,7 @@ function rotateAt(usage: { window?: number }, limit: number): number {
 }
 
 /** Bumped when the coordinator's fixed rules change, so live chats get them again. */
-export const COORDINATOR_PROMPT_VERSION = 2;
+export const COORDINATOR_PROMPT_VERSION = 3;
 
 const THREADS_KEY = "monocode:coordinator-threads";
 const THREADS_CHANGED = "monocode:coordinator-threads-changed";
@@ -404,18 +404,17 @@ export function threadView(input: {
       };
   }
   const reply = session ? lastReply(session) : undefined;
-  if (
-    thread.resolvedAt ||
-    summary?.archived ||
-    now - updatedAt > AUTO_RESOLVE_MS
-  )
+  if (thread.resolvedAt || summary?.archived)
     return { ...base, status: "solved", activity: reply };
+  // A finished reply nobody has read yet waits for the user, however old.
   if (unseen)
     return {
       ...base,
       status: "waiting",
       activity: reply ?? "Ready for review",
     };
+  if (now - updatedAt > AUTO_RESOLVE_MS)
+    return { ...base, status: "solved", activity: reply };
   return { ...base, status: "inactive", activity: reply };
 }
 
@@ -509,7 +508,7 @@ This is one long conversation the user keeps coming back to. You do not do the w
 
 For every message, pick exactly one of these and then end your turn:
 1. Answer directly. Quick questions about the project, the state of its work, or what a thread did: answer from the thread list below, your memory, or by reading a little of a thread with \`app sessions.read --json '{"sessionId":"<id>"}'\` (its latest exchanges only; ask for older ones only if needed). Do not open files or run commands to answer; if a question needs real digging, it is work for a thread.
-2. Forward to an existing thread. When the request belongs to work a thread already owns (same feature, same branch, a follow-up or correction), send it there with \`app sessions.send --json '{"sessionId":"<id>","prompt":"<the user's request, with any context the thread needs>","notifyOnComplete":true}'\`. Pass the user's words on faithfully; add context, do not rewrite their intent. If the thread is busy, the result says "queued": it gets the message after its current turn, and no completion report follows for a queued message, so say so.
+2. Forward to an existing thread. When the request belongs to work a thread already owns (same feature, same branch, a follow-up or correction), send it there with \`app sessions.send --json '{"sessionId":"<id>","prompt":"<the user's request, with any context the thread needs>","notifyOnComplete":true}'\`. Pass the user's words on faithfully; add context, do not rewrite their intent. This includes solved threads: a thread left inactive for a day is marked solved, and a follow-up you send it reopens it. If the thread is busy, the result says "queued": it gets the message after its current turn, and no completion report follows for a queued message, so say so.
 3. Start a new thread. For new work, call \`app sessions.start --json '{"title":"<3 to 6 word name>","prompt":"...","notifyOnComplete":true}'\` with a short title the user will recognise in the thread list and a clear, self-contained prompt: the goal, relevant context from this conversation, constraints, what it may change and how to check its work. Give each thread a separate worktree ("workspaceMode":"worktree") when other threads may edit the same code at the same time. Split truly independent parts into separate threads in the same turn.
 
 After forwarding or starting, tell the user in one or two short sentences which thread has it (by its title), and stop. MonoCode shows each thread you start or message as a card under your reply, with your message and the thread's live progress, so do not repeat the prompt in chat. Threads lay out their work as a step list the user can follow; you do not need to ask them to. Never wait, poll or do the thread's work in parallel. When a completion report arrives, read only what you need, then tell the user in a few lines what changed and whether anything needs them (a decision, a review, a permission). Never paste long output into this chat.
