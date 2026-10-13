@@ -1,5 +1,4 @@
-import { useState } from "react";
-import { CheckCircle, CornerUpLeft, Plus } from "../../../shared/ui/icons";
+import { CheckCircle } from "../../../shared/ui/icons";
 import { TerminalSpinner } from "../../sessions/ui/TerminalSpinner";
 import {
   THREAD_STATUS_LABEL,
@@ -17,8 +16,8 @@ const STATUS_DOT: Record<ThreadStatus, string> = {
 
 /**
  * The work the coordinator handed out in one turn, under its reply: each
- * thread it started or messaged, where that thread stands now, and what the
- * coordinator told it.
+ * thread it started or messaged and where that thread stands now. What it
+ * told the thread shows in the thread itself.
  */
 export function ThreadHandoffs({
   handoffs,
@@ -69,7 +68,6 @@ function HandoffCard({
   view?: ThreadView;
   onOpenThread?: (sessionId: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
   const sessionId = handoff.sessionId;
   const canOpen = !!sessionId && !!view && !!onOpenThread;
   const verb = handoff.pending
@@ -90,7 +88,7 @@ function HandoffCard({
   return (
     <article
       data-thread-handoff={handoff.kind}
-      className={`group/handoff max-w-xl overflow-hidden rounded-xl border bg-content/[0.025] ${
+      className={`max-w-xl overflow-hidden rounded-xl border bg-content/[0.025] ${
         handoff.failed ? "border-red-400/25" : "border-stroke"
       }`}
     >
@@ -143,36 +141,6 @@ function HandoffCard({
           </span>
         ) : null}
       </button>
-      <div className="border-t border-stroke/70">
-        <button
-          type="button"
-          aria-expanded={open}
-          onClick={() => setOpen((value) => !value)}
-          className="flex w-full min-w-0 items-start gap-2 px-3 py-2 text-left outline-none hover:bg-content/[0.03] focus-visible:bg-content/[0.04]"
-        >
-          {handoff.kind === "start" ? (
-            <Plus
-              aria-hidden
-              className="mt-0.5 size-3 shrink-0 text-content/35"
-            />
-          ) : (
-            <CornerUpLeft
-              aria-hidden
-              className="mt-0.5 size-3 shrink-0 -scale-x-100 text-content/35"
-            />
-          )}
-          <span
-            className={`min-w-0 flex-1 whitespace-pre-wrap break-words text-[12px] italic leading-relaxed text-content/60 ${
-              open ? "" : "line-clamp-2"
-            }`}
-          >
-            {handoff.prompt}
-          </span>
-          <span className="shrink-0 pt-px text-[11px] text-content/35 group-hover/handoff:text-content/50">
-            {open ? "Less" : "Message"}
-          </span>
-        </button>
-      </div>
     </article>
   );
 }
