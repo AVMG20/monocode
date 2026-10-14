@@ -148,6 +148,23 @@ describe("groupMonoChatTurns", () => {
     ]);
   });
 
+  it("gives each reply its own message when asked to keep them apart", () => {
+    const blocks: Block[] = [
+      { id: "thanks", role: "user", text: "thanks :)", startedAt: at },
+      note("welcome", "You're welcome!"),
+      completion("review", at + 3 * minute),
+      note("cancelled", "The review was cancelled."),
+    ];
+    expect(
+      groupMonoChatTurns(blocks, false, true).map((turn) =>
+        turn.map((block) => block.id),
+      ),
+    ).toEqual([
+      ["thanks", "welcome"],
+      ["review", "cancelled"],
+    ]);
+  });
+
   it("starts a new message where the transcript marks a new stretch", () => {
     const blocks: Block[] = [
       { id: "thanks", role: "user", text: "thanks :)", startedAt: at },

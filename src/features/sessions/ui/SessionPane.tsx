@@ -1,5 +1,7 @@
 import { GripVertical, X } from "../../../shared/ui/icons";
 import { ThreadHandoffs } from "../../coordinator/ui/ThreadHandoffs";
+import { ThreadLink, threadLinkId } from "../../coordinator/ui/ThreadLink";
+import { MarkdownLinkContext } from "./AgentMarkdown";
 import { ContextMeter } from "./ContextMeter";
 import {
   coordinatorCompactAt,
@@ -17,6 +19,7 @@ import {
   useSyncExternalStore,
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from "react";
 import { Composer } from "./Composer";
 import {
@@ -451,6 +454,27 @@ const LocalSessionPane = memo(function LocalSessionPane({
               onOpenThread={onOpenProjectThread}
             />
           )
+        : undefined,
+    [coordinator, projectThreads, onOpenProjectThread],
+  );
+  // The threads it names in its replies link to them, with their status.
+  const renderThreadLink = useMemo(
+    () =>
+      coordinator
+        ? (href: string, children: ReactNode) => {
+            const sessionId = threadLinkId(href);
+            if (!sessionId) return undefined;
+            return (
+              <ThreadLink
+                view={projectThreads?.find(
+                  (view) => view.sessionId === sessionId,
+                )}
+                onOpenThread={onOpenProjectThread}
+              >
+                {children}
+              </ThreadLink>
+            );
+          }
         : undefined,
     [coordinator, projectThreads, onOpenProjectThread],
   );
@@ -1095,169 +1119,180 @@ const LocalSessionPane = memo(function LocalSessionPane({
                     sessionId={session.id}
                     onMouseDown={focusPane}
                   >
-                    <AgentTranscript
-                      blocks={
-                        agent && !monoTranscript.viewingOlderPage
-                          ? monoPendingTranscriptBlocks(
-                              session,
-                              monoTranscript.blocks,
-                            )
-                          : monoTranscript.blocks
-                      }
-                      historicalBlockIds={monoTranscript.historicalBlockIds}
-                      initialTurns={agent ? MONO_PAGE_TURNS : undefined}
-                      pageSize={agent ? MONO_PAGE_TURNS : undefined}
-                      hasEarlier={monoTranscript.hasEarlier}
-                      loadEarlierOnScroll={!!agent}
-                      onLoadEarlier={
-                        agent ? monoTranscript.loadEarlier : undefined
-                      }
-                      onReturnToLatest={
-                        monoTranscript.viewingOlderPage
-                          ? monoTranscript.latest
-                          : undefined
-                      }
-                      busy={!!session.busy && !monoTranscript.viewingOlderPage}
-                      visible={visible}
-                      cwd={workCwd}
-                      agentName={agent?.name}
-                      onOpenArtifact={
-                        onOpenArtifact
-                          ? (id) => onOpenArtifact(session.id, id)
-                          : undefined
-                      }
-                      agentMascot={agent}
-                      // A project's coordinator reads like a session: each
-                      // message starts at the top, the reply scrolls under it.
-                      bottomAligned={!!agent && !coordinator}
-                      inlineWork={!!agent}
-                      messageDeliveries={agent ? messageDeliveries : undefined}
-                      onRetryMessage={
-                        agent ? () => onResumeQueue(session.id) : undefined
-                      }
-                      onShowWork={
-                        agent && onShowMonoActivity
-                          ? (turnId, blocks) =>
-                              onShowMonoActivity(session.id, turnId, blocks)
-                          : undefined
-                      }
-                      activeWorkTurnId={monoActivityTurnId}
-                      onShowSessions={
-                        agent && onShowMonoSessions
-                          ? (turnId, blocks) =>
-                              onShowMonoSessions(session.id, turnId, blocks)
-                          : undefined
-                      }
-                      activeSessionsTurnId={monoSessionsTurnId}
-                      turnExtras={turnExtras}
-                      // A Mono's turn keeps copy, save as note and the time.
-                      daySeparators={!!agent}
-                      hideTurnMetrics={!!agent}
-                      harness={session.harness}
-                      model={session.model}
-                      modelSettings={session.modelSettings}
-                      pendingQuestion={!!session.pendingQuestion}
-                      backgroundTasks={session.backgroundTasks}
-                      onApproval={session.worktreeRemoved ? undefined : approve}
-                      onAddToChat={addSelectionToChat}
-                      onReferenceImage={
-                        imageReferencesSupported ? referenceImage : undefined
-                      }
-                      onSaveNote={notesEnabled ? saveNote : undefined}
-                      onSendDraft={
-                        draftBlock
-                          ? (block) =>
-                              onSubmit(
-                                session.id,
-                                block.text,
-                                block.attachments ?? [],
-                                {
-                                  draftBlockId: block.id,
-                                  ...(block.appRequestId
-                                    ? { appRequestId: block.appRequestId }
-                                    : {}),
-                                },
+                    <MarkdownLinkContext.Provider value={renderThreadLink}>
+                      <AgentTranscript
+                        blocks={
+                          agent && !monoTranscript.viewingOlderPage
+                            ? monoPendingTranscriptBlocks(
+                                session,
+                                monoTranscript.blocks,
                               )
-                          : undefined
-                      }
-                      onRemoveDraft={
-                        draftBlock
-                          ? (block) => onRemoveDraft(session.id, block.id)
-                          : undefined
-                      }
-                      onSaveSelectionNote={
-                        notesEnabled ? saveSelectionNote : undefined
-                      }
-                      onOpenFile={onOpenFile}
-                      onOpenDiff={onOpenDiff}
-                      onOpenPlan={openPlan}
-                      onBuildPlan={
-                        session.worktreeRemoved ? undefined : buildPlan
-                      }
-                      planBuildTargets={!remote}
-                      onSecondOpinion={
-                        !agent &&
-                        !session.inboxAsk &&
-                        !session.worktreeRemoved &&
-                        onSecondOpinion
-                          ? (target, turn) =>
-                              onSecondOpinion(session.id, target, turn)
-                          : undefined
-                      }
-                      onHandoff={
-                        !agent &&
-                        !session.inboxAsk &&
-                        !session.worktreeRemoved &&
-                        onHandoff
-                          ? (target, turn) =>
-                              onHandoff(session.id, target, turn)
-                          : undefined
-                      }
-                      onJumpToBottomChange={jumpVisibility.setVisible}
-                      onJumpToBottomReady={onJumpToBottomReady}
-                      onRevealReady={onRevealReady}
-                      onNavigateReady={onNavigateReady}
-                      onScrollerChange={setTranscriptScroller}
-                      editingLastTurn={editingLastTurn}
-                      onEditLastTurn={
-                        editLastTurnSupported &&
-                        !monoTranscript.viewingOlderPage
-                          ? () => {
-                              onFocus(session.id);
-                              recallLastTurnRef.current?.();
-                            }
-                          : undefined
-                      }
-                      latestTurnAccessory={
-                        !showChangedFilesCard ||
-                        remote ||
-                        session.inboxAsk ||
-                        session.worktreeRemoved ||
-                        monoTranscript.viewingOlderPage ||
-                        draftBlock ? undefined : (
-                          <SessionReview
-                            sessionId={session.id}
-                            cwd={workCwd}
-                            enabled={visible}
-                            busy={!!session.busy}
-                            undoLocked={
-                              reviewUndoLocked ||
-                              orchestrationRuns.some(
-                                (run) =>
-                                  (run.status === "active" ||
-                                    run.status === "paused") &&
-                                  (run.leadId === session.id ||
-                                    run.tasks.some(
-                                      (task) => task.sessionId === session.id,
-                                    )),
-                              )
-                            }
-                            onOpenDiff={onOpenDiff}
-                            onCommit={onCommitChanges}
-                          />
-                        )
-                      }
-                    />
+                            : monoTranscript.blocks
+                        }
+                        historicalBlockIds={monoTranscript.historicalBlockIds}
+                        initialTurns={agent ? MONO_PAGE_TURNS : undefined}
+                        pageSize={agent ? MONO_PAGE_TURNS : undefined}
+                        hasEarlier={monoTranscript.hasEarlier}
+                        loadEarlierOnScroll={!!agent}
+                        onLoadEarlier={
+                          agent ? monoTranscript.loadEarlier : undefined
+                        }
+                        onReturnToLatest={
+                          monoTranscript.viewingOlderPage
+                            ? monoTranscript.latest
+                            : undefined
+                        }
+                        busy={
+                          !!session.busy && !monoTranscript.viewingOlderPage
+                        }
+                        visible={visible}
+                        cwd={workCwd}
+                        agentName={agent?.name}
+                        onOpenArtifact={
+                          onOpenArtifact
+                            ? (id) => onOpenArtifact(session.id, id)
+                            : undefined
+                        }
+                        agentMascot={agent}
+                        // A project's coordinator reads like a session: each
+                        // message starts at the top, the reply scrolls under it.
+                        bottomAligned={!!agent && !coordinator}
+                        inlineWork={!!agent}
+                        // Its threads report back often: each reply to a
+                        // report reads as a message of its own.
+                        separateReplies={coordinator}
+                        messageDeliveries={
+                          agent ? messageDeliveries : undefined
+                        }
+                        onRetryMessage={
+                          agent ? () => onResumeQueue(session.id) : undefined
+                        }
+                        onShowWork={
+                          agent && onShowMonoActivity
+                            ? (turnId, blocks) =>
+                                onShowMonoActivity(session.id, turnId, blocks)
+                            : undefined
+                        }
+                        activeWorkTurnId={monoActivityTurnId}
+                        onShowSessions={
+                          agent && onShowMonoSessions
+                            ? (turnId, blocks) =>
+                                onShowMonoSessions(session.id, turnId, blocks)
+                            : undefined
+                        }
+                        activeSessionsTurnId={monoSessionsTurnId}
+                        turnExtras={turnExtras}
+                        // A Mono's turn keeps copy, save as note and the time.
+                        daySeparators={!!agent}
+                        hideTurnMetrics={!!agent}
+                        harness={session.harness}
+                        model={session.model}
+                        modelSettings={session.modelSettings}
+                        pendingQuestion={!!session.pendingQuestion}
+                        backgroundTasks={session.backgroundTasks}
+                        onApproval={
+                          session.worktreeRemoved ? undefined : approve
+                        }
+                        onAddToChat={addSelectionToChat}
+                        onReferenceImage={
+                          imageReferencesSupported ? referenceImage : undefined
+                        }
+                        onSaveNote={notesEnabled ? saveNote : undefined}
+                        onSendDraft={
+                          draftBlock
+                            ? (block) =>
+                                onSubmit(
+                                  session.id,
+                                  block.text,
+                                  block.attachments ?? [],
+                                  {
+                                    draftBlockId: block.id,
+                                    ...(block.appRequestId
+                                      ? { appRequestId: block.appRequestId }
+                                      : {}),
+                                  },
+                                )
+                            : undefined
+                        }
+                        onRemoveDraft={
+                          draftBlock
+                            ? (block) => onRemoveDraft(session.id, block.id)
+                            : undefined
+                        }
+                        onSaveSelectionNote={
+                          notesEnabled ? saveSelectionNote : undefined
+                        }
+                        onOpenFile={onOpenFile}
+                        onOpenDiff={onOpenDiff}
+                        onOpenPlan={openPlan}
+                        onBuildPlan={
+                          session.worktreeRemoved ? undefined : buildPlan
+                        }
+                        planBuildTargets={!remote}
+                        onSecondOpinion={
+                          !agent &&
+                          !session.inboxAsk &&
+                          !session.worktreeRemoved &&
+                          onSecondOpinion
+                            ? (target, turn) =>
+                                onSecondOpinion(session.id, target, turn)
+                            : undefined
+                        }
+                        onHandoff={
+                          !agent &&
+                          !session.inboxAsk &&
+                          !session.worktreeRemoved &&
+                          onHandoff
+                            ? (target, turn) =>
+                                onHandoff(session.id, target, turn)
+                            : undefined
+                        }
+                        onJumpToBottomChange={jumpVisibility.setVisible}
+                        onJumpToBottomReady={onJumpToBottomReady}
+                        onRevealReady={onRevealReady}
+                        onNavigateReady={onNavigateReady}
+                        onScrollerChange={setTranscriptScroller}
+                        editingLastTurn={editingLastTurn}
+                        onEditLastTurn={
+                          editLastTurnSupported &&
+                          !monoTranscript.viewingOlderPage
+                            ? () => {
+                                onFocus(session.id);
+                                recallLastTurnRef.current?.();
+                              }
+                            : undefined
+                        }
+                        latestTurnAccessory={
+                          !showChangedFilesCard ||
+                          remote ||
+                          session.inboxAsk ||
+                          session.worktreeRemoved ||
+                          monoTranscript.viewingOlderPage ||
+                          draftBlock ? undefined : (
+                            <SessionReview
+                              sessionId={session.id}
+                              cwd={workCwd}
+                              enabled={visible}
+                              busy={!!session.busy}
+                              undoLocked={
+                                reviewUndoLocked ||
+                                orchestrationRuns.some(
+                                  (run) =>
+                                    (run.status === "active" ||
+                                      run.status === "paused") &&
+                                    (run.leadId === session.id ||
+                                      run.tasks.some(
+                                        (task) => task.sessionId === session.id,
+                                      )),
+                                )
+                              }
+                              onOpenDiff={onOpenDiff}
+                              onCommit={onCommitChanges}
+                            />
+                          )
+                        }
+                      />
+                    </MarkdownLinkContext.Provider>
                   </PooledTranscript>
                 </div>
                 {viewedSubagent ? (

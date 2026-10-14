@@ -144,6 +144,7 @@ import {
   turnCopyText,
   workKind,
   workSummaryLine,
+  isMonoCompletionPrompt,
   monoTurnLatestStart,
   monoTurnRuns,
   opensNewStretch,
@@ -211,6 +212,8 @@ type Props = {
   bottomAligned?: boolean;
   /** Keeps process in the activity trail, with live progress in the header. */
   inlineWork?: boolean;
+  /** Gives each reply sent after delegated work its own message. */
+  separateReplies?: boolean;
   messageDeliveries?: ReadonlyMap<string, MessageDelivery>;
   onRetryMessage?: (blockId: string) => void;
   /** Inspect a Mono turn in the activity sidebar. */
@@ -282,6 +285,7 @@ function AgentTranscriptComponent({
   agentMascot,
   bottomAligned = false,
   inlineWork = false,
+  separateReplies = false,
   messageDeliveries,
   onRetryMessage,
   onShowWork,
@@ -666,7 +670,7 @@ function AgentTranscriptComponent({
     () => new Set(messageDeliveries?.keys()),
     [messageDeliveries],
   );
-  const turns = turnCache.group(blocks, managed, inlineWork);
+  const turns = turnCache.group(blocks, managed, inlineWork, separateReplies);
   const liveRunStart = busy ? liveRunStartIndex(turns) : turns.length;
   // A scheduled update can land while the chat's own turn is still running.
   const activeTurnIndex = turns.reduce(
@@ -1212,6 +1216,8 @@ function AgentTranscriptComponent({
                   ...(item.type === "block" ? [item.block] : item.blocks),
                 );
               });
+              // A report coming back puts its thread under the reply to it.
+              pending.push(...turn.filter(isMonoCompletionPrompt));
               flush();
               if (pending.length) extrasTail = turnExtras(pending);
             }

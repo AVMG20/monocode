@@ -6,7 +6,6 @@ import {
   type ReactNode,
 } from "react";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import { CoordinatorPromptPage } from "../../coordinator/ui/CoordinatorPromptPage";
 import {
   COORDINATOR_COMPACT_OPTIONS,
   COORDINATOR_ROTATE_TOKENS,
@@ -46,7 +45,7 @@ import { MonoSidebar, MonoSidebarHeader } from "./MonoSidebar";
 /** A page opened directly from Details, or one habit inside its list. */
 type Route =
   | {
-      kind: "habits" | "soul" | "memory" | "settings" | "new-habit" | "prompt";
+      kind: "habits" | "soul" | "memory" | "settings" | "new-habit";
     }
   | { kind: "habit"; id: string };
 
@@ -133,13 +132,6 @@ export function MonoDetails({
               </div>
             </div>
           ),
-        },
-      ];
-    if (route.kind === "prompt")
-      return [
-        {
-          key: "prompt",
-          node: <CoordinatorPromptPage monoId={monoId} onBack={back} />,
         },
       ];
     if (route.kind === "soul")

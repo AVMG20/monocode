@@ -406,12 +406,15 @@ export function monoTurnLatestStart(turn: Block[]): number | undefined {
  * The Mono chat's turns. A reply the Mono sends on its own, after a session it
  * launched finishes, continues the message above it: one header, one answer,
  * one set of actions. Only a new stretch, which gets its own day and time,
- * starts a fresh message.
+ * starts a fresh message. With `separateReplies` (a project's coordinator,
+ * whose threads report back often) every such reply is a message of its own.
  */
 export function groupMonoChatTurns(
   blocks: Block[],
   managed = false,
+  separateReplies = false,
 ): Block[][] {
+  if (separateReplies) return groupMonoTurns(blocks, managed);
   const groups: Block[][] = [];
   for (const turn of groupMonoTurns(blocks, managed)) {
     const previous = groups[groups.length - 1];

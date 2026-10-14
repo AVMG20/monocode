@@ -586,7 +586,6 @@ import {
   coordinatorContext,
   coordinatorCompactAt,
   coordinatorOverBudget,
-  coordinatorPromptKey,
   COORDINATOR_PROMPT_VERSION,
   allProjectThreadIds,
   forgetProjectThreads,
@@ -8262,7 +8261,7 @@ function Workspace({
                 .map((project) => project.path)
                 .join("|")}:${
                 coordinator
-                  ? `project-${COORDINATOR_PROMPT_VERSION}-${coordinatorPromptKey(monoRecord?.coordinatorPrompt)}`
+                  ? `project-${COORDINATOR_PROMPT_VERSION}`
                   : MONO_PROMPT_VERSION
               }`,
             };
@@ -8293,12 +8292,7 @@ function Workspace({
           ) {
             appContext.push(
               coordinator
-                ? coordinatorContext(
-                    agentLook,
-                    agentFiles,
-                    agentPlan,
-                    monoRecord?.coordinatorPrompt,
-                  )
+                ? coordinatorContext(agentLook, agentFiles, agentPlan)
                 : monoContext(agentLook, agentFiles, agentPlan),
             );
           }
@@ -12843,13 +12837,16 @@ function Workspace({
 
   // Renames, mascot picks and new projects show up on the rail.
   const monoViewMono = monoViewId ? monoForSession(monoViewId) : undefined;
+  const monoViewCoordinator = isCoordinatorProject(monoViewMono);
   const selectedMonoActivity = resolveMonoActivity(
     monoActivity,
     monoViewSession,
+    monoViewCoordinator,
   );
   const selectedMonoSessions = resolveMonoActivity(
     monoSessions,
     monoViewSession,
+    monoViewCoordinator,
   );
   // A thread beside the coordinator sits right of the Mono panels, so it
   // holds the window controls unless an artifact or changes panel follows.

@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import type { Block } from "../../sessions/model/session";
+import { monoSessionCompletionMessage } from "../../monos/model/monoSessionCompletion";
 import {
-  coordinatorPromptKey,
   renderCoordinatorPrompt,
   threadHandoffs,
   threadSteps,
@@ -87,19 +87,47 @@ it("follows the latest step list and the step in progress", () => {
   expect(threadSteps([])).toBeUndefined();
 });
 
-it("fills the coordinator prompt in, custom or default", () => {
-  const look = {
+it("fills the project's details into the coordinator prompt", () => {
+  const prompt = renderCoordinatorPrompt({
     name: "robotica",
     projects: [{ name: "robotica", path: "/repo" }],
+  });
+  expect(prompt).toContain('the project "robotica"');
+  expect(prompt).toContain("- robotica: /repo");
+  expect(prompt).toContain('"project":"/repo"');
+  expect(prompt).not.toContain("{{");
+});
+
+it("reads the threads a completion report brings back", () => {
+  const message = monoSessionCompletionMessage({
+    requestId: "r1",
+    sessionId: "app-c-7",
+    project: "/repo",
+    prompt: "Review the backlog",
+    outcome: { status: "failed", text: "Broke" },
+  });
+  const report: Block = {
+    id: "report",
+    role: "user",
+    text: message.text,
+    internal: true,
+    monoSessionCompletion: message.monoSessionCompletion,
   };
-  const custom = renderCoordinatorPrompt(
-    "Coordinate {{project}} at {{path}}:\n{{folders}}",
-    look,
-  );
-  expect(custom).toBe("Coordinate robotica at /repo:\n- robotica: /repo");
-  const fallback = renderCoordinatorPrompt("   ", look);
-  expect(fallback).toContain('the project "robotica"');
-  expect(fallback).not.toContain("{{");
-  expect(coordinatorPromptKey(undefined)).toBe("default");
-  expect(coordinatorPromptKey("a")).not.toBe(coordinatorPromptKey("b"));
+  expect(threadHandoffs([report])).toEqual([
+    { kind: "report", sessionId: "app-c-7", prompt: "", outcome: "failed" },
+  ]);
+  const group: Block = {
+    ...report,
+    id: "group",
+    text: `Notice\n\n${JSON.stringify({
+      sessions: [
+        { sessionId: "a", status: "completed" },
+        { sessionId: "b", status: "cancelled" },
+      ],
+    })}`,
+  };
+  expect(threadHandoffs([group]).map((h) => [h.sessionId, h.outcome])).toEqual([
+    ["a", "completed"],
+    ["b", "cancelled"],
+  ]);
 });

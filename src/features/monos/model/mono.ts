@@ -41,8 +41,6 @@ export type Mono = {
   kind?: "project";
   /** A project's coordinator starts fresh past this many tokens. */
   compactAt?: number;
-  /** A project's own coordinator prompt, in place of the default. */
-  coordinatorPrompt?: string;
   /** Its conversation; absent until it is first opened. */
   sessionId?: string;
   /** Replaces the mascot's own name. */
@@ -171,10 +169,6 @@ function parseMono(value: unknown): Mono | undefined {
     ...(entry.kind === "project" ? { kind: "project" as const } : {}),
     ...(typeof entry.compactAt === "number" && Number.isFinite(entry.compactAt)
       ? { compactAt: entry.compactAt }
-      : {}),
-    ...(typeof entry.coordinatorPrompt === "string" &&
-    entry.coordinatorPrompt.trim()
-      ? { coordinatorPrompt: entry.coordinatorPrompt }
       : {}),
     ...(sessionId ? { sessionId } : {}),
     ...(name ? { name } : {}),

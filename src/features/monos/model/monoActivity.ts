@@ -11,9 +11,10 @@ export type MonoActivitySelection = {
 export function resolveMonoActivity(
   selection: MonoActivitySelection | null,
   session: Pick<Session, "id" | "blocks" | "busy"> | undefined,
+  separateReplies = false,
 ) {
   if (!selection || selection.sessionId !== session?.id) return null;
-  const turns = groupMonoChatTurns(session.blocks);
+  const turns = groupMonoChatTurns(session.blocks, false, separateReplies);
   const current = turns.find((turn) => turn[0].id === selection.turnId);
   return {
     turnId: selection.turnId,

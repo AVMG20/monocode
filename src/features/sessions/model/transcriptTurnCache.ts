@@ -13,19 +13,26 @@ export class TranscriptTurnCache {
   private blocks: Block[] | undefined;
   private managed = false;
   private inlineWork = false;
+  private separateReplies = false;
   private turns: Block[][] = [];
   private items = new WeakMap<Block[], Map<string, TurnItem[]>>();
 
-  group(blocks: Block[], managed = false, inlineWork = false): Block[][] {
+  group(
+    blocks: Block[],
+    managed = false,
+    inlineWork = false,
+    separateReplies = false,
+  ): Block[][] {
     if (
       this.blocks === blocks &&
       this.managed === managed &&
-      this.inlineWork === inlineWork
+      this.inlineWork === inlineWork &&
+      this.separateReplies === separateReplies
     )
       return this.turns;
     const previous = new Map(this.turns.map((turn) => [turn[0].id, turn]));
     const grouped = inlineWork
-      ? groupMonoChatTurns(blocks, managed)
+      ? groupMonoChatTurns(blocks, managed, separateReplies)
       : groupTurns(blocks, managed);
     const next = grouped.map((turn) => {
       const before = previous.get(turn[0].id);
@@ -38,6 +45,7 @@ export class TranscriptTurnCache {
     this.blocks = blocks;
     this.managed = managed;
     this.inlineWork = inlineWork;
+    this.separateReplies = separateReplies;
     if (
       next.length !== this.turns.length ||
       next.some((turn, index) => turn !== this.turns[index])

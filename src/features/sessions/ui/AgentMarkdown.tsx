@@ -133,6 +133,14 @@ const FileOpenContext = createContext<{
 }>({});
 
 const RemoteMediaContext = createContext(false);
+
+/**
+ * Shows an in-app link (such as a coordinator's `#thread-<id>`) as something
+ * of its own. Returning undefined leaves the link as it is.
+ */
+export const MarkdownLinkContext = createContext<
+  ((href: string, children: ReactNode) => ReactNode | undefined) | undefined
+>(undefined);
 const MarkdownFadeContext = createContext(false);
 
 const REVEAL_LABEL = IS_MAC
@@ -246,12 +254,15 @@ function MarkdownLink({
   ...props
 }: MarkdownLinkProps) {
   const allowRemoteMedia = useContext(RemoteMediaContext);
+  const renderLink = useContext(MarkdownLinkContext);
   const { cwd, onOpenFile, onFileContextMenu } = useContext(FileOpenContext);
   const file = href ? resolveWorkspaceFileReference(href, cwd) : undefined;
   const label = textContent(children);
   if (allowRemoteMedia && href && isInboxMediaUrl(href)) {
     return <InboxMedia src={href} alt={label} />;
   }
+  const custom = href && renderLink ? renderLink(href, children) : undefined;
+  if (custom !== undefined) return custom;
 
   return (
     <a

@@ -14,7 +14,7 @@ import {
 } from "../model/mono";
 import { ColorPicker, MascotPicker, PageHeader } from "./monoPanelParts";
 
-export type SettingsPage = "habits" | "soul" | "memory" | "settings" | "prompt";
+export type SettingsPage = "habits" | "soul" | "memory" | "settings";
 
 /**
  * Who the Mono is: its face and name up top, then what it does, who it is,
@@ -30,7 +30,7 @@ export function MonoSettingsPage({
   children,
 }: {
   monoId: string;
-  /** A project's coordinator: its prompt and instructions, not a soul. */
+  /** A project's coordinator: its instructions, not a soul. */
   coordinator?: boolean;
   agent: MonoLook;
   /** How many habits and facts it has, beside their rows once loaded. */
@@ -74,13 +74,6 @@ export function MonoSettingsPage({
         {children}
 
         <nav className="flex flex-col gap-px border-t border-stroke p-2">
-          {coordinator ? (
-            <NavRow
-              label="Coordinator prompt"
-              description="How the coordinator answers, forwards work or starts threads."
-              onClick={() => onOpen("prompt")}
-            />
-          ) : null}
           <NavRow
             label={coordinator ? "Instructions" : "Soul"}
             description={
