@@ -580,7 +580,6 @@ import {
 } from "../features/monos/model/monoFiles";
 import { useMonoHabits } from "./hooks/useMonoHabits";
 import { useCoordinatorThreads } from "./hooks/useCoordinatorThreads";
-import { useThreadPlans } from "./hooks/useThreadPlans";
 import {
   addProjectThread,
   coordinatorContext,
@@ -2235,7 +2234,6 @@ function Workspace({
     unseenFinishedIds,
     monosSnap,
   );
-  useThreadPlans(sessions);
   const coordinatorThreadsRef = useRef(coordinatorThreads);
   coordinatorThreadsRef.current = coordinatorThreads;
   const keptThreadIds = useMemo(
@@ -8304,14 +8302,16 @@ function Workspace({
               ),
             );
           }
-          // A coordinator's message asks the thread to work in visible steps.
-          if (options?.forwardedBy && !rawCommand) {
-            const owner = findMono(projectForThread(sessionId) ?? "");
+          // Every message to a project thread, from the coordinator or the
+          // user, asks it to work in visible steps.
+          const threadProject = projectForThread(sessionId);
+          if ((options?.forwardedBy || threadProject) && !rawCommand) {
+            const owner = findMono(threadProject ?? "");
             appContext.push(
               threadRules(
                 owner
                   ? monoLook(owner).name
-                  : options.forwardedBy.replace(/ coordinator$/, ""),
+                  : (options?.forwardedBy ?? "").replace(/ coordinator$/, ""),
               ),
             );
           }

@@ -6,7 +6,6 @@ import type {
   TaskListItem,
 } from "../../sessions/model/session";
 import { sessionDisplayTitle } from "../../sessions/model/session";
-import { currentTurn, hasOwnTaskList, type ThreadPlan } from "./threadPlan";
 import {
   monoCodeToolCall,
   shellWords,
@@ -304,20 +303,6 @@ export function stepsOf(items: TaskListItem[]): ThreadSteps {
   };
 }
 
-/**
- * The steps to show: the agent's own list for its current turn, else the
- * checklist kept for it, else the last list the agent wrote.
- */
-function sessionSteps(
-  blocks: readonly Block[],
-  plan: ThreadPlan | undefined,
-): ThreadSteps | undefined {
-  const turn = currentTurn(blocks);
-  if (turn && hasOwnTaskList(turn.work)) return threadSteps(turn.work);
-  if (plan?.items.length) return stepsOf(plan.items);
-  return threadSteps(blocks);
-}
-
 /** The first line of what the thread last said, for an idle thread's card. */
 function lastReply(session: Pick<Session, "blocks">): string | undefined {
   for (let i = session.blocks.length - 1; i >= 0; i--) {
@@ -363,13 +348,9 @@ export function threadView(input: {
   now?: number;
   /** Last known steps of a thread that is not loaded. */
   steps?: ThreadSteps;
-  /** The checklist kept for the thread when it keeps none of its own. */
-  plan?: ThreadPlan;
 }): ThreadView {
   const { thread, session, summary, unseen = false } = input;
-  const steps = session
-    ? sessionSteps(session.blocks, input.plan)
-    : input.steps;
+  const steps = session ? threadSteps(session.blocks) : input.steps;
   const now = input.now ?? Date.now();
   const lastBlockAt = session?.blocks.reduce(
     (latest, block) => Math.max(latest, block.startedAt ?? 0),
@@ -737,5 +718,5 @@ function parseHandoff(block: Block): ThreadHandoff | undefined {
  * its work reads as steps the user can follow.
  */
 export function threadRules(projectName: string): string {
-  return `<project_thread>\nYou are a thread in the project "${projectName}": the project's coordinator sent you this message on the user's behalf, and the user follows your progress in MonoCode's threads view. Before you start working, lay out the steps you will take as a task list with your task tools (TaskCreate for each step and TaskUpdate as you go; TodoWrite if that is the tool you have), short and concrete, and keep it current: mark each step in progress when you start it and completed when it is done, adding or removing steps when the plan changes. Even a short, read-only task gets a few steps. Ask the user when a decision is genuinely theirs. When you are done, end with a short summary of what changed, how you checked it, and anything that needs the user (a decision, a review, a merge).\n</project_thread>`;
+  return `<project_thread>\nYou are a thread in the project "${projectName}": the user, or the project's coordinator on their behalf, sends you work, and the user follows your progress in MonoCode's threads view through your task list. Before you start working on a message, lay out the steps you will take as a task list with your task tools (TaskCreate for each step and TaskUpdate as you go; TodoWrite if that is the tool you have), short and concrete, and keep it current: mark each step in progress when you start it and completed when it is done, adding or removing steps when the plan changes. Even a short, read-only task gets a few steps. For a follow-up, add steps for the new work to the same list rather than leaving it as it was; when several requests arrive together, cover all of them. Ask the user when a decision is genuinely theirs. When you are done, end with a short summary of what changed, how you checked it, and anything that needs the user (a decision, a review, a merge).\n</project_thread>`;
 }

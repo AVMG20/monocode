@@ -14,10 +14,6 @@ import {
   type ThreadSteps,
   type ThreadView,
 } from "../../features/coordinator/model/coordinator";
-import {
-  subscribeThreadPlans,
-  threadPlansSnapshot,
-} from "../../features/coordinator/model/threadPlan";
 import { listCoordinatorProjects } from "../../features/monos/model/mono";
 import {
   listSessionsByProject,
@@ -60,7 +56,6 @@ export function useCoordinatorThreads(
     ReadonlyMap<string, SessionSummary>
   >(() => new Map());
   const [tick, setTick] = useState(0);
-  const plans = useSyncExternalStore(subscribeThreadPlans, threadPlansSnapshot);
   const lastKnown = useRef(
     new Map<string, { steps?: ThreadSteps; activity?: string }>(),
   );
@@ -119,7 +114,6 @@ export function useCoordinatorThreads(
             unseen: unseenFinishedIds.has(thread.sessionId),
             now,
             steps: known?.steps,
-            plan: plans[thread.sessionId],
           });
           // Idle threads unload; keep showing what they last said and did.
           if (session)
@@ -135,7 +129,7 @@ export function useCoordinatorThreads(
     }
     return out;
     // `tick` re-evaluates the time-based statuses.
-  }, [projects, registry, sessions, summaries, unseenFinishedIds, tick, plans]);
+  }, [projects, registry, sessions, summaries, unseenFinishedIds, tick]);
 
   // A solved thread that starts working again is open again. Only the start
   // counts, so marking a running thread solved sticks until its next turn.
