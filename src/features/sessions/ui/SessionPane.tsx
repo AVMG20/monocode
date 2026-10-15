@@ -1,12 +1,14 @@
 import { GripVertical, X } from "../../../shared/ui/icons";
 import { ThreadHandoffs } from "../../coordinator/ui/ThreadHandoffs";
 import { ThreadLink, threadLinkId } from "../../coordinator/ui/ThreadLink";
+import { ThreadStepsBar } from "../../coordinator/ui/ThreadStepsBar";
 import { MarkdownLinkContext } from "./AgentMarkdown";
 import { ContextMeter } from "./ContextMeter";
 import {
   coordinatorCompactAt,
   coordinatorContextUsage,
   threadHandoffs,
+  threadSteps,
   type ThreadView,
 } from "../../coordinator/model/coordinator";
 import {
@@ -113,7 +115,10 @@ import {
 import { createNote, noteTitle } from "../../notes";
 import {
   loadNotesEnabled,
+  loadSessionSteps,
+  SESSION_STEPS_DEFAULT,
   subscribeNotesEnabled,
+  subscribeSessionSteps,
 } from "../../settings/model/settings";
 import { getComposerDraft, setComposerDraft } from "../model/draftCache";
 import { resolveModel } from "../model/models";
@@ -441,6 +446,17 @@ const LocalSessionPane = memo(function LocalSessionPane({
   useSyncExternalStore(subscribeMonos, monosSnapshot);
   const mono = monoForSession(session.id);
   const agent = mono ? monoLook(mono) : undefined;
+  const sessionStepsEnabled = useSyncExternalStore(
+    subscribeSessionSteps,
+    loadSessionSteps,
+    () => SESSION_STEPS_DEFAULT,
+  );
+  // The session's task list, pinned above the transcript like a thread's.
+  const steps = useMemo(
+    () =>
+      sessionStepsEnabled && !agent ? threadSteps(session.blocks) : undefined,
+    [sessionStepsEnabled, agent, session.blocks],
+  );
   const coordinator = isCoordinatorProject(mono);
   // Under each of its replies, the coordinator shows the threads it started
   // or messaged in that turn and what it told them.
@@ -1038,6 +1054,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
       ) : null}
       <div className="flex min-h-0 min-w-0 flex-1">
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+          {steps && !isEmpty && !viewedSubagent ? (
+            <ThreadStepsBar steps={steps} busy={!!session.busy} />
+          ) : null}
           <div
             ref={transcriptScope}
             className={`@container relative min-h-0 flex-1${

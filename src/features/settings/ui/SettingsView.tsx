@@ -338,6 +338,7 @@ import {
   subscribeMonoMenuBarIcon,
   loadQuickComposerEnabled,
   loadQuickComposerShortcut,
+  loadSessionSteps,
   loadTabAnimationsEnabled,
   saveClaudeHooks,
   saveCloseToTray,
@@ -359,6 +360,7 @@ import {
   saveQuickComposerShortcut,
   subscribeKeybindings,
   type KeybindingOverride,
+  saveSessionSteps,
   saveTabAnimationsEnabled,
   searchSettings,
   settingsSectionDescription,
@@ -976,6 +978,7 @@ function ChatPage() {
     useState(loadTranscriptAnchor);
   const [followUpBehavior, setFollowUpBehavior] =
     useState<FollowUpBehavior>(loadFollowUpBehavior);
+  const [sessionSteps, setSessionSteps] = useState(loadSessionSteps);
   const [modelControls, setModelControls] =
     useState<ModelControls>(loadModelControls);
   const [diffViewer, setDiffViewer] = useState<DiffViewer>(loadDiffViewer);
@@ -1008,6 +1011,11 @@ function ChatPage() {
   const onFollowUpBehavior = (next: FollowUpBehavior) => {
     saveFollowUpBehavior(next);
     setFollowUpBehavior(next);
+  };
+
+  const onSessionSteps = (next: boolean) => {
+    saveSessionSteps(next);
+    setSessionSteps(next);
   };
 
   const onModelControls = (next: ModelControls) => {
@@ -1065,6 +1073,17 @@ function ChatPage() {
             label="Anchor prompts to top"
             on={transcriptAnchor}
             onChange={onTranscriptAnchor}
+          />
+        </Row>
+        <Row
+          id="session-steps"
+          label="Step list in sessions"
+          description="Ask sessions to plan their work as a task list and keep it current, with its progress pinned above the transcript. Project threads always work this way."
+        >
+          <Toggle
+            label="Step list in sessions"
+            on={sessionSteps}
+            onChange={onSessionSteps}
           />
         </Row>
       </Group>

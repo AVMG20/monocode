@@ -364,6 +364,12 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "scroll position sticky message",
   },
   {
+    id: "session-steps",
+    section: "chat",
+    label: "Step list in sessions",
+    keywords: "tasks todo plan progress checklist steps bar",
+  },
+  {
     id: "follow-up",
     section: "chat",
     label: "Follow-up behavior",
@@ -758,6 +764,37 @@ export function saveComposerRunner(value: boolean) {
   window.dispatchEvent(
     new CustomEvent<boolean>(COMPOSER_RUNNER_CHANGE_EVENT, { detail: value }),
   );
+}
+
+const SESSION_STEPS_KEY = "monocode.sessionSteps";
+
+/** Off by default: sessions only keep a task list when they choose to. */
+export const SESSION_STEPS_DEFAULT = false;
+
+/** Fired on `window` when the session step list setting flips. */
+export const SESSION_STEPS_CHANGE_EVENT = "monocode:session-steps-change";
+
+/**
+ * Whether every session is asked to work in visible steps and shows them
+ * pinned above its transcript, the way project threads do.
+ */
+export function loadSessionSteps(): boolean {
+  return readFlag(SESSION_STEPS_KEY) ?? SESSION_STEPS_DEFAULT;
+}
+
+export function saveSessionSteps(value: boolean) {
+  writeFlag(SESSION_STEPS_KEY, value);
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent<boolean>(SESSION_STEPS_CHANGE_EVENT, { detail: value }),
+  );
+}
+
+export function subscribeSessionSteps(onStoreChange: () => void) {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener(SESSION_STEPS_CHANGE_EVENT, onStoreChange);
+  return () =>
+    window.removeEventListener(SESSION_STEPS_CHANGE_EVENT, onStoreChange);
 }
 
 const NOTES_ENABLED_KEY = "monocode.notesEnabled";

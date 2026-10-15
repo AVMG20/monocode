@@ -713,10 +713,21 @@ function parseHandoff(block: Block): ThreadHandoff | undefined {
   };
 }
 
+/** How an agent keeps the task list the user follows it by. */
+const STEP_LIST_RULES = `Before you start working on a message, lay out the steps you will take as a task list with your task tools (TaskCreate for each step and TaskUpdate as you go; TodoWrite if that is the tool you have), short and concrete, and keep it current: mark each step in progress when you start it and completed when it is done, adding or removing steps when the plan changes. Even a short, read-only task gets a few steps. For a follow-up, or a message that arrives while you are working, update the same list rather than leaving it as it was: add steps for new work, rename steps whose scope changed, and delete steps that no longer apply (TaskUpdate with status "deleted"); when several requests arrive together, cover all of them.`;
+
 /**
  * What a thread is told along with each message its coordinator sends, so
  * its work reads as steps the user can follow.
  */
 export function threadRules(projectName: string): string {
-  return `<project_thread>\nYou are a thread in the project "${projectName}": the user, or the project's coordinator on their behalf, sends you work, and the user follows your progress in MonoCode's threads view through your task list. Before you start working on a message, lay out the steps you will take as a task list with your task tools (TaskCreate for each step and TaskUpdate as you go; TodoWrite if that is the tool you have), short and concrete, and keep it current: mark each step in progress when you start it and completed when it is done, adding or removing steps when the plan changes. Even a short, read-only task gets a few steps. For a follow-up, add steps for the new work to the same list rather than leaving it as it was; when several requests arrive together, cover all of them. Ask the user when a decision is genuinely theirs. When you are done, end with a short summary of what changed, how you checked it, and anything that needs the user (a decision, a review, a merge).\n</project_thread>`;
+  return `<project_thread>\nYou are a thread in the project "${projectName}": the user, or the project's coordinator on their behalf, sends you work, and the user follows your progress in MonoCode's threads view through your task list. ${STEP_LIST_RULES} Ask the user when a decision is genuinely theirs. When you are done, end with a short summary of what changed, how you checked it, and anything that needs the user (a decision, a review, a merge).\n</project_thread>`;
+}
+
+/**
+ * Asks a plain session to work in visible steps, when the user turned the
+ * step list on for sessions.
+ */
+export function sessionStepRules(): string {
+  return `<session_steps>\nThe user follows your progress in MonoCode through your task list, pinned above this conversation. ${STEP_LIST_RULES}\n</session_steps>`;
 }

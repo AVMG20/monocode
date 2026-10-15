@@ -592,6 +592,7 @@ import {
   subscribeProjectThreads,
   projectForThread,
   resolveProjectThread,
+  sessionStepRules,
   threadRules,
   threadsBrief,
 } from "../features/coordinator/model/coordinator";
@@ -742,6 +743,7 @@ import {
   loadDiffViewer,
   loadFollowUpBehavior,
   loadKeybindingOverrides,
+  loadSessionSteps,
   loadSettingsSection,
   keybindingPressed,
   matchCustomKeybinding,
@@ -8303,7 +8305,8 @@ function Workspace({
             );
           }
           // Every message to a project thread, from the coordinator or the
-          // user, asks it to work in visible steps.
+          // user, asks it to work in visible steps; other sessions do when
+          // the user turned the step list on.
           const threadProject = projectForThread(sessionId);
           if ((options?.forwardedBy || threadProject) && !rawCommand) {
             const owner = findMono(threadProject ?? "");
@@ -8314,6 +8317,8 @@ function Workspace({
                   : (options?.forwardedBy ?? "").replace(/ coordinator$/, ""),
               ),
             );
+          } else if (!mono && !rawCommand && loadSessionSteps()) {
+            appContext.push(sessionStepRules());
           }
           if (operatorCommand.matched || handAgent) {
             const cli = `${shellPath(await invoke<string>("app_cli_path"))} app`;
