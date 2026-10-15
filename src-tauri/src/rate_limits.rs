@@ -1,8 +1,9 @@
-use std::path::PathBuf;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{json, Value};
 #[cfg(target_os = "macos")]
 use sha2::{Digest, Sha256};
 use tauri::AppHandle;
@@ -15,6 +16,16 @@ const OAUTH_USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 const OAUTH_BETA: &str = "oauth-2025-04-20";
 const USER_AGENT: &str = "claude-code/2.1.0";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
+const OAUTH_TOKEN_URL: &str = "https://platform.claude.com/v1/oauth/token";
+const OAUTH_CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+/// Claude Code's own refresh lock: a proper-lockfile folder that counts as
+/// abandoned once its mtime is a minute old.
+const REFRESH_LOCK_NAME: &str = ".oauth_refresh.lock";
+const REFRESH_LOCK_STALE: Duration = Duration::from_secs(60);
+const REFRESH_LOCK_WAIT: Duration = Duration::from_secs(12);
+
+/// Serializes renewals inside this process; the lock folders cover the rest.
+static RENEW_LOCK: Mutex<()> = Mutex::new(());
 
 #[cfg(target_os = "macos")]
 const KEYCHAIN_TIMEOUT: Duration = Duration::from_secs(5);
@@ -382,6 +393,18 @@ pub(crate) fn extract_opencode_go_api_key(raw: &str) -> Option<String> {
 struct ClaudeCredentials {
     access_token: String,
     expires_at_ms: Option<i64>,
+    blob: Value,
+    store: CredentialStore,
+}
+
+/// Where Claude Code keeps an account's credential, so a renewal is written
+/// back to the same place.
+enum CredentialStore {
+    #[cfg(target_os = "macos")]
+    Keychain {
+        service: String,
+    },
+    File(PathBuf),
 }
 
 fn usage_result(
@@ -436,15 +459,239 @@ fn fetch_claude_usage_sync(config_dir: Option<PathBuf>) -> Result<ClaudeUsageFet
         ));
     };
 
-    // Claude Code owns this credential and rotates its refresh token. The
-    // usage footer must remain read-only: independently refreshing here can
-    // race a live CLI (or another MonoCode window) and leave one process with
-    // a spent refresh token, which forces the user through sign-in again.
-    if token_expired(creds.expires_at_ms, now_ms()) {
-        return Ok(usage_error(401));
-    }
+    // An account nobody used for a few hours holds an expired access token;
+    // only its (still valid) refresh token can bring it back.
+    let creds = if token_expired(creds.expires_at_ms, now_ms()) {
+        match renew_claude_credentials(config_dir.as_deref()) {
+            Ok(Some(creds)) => creds,
+            Ok(None) => return Ok(usage_error(401)),
+            Err(error) => return Ok(usage_result("error", None, None, Some(error))),
+        }
+    } else {
+        creds
+    };
 
     Ok(fetch_usage_with_token(&creds.access_token))
+}
+
+/// Renew the account's sign-in before a session starts on it, so the CLI and
+/// its claude.ai connectors start from a live token.
+pub(crate) fn renew_expired_claude_sign_in(config_dir: &Path) {
+    let Some(creds) = read_claude_credentials(Some(config_dir)) else {
+        return;
+    };
+    if !token_expired(creds.expires_at_ms, now_ms()) {
+        return;
+    }
+    if let Err(error) = renew_claude_credentials(Some(config_dir)) {
+        eprintln!("[rate_limits] Claude sign-in renewal skipped: {error}");
+    }
+}
+
+/// Trade the refresh token for a new access token and store it where Claude
+/// Code reads it. Claude Code rotates refresh tokens, so this holds Claude
+/// Code's own refresh lock and re-reads the credential under it: a CLI (or
+/// another MonoCode window) that renewed first is picked up instead of
+/// spending its refresh token a second time. Running CLIs notice the new
+/// access token under the same lock before they refresh.
+///
+/// `Ok(None)` means the sign-in is really gone.
+fn renew_claude_credentials(
+    config_dir: Option<&Path>,
+) -> Result<Option<ClaudeCredentials>, String> {
+    let _serial = RENEW_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let root = claude_lock_root(config_dir).ok_or("Claude config folder not found")?;
+    let _lock = RefreshLock::acquire(&root)?;
+    let Some(mut creds) = read_claude_credentials(config_dir) else {
+        return Ok(None);
+    };
+    if !token_expired(creds.expires_at_ms, now_ms()) {
+        return Ok(Some(creds));
+    }
+    let Some(oauth) = oauth_object(&creds.blob) else {
+        return Ok(None);
+    };
+    let Some(refresh_token) = string_field(oauth, "refreshToken") else {
+        return Ok(None);
+    };
+    let mut body = json!({
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+        "client_id": string_field(oauth, "clientId").unwrap_or_else(|| OAUTH_CLIENT_ID.into()),
+    });
+    if let Some(scopes) = oauth.get("scopes").and_then(Value::as_array) {
+        let scopes: Vec<&str> = scopes.iter().filter_map(Value::as_str).collect();
+        if !scopes.is_empty() {
+            body["scope"] = json!(scopes.join(" "));
+        }
+    }
+
+    let agent = ureq::AgentBuilder::new().timeout(HTTP_TIMEOUT).build();
+    let response = match agent
+        .post(OAUTH_TOKEN_URL)
+        .set("Content-Type", "application/json")
+        .set("User-Agent", USER_AGENT)
+        .send_string(&body.to_string())
+    {
+        Ok(response) => response,
+        // The refresh token was revoked or expired: only a new sign-in helps.
+        Err(ureq::Error::Status(400 | 401 | 403, _)) => return Ok(None),
+        Err(ureq::Error::Status(status, _)) => {
+            return Err(format!("Couldn't renew the Claude sign-in (HTTP {status})"))
+        }
+        Err(error) => return Err(format!("Couldn't renew the Claude sign-in: {error}")),
+    };
+    let payload: Value = response
+        .into_string()
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .ok_or("Couldn't renew the Claude sign-in: unreadable response")?;
+    let access = apply_refresh_response(&mut creds.blob, &payload, now_ms())
+        .ok_or("Couldn't renew the Claude sign-in: no access token returned")?;
+    store_claude_credentials(&creds.store, &creds.blob)?;
+    creds.access_token = access;
+    creds.expires_at_ms = oauth_expires_at_ms(&creds.blob);
+    Ok(Some(creds))
+}
+
+fn oauth_object(blob: &Value) -> Option<&Value> {
+    match blob.get("claudeAiOauth") {
+        Some(oauth) => oauth.is_object().then_some(oauth),
+        None => blob.is_object().then_some(blob),
+    }
+}
+
+fn string_field(value: &Value, key: &str) -> Option<String> {
+    let text = value.get(key)?.as_str()?.trim();
+    (!text.is_empty()).then(|| text.to_string())
+}
+
+fn int_field(value: &Value, key: &str) -> Option<i64> {
+    let value = value.get(key)?;
+    value
+        .as_i64()
+        .or_else(|| value.as_f64().filter(|n| n.is_finite()).map(|n| n as i64))
+}
+
+/// Fold a token response into the stored credential the way Claude Code
+/// does, keeping its other fields (subscription, rate limit tier, ...).
+pub(crate) fn apply_refresh_response(
+    blob: &mut Value,
+    response: &Value,
+    now_ms: i64,
+) -> Option<String> {
+    let access = string_field(response, "access_token")?;
+    let oauth = if blob.get("claudeAiOauth").is_some() {
+        blob.get_mut("claudeAiOauth")?
+    } else {
+        blob
+    };
+    let oauth = oauth.as_object_mut()?;
+    oauth.insert("accessToken".into(), json!(access));
+    if let Some(refresh) = string_field(response, "refresh_token") {
+        oauth.insert("refreshToken".into(), json!(refresh));
+    }
+    if let Some(expires_in) = int_field(response, "expires_in") {
+        oauth.insert(
+            "expiresAt".into(),
+            json!(now_ms.saturating_add(expires_in.saturating_mul(1000))),
+        );
+    }
+    if let Some(expires_in) = int_field(response, "refresh_token_expires_in") {
+        oauth.insert(
+            "refreshTokenExpiresAt".into(),
+            json!(now_ms.saturating_add(expires_in.saturating_mul(1000))),
+        );
+    }
+    if let Some(scope) = string_field(response, "scope") {
+        let scopes: Vec<&str> = scope.split_whitespace().collect();
+        oauth.insert("scopes".into(), json!(scopes));
+    }
+    Some(access)
+}
+
+fn store_claude_credentials(store: &CredentialStore, blob: &Value) -> Result<(), String> {
+    match store {
+        #[cfg(target_os = "macos")]
+        CredentialStore::Keychain { service } => {
+            let raw = serde_json::to_string(blob).map_err(|error| error.to_string())?;
+            write_macos_keychain_blob(service, &raw)
+        }
+        CredentialStore::File(path) => crate::account_sync::write_json_atomic(path, blob),
+    }
+}
+
+/// The folder Claude Code locks while it refreshes: the account's config
+/// folder, or `~/.claude` for the default profile.
+fn claude_lock_root(config_dir: Option<&Path>) -> Option<PathBuf> {
+    if let Some(dir) = config_dir {
+        return Some(dir.to_path_buf());
+    }
+    if let Some(dir) = std::env::var_os("CLAUDE_CONFIG_DIR").filter(|dir| !dir.is_empty()) {
+        return Some(PathBuf::from(dir));
+    }
+    claude_credentials_path(None)?
+        .parent()
+        .map(Path::to_path_buf)
+}
+
+/// Claude Code's refresh lock: `<config>/.oauth_refresh.lock`, plus the
+/// legacy `<config>.lock` that older CLIs take. Both are proper-lockfile
+/// folders, so creating the folder is the lock.
+struct RefreshLock {
+    held: Vec<PathBuf>,
+}
+
+impl RefreshLock {
+    fn acquire(root: &Path) -> Result<Self, String> {
+        std::fs::create_dir_all(root)
+            .map_err(|error| format!("Could not create {}: {error}", root.display()))?;
+        let legacy = {
+            let resolved = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+            let mut name = resolved.into_os_string();
+            name.push(".lock");
+            PathBuf::from(name)
+        };
+        let paths = [root.join(REFRESH_LOCK_NAME), legacy];
+        let started = Instant::now();
+        loop {
+            let mut lock = RefreshLock { held: Vec::new() };
+            for path in &paths {
+                if !take_lock_folder(path) {
+                    break;
+                }
+                lock.held.push(path.clone());
+            }
+            if lock.held.len() == paths.len() {
+                return Ok(lock);
+            }
+            drop(lock);
+            if started.elapsed() > REFRESH_LOCK_WAIT {
+                return Err("Claude is still renewing its sign-in; try again shortly".into());
+            }
+            std::thread::sleep(Duration::from_millis(250));
+        }
+    }
+}
+
+impl Drop for RefreshLock {
+    fn drop(&mut self) {
+        for path in self.held.iter().rev() {
+            let _ = std::fs::remove_dir(path);
+        }
+    }
+}
+
+fn take_lock_folder(path: &Path) -> bool {
+    if std::fs::create_dir(path).is_ok() {
+        return true;
+    }
+    let stale = std::fs::metadata(path)
+        .and_then(|meta| meta.modified())
+        .ok()
+        .and_then(|modified| modified.elapsed().ok())
+        .is_some_and(|age| age > REFRESH_LOCK_STALE);
+    stale && std::fs::remove_dir_all(path).is_ok() && std::fs::create_dir(path).is_ok()
 }
 
 fn fetch_usage_with_token(token: &str) -> ClaudeUsageFetch {
@@ -537,7 +784,7 @@ fn read_claude_credentials(config_dir: Option<&std::path::Path>) -> Option<Claud
 fn read_credentials_file(config_dir: Option<&std::path::Path>) -> Option<ClaudeCredentials> {
     let path = claude_credentials_path(config_dir)?;
     let raw = std::fs::read_to_string(&path).ok()?;
-    credentials_from_blob(&raw)
+    credentials_from_blob(&raw, CredentialStore::File(path))
 }
 
 fn claude_credentials_path(config_dir: Option<&std::path::Path>) -> Option<PathBuf> {
@@ -550,12 +797,14 @@ fn claude_credentials_path(config_dir: Option<&std::path::Path>) -> Option<PathB
     Some(PathBuf::from(home).join(".claude/.credentials.json"))
 }
 
-fn credentials_from_blob(raw: &str) -> Option<ClaudeCredentials> {
+fn credentials_from_blob(raw: &str, store: CredentialStore) -> Option<ClaudeCredentials> {
     let blob: Value = serde_json::from_str(raw.trim()).ok()?;
     let access_token = extract_access_token(raw)?;
     Some(ClaudeCredentials {
         access_token,
         expires_at_ms: oauth_expires_at_ms(&blob),
+        blob,
+        store,
     })
 }
 
@@ -629,7 +878,10 @@ fn read_macos_keychain_credentials(service: &str) -> Option<ClaudeCredentials> {
     ];
     for args in candidates {
         if let Some(secret) = security_output(&args) {
-            if let Some(creds) = credentials_from_blob(&secret) {
+            let store = CredentialStore::Keychain {
+                service: service.to_string(),
+            };
+            if let Some(creds) = credentials_from_blob(&secret, store) {
                 return Some(creds);
             }
         }
@@ -667,6 +919,87 @@ pub(crate) fn delete_claude_keychain_credentials(
     ];
     security_delete(&args).map_err(|error| {
         format!("Could not remove the Claude credentials from Keychain ({service}): {error}")
+    })
+}
+
+/// Overwrite the credential the way Claude Code writes it: through
+/// `security -i`, so the secret never shows up in a process listing, and
+/// under the account name the item already has.
+#[cfg(target_os = "macos")]
+fn write_macos_keychain_blob(service: &str, raw: &str) -> Result<(), String> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    let account = keychain_account(service).unwrap_or_else(keychain_user);
+    let hex: String = raw.bytes().map(|byte| format!("{byte:02x}")).collect();
+    let command = format!(
+        "add-generic-password -U -a \"{}\" -s \"{}\" -X \"{hex}\"\n",
+        keychain_quote(&account),
+        keychain_quote(service),
+    );
+    let mut child = Command::new("security")
+        .arg("-i")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("Could not run security: {error}"))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(command.as_bytes())
+            .map_err(|error| format!("Could not write to security: {error}"))?;
+    }
+    let started = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) if status.success() => return Ok(()),
+            Ok(Some(status)) => {
+                let mut error = String::new();
+                if let Some(mut stderr) = child.stderr.take() {
+                    use std::io::Read;
+                    let _ = stderr.read_to_string(&mut error);
+                }
+                let detail = error.trim();
+                return Err(format!(
+                    "Could not save the renewed Claude sign-in to Keychain: {}",
+                    if detail.is_empty() {
+                        status.to_string()
+                    } else {
+                        detail.to_string()
+                    }
+                ));
+            }
+            Ok(None) if started.elapsed() < KEYCHAIN_TIMEOUT => {
+                std::thread::sleep(Duration::from_millis(25));
+            }
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err("Saving the renewed Claude sign-in to Keychain timed out".into());
+            }
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn keychain_quote(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+/// The account name of an existing Keychain item (`"acct"<blob>="..."`).
+#[cfg(target_os = "macos")]
+fn keychain_account(service: &str) -> Option<String> {
+    let output = security_output(&keychain_find_args(service))?;
+    parse_keychain_account(&output)
+}
+
+#[cfg(target_os = "macos")]
+fn parse_keychain_account(attributes: &str) -> Option<String> {
+    attributes.lines().find_map(|line| {
+        let value = line.trim().strip_prefix("\"acct\"<blob>=\"")?;
+        let value = value.strip_suffix('"')?;
+        (!value.is_empty()).then(|| value.to_string())
     })
 }
 
@@ -922,6 +1255,81 @@ mod tests {
         assert!(token_expired(Some(now), now));
         assert!(token_expired(Some(now - 1), now));
         assert!(!token_expired(None, now));
+    }
+
+    #[test]
+    fn refresh_response_keeps_the_rest_of_the_credential() {
+        let mut blob = json!({
+            "claudeAiOauth": {
+                "accessToken": "old",
+                "refreshToken": "r1",
+                "expiresAt": 1,
+                "scopes": ["user:inference"],
+                "subscriptionType": "max"
+            },
+            "mcpOAuth": { "x": 1 }
+        });
+        let response = json!({
+            "access_token": "new",
+            "refresh_token": "r2",
+            "expires_in": 3600,
+            "refresh_token_expires_in": 7200,
+            "scope": "user:inference user:profile"
+        });
+        assert_eq!(
+            apply_refresh_response(&mut blob, &response, 1_000).as_deref(),
+            Some("new")
+        );
+        let oauth = &blob["claudeAiOauth"];
+        assert_eq!(oauth["accessToken"], "new");
+        assert_eq!(oauth["refreshToken"], "r2");
+        assert_eq!(oauth["expiresAt"], 3_601_000);
+        assert_eq!(oauth["refreshTokenExpiresAt"], 7_201_000);
+        assert_eq!(oauth["scopes"], json!(["user:inference", "user:profile"]));
+        assert_eq!(oauth["subscriptionType"], "max");
+        assert_eq!(blob["mcpOAuth"]["x"], 1);
+    }
+
+    #[test]
+    fn refresh_response_without_rotation_keeps_the_refresh_token() {
+        let mut blob = json!({ "claudeAiOauth": { "accessToken": "a", "refreshToken": "r" } });
+        apply_refresh_response(&mut blob, &json!({ "access_token": "b" }), 0).unwrap();
+        assert_eq!(blob["claudeAiOauth"]["refreshToken"], "r");
+        assert_eq!(apply_refresh_response(&mut blob, &json!({}), 0), None);
+    }
+
+    #[test]
+    fn refresh_lock_waits_for_a_live_holder_and_breaks_a_stale_one() {
+        let root = std::env::temp_dir().join(format!("monocode-lock-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        {
+            let _lock = RefreshLock::acquire(&root).unwrap();
+            assert!(root.join(REFRESH_LOCK_NAME).is_dir());
+            assert!(!take_lock_folder(&root.join(REFRESH_LOCK_NAME)));
+        }
+        assert!(!root.join(REFRESH_LOCK_NAME).exists());
+
+        let held = root.join(REFRESH_LOCK_NAME);
+        std::fs::create_dir(&held).unwrap();
+        let old = SystemTime::now() - Duration::from_secs(120);
+        std::fs::File::open(&held)
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+        assert!(take_lock_folder(&held));
+        std::fs::remove_dir(&held).unwrap();
+        let mut legacy = root.canonicalize().unwrap().into_os_string();
+        legacy.push(".lock");
+        assert!(!PathBuf::from(legacy).exists());
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn reads_the_account_of_a_keychain_item() {
+        let attributes = "keychain: \"/k\"\nattributes:\n    \"acct\"<blob>=\"arno\"\n    \"svce\"<blob>=\"Claude Code-credentials\"";
+        assert_eq!(parse_keychain_account(attributes).as_deref(), Some("arno"));
+        assert_eq!(parse_keychain_account("    \"acct\"<blob>=<NULL>"), None);
     }
 
     #[cfg(target_os = "macos")]

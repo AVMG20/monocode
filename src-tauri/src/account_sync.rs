@@ -836,7 +836,7 @@ fn read_json(path: &Path) -> Result<Option<Value>, String> {
 
 /// Write through a temp file and rename, so a CLI reading the file never
 /// sees half of it. These files can hold credentials: keep them owner-only.
-fn write_json_atomic(path: &Path, value: &Value) -> Result<(), String> {
+pub(crate) fn write_json_atomic(path: &Path, value: &Value) -> Result<(), String> {
     // Replace what a symlinked config points at, not the link.
     let resolved = path.canonicalize().ok();
     let path = resolved.as_deref().unwrap_or(path);

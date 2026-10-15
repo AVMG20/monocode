@@ -1122,6 +1122,9 @@ fn apply_provider_account(
                     eprintln!("[harness] Account config sync skipped: {error}");
                 }
             }
+            // An account left idle for a few hours starts on an expired token,
+            // and its claude.ai connectors then come up as needing sign-in.
+            crate::rate_limits::renew_expired_claude_sign_in(&dir);
             // Claude scopes both its ordinary config and its macOS Keychain
             // credential to these exact strings. Setting both keeps profiles
             // isolated on every supported platform.
