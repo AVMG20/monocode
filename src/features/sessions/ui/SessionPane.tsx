@@ -179,6 +179,8 @@ export type SessionPaneProps = {
   onOpenProjectThread?: (sessionId: string) => void;
   recents: RecentProject[];
   hideProjectPicker?: boolean;
+  /** The pane sits under a header that already pins the step list. */
+  hideSteps?: boolean;
   onFocus: (sessionId: string) => void;
   onClose: (sessionId: string) => void;
   onCwdChange: (sessionId: string, cwd: string) => void;
@@ -339,6 +341,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   composerFocusToken,
   recents,
   hideProjectPicker,
+  hideSteps,
   onFocus,
   onClose,
   onCwdChange,
@@ -454,8 +457,10 @@ const LocalSessionPane = memo(function LocalSessionPane({
   // The session's task list, pinned above the transcript like a thread's.
   const steps = useMemo(
     () =>
-      sessionStepsEnabled && !agent ? threadSteps(session.blocks) : undefined,
-    [sessionStepsEnabled, agent, session.blocks],
+      sessionStepsEnabled && !agent && !hideSteps
+        ? threadSteps(session.blocks)
+        : undefined,
+    [sessionStepsEnabled, agent, hideSteps, session.blocks],
   );
   const coordinator = isCoordinatorProject(mono);
   // Under each of its replies, the coordinator shows the threads it started

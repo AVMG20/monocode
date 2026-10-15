@@ -13085,6 +13085,7 @@ function Workspace({
               visible
               focused={threadPaneFocused && !projectTerminalFocused}
               inSplit={false}
+              hideSteps
               addToChatTarget={threadPaneFocused}
               composerFocused={
                 threadPaneFocused && composerFocused && !projectTerminalFocused

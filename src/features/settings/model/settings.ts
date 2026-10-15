@@ -768,8 +768,7 @@ export function saveComposerRunner(value: boolean) {
 
 const SESSION_STEPS_KEY = "monocode.sessionSteps";
 
-/** Off by default: sessions only keep a task list when they choose to. */
-export const SESSION_STEPS_DEFAULT = false;
+export const SESSION_STEPS_DEFAULT = true;
 
 /** Fired on `window` when the session step list setting flips. */
 export const SESSION_STEPS_CHANGE_EVENT = "monocode:session-steps-change";
