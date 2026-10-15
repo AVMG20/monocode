@@ -325,7 +325,7 @@ function upsertTaskList(
     (block) => block.role === "user",
   );
   const existing = lastMatchingBlock(session.blocks, (block, index) => {
-    if (block.role !== "tasks") return false;
+    if (event.fresh || block.role !== "tasks") return false;
     if (key) {
       if (block.taskList?.key !== key) return false;
       // A list from another provider conversation stays as history.

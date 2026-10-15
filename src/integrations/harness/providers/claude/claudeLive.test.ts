@@ -430,6 +430,60 @@ describe("claude task tools", () => {
     ).toBe(false);
   });
 
+  it("starts a new list once every step of the last one is done", async () => {
+    const { events, turn } = await startTurn("s1");
+    emitTaskTool(
+      "toolu_c1",
+      "TaskCreate",
+      { subject: "Write tests", description: "Cover the parser" },
+      "Task #1 created successfully: Write tests",
+    );
+    emitTaskTool(
+      "toolu_c2",
+      "TaskCreate",
+      { subject: "Ship it", description: "Open the PR" },
+      "Task #2 created successfully: Ship it",
+    );
+    emitTaskTool(
+      "toolu_u1",
+      "TaskUpdate",
+      { taskId: "1", status: "completed" },
+      "Updated task #1 status",
+    );
+    emitTaskTool(
+      "toolu_u2",
+      "TaskUpdate",
+      { taskId: "2", status: "deleted" },
+      "Updated task #2 status",
+    );
+    emitTaskTool(
+      "toolu_c3",
+      "TaskCreate",
+      { subject: "Cut a release", description: "Tag 1.0.1" },
+      "Task #3 created successfully: Cut a release",
+    );
+    emitTaskTool(
+      "toolu_u3",
+      "TaskUpdate",
+      { taskId: "1", status: "in_progress" },
+      "Updated task #1 status",
+    );
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    await turn;
+
+    const session = events.reduce(
+      applyHarnessEvent,
+      newSession("claude", "/repo"),
+    );
+    const lists = session.blocks
+      .filter((block) => block.role === "tasks")
+      .map((block) => block.taskList?.items);
+    expect(lists).toEqual([
+      [{ id: "1", text: "Write tests", status: "completed" }],
+      [{ id: "3", text: "Cut a release", status: "pending" }],
+    ]);
+  });
+
   it("keeps earlier tasks updatable after a restart resumes the conversation", async () => {
     const first = await startTurn("s1");
     emitTaskTool(

@@ -40,6 +40,7 @@ import {
   isTerminalAgentTaskStatus,
   isTodoTool,
   applyClaudeTaskTool,
+  claudeTaskListFinished,
   isUsageLimitResult,
   normalizeClaudeCliEffort,
   parseBackgroundTasks,
@@ -943,16 +944,28 @@ function handleUser(live: Live, rec: Record<string, unknown>): void {
       preview: previewFromTool(tool.name, tool.input, result.text),
       ...artifactTitleField(tool.name, tool.input),
     });
+    // A step added once every step is done or dropped starts a new list,
+    // so the list follows the work at hand instead of growing for good.
+    const fresh =
+      !result.isError &&
+      tool.name.trim() === "TaskCreate" &&
+      claudeTaskListFinished(live.claudeTasks);
+    const tasks = fresh ? new Map<string, TaskListItem>() : live.claudeTasks;
     if (
       !result.isError &&
-      applyClaudeTaskTool(live.claudeTasks, tool.name, tool.input, result.text)
+      applyClaudeTaskTool(tasks, tool.name, tool.input, result.text)
     ) {
+      if (fresh) {
+        live.claudeTasks.clear();
+        for (const [id, task] of tasks) live.claudeTasks.set(id, task);
+      }
       live.onEvent({
         type: "tasks.updated",
         key: CLAUDE_TASKS_KEY,
         // The map is the source of truth, so a TaskUpdate subject is a rename.
         authoritative: true,
         providerSessionId: live.claudeSessionId,
+        ...(fresh ? { fresh: true } : {}),
         items: [...live.claudeTasks.values()],
       });
     }

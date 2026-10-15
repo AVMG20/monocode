@@ -1014,6 +1014,19 @@ export function applyClaudeTaskTool(
   return false;
 }
 
+/** A task list with steps, none of them still pending or in progress. */
+export function claudeTaskListFinished(
+  tasks: ReadonlyMap<string, TaskListItem>,
+): boolean {
+  if (tasks.size === 0) return false;
+  for (const task of tasks.values()) {
+    if (task.status === "pending" || task.status === "in_progress") {
+      return false;
+    }
+  }
+  return true;
+}
+
 export function toolKindFromName(toolName: string): string {
   const normalized = toolName.toLowerCase();
   if (isTodoTool(toolName) || isClaudeTaskTool(toolName)) return "tasks";

@@ -139,6 +139,8 @@ export type HarnessEvent =
       authoritative?: boolean;
       /** Provider conversation that owns these items. */
       providerSessionId?: string;
+      /** A new list: it starts its own block instead of updating the last. */
+      fresh?: boolean;
       items: TaskListItem[];
     }
   | {
