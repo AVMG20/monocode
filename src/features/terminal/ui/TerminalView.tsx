@@ -1,3 +1,5 @@
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal } from "@xterm/xterm";
 import { useEffect, useRef } from "react";
 import {
@@ -113,6 +115,19 @@ function terminalTheme(light: boolean) {
   };
 }
 
+function openTerminalLink(uri: string) {
+  let protocol: string;
+  try {
+    protocol = new URL(uri).protocol;
+  } catch {
+    return;
+  }
+  if (protocol !== "http:" && protocol !== "https:" && protocol !== "mailto:") {
+    return;
+  }
+  void openUrl(uri).catch(() => undefined);
+}
+
 function terminalFont(): string {
   const fromCss = getComputedStyle(document.documentElement)
     .getPropertyValue("--font-terminal")
@@ -172,7 +187,11 @@ export function TerminalView({ id, cwd, active, onMetaChange }: Props) {
       smoothScrollDuration: 0,
       theme: terminalTheme(isLightScheme()),
       macOptionIsMeta: IS_MAC,
+      // xterm's default OSC 8 handler uses window.confirm/window.open, which
+      // the webview swallows; route links to the default browser instead.
+      linkHandler: { activate: (_event, uri) => openTerminalLink(uri) },
     });
+    term.loadAddon(new WebLinksAddon((_event, uri) => openTerminalLink(uri)));
     term.open(host);
     termRef.current = term;
     let closed = false;
