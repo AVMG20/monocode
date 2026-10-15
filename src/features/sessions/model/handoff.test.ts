@@ -15,6 +15,7 @@ import {
   sessionChildHarnesses,
   sessionThroughTurn,
   shouldAskOutgoingAgent,
+  switchSessionAccount,
   userMessagesAfterHandoff,
   wrapHandoffPrompt,
 } from "./handoff";
@@ -380,5 +381,54 @@ describe("wrapHandoffPrompt", () => {
     expect(buildOutgoingHandoffPrompt("add dark mode")).not.toContain(
       "Goal (the user request)",
     );
+  });
+});
+
+describe("switchSessionAccount", () => {
+  const user: Block = { id: "u1", role: "user", text: "hi" };
+
+  it("only re-labels a conversation that has not started", () => {
+    const session = { ...newSession("claude", "/tmp"), blocks: [] };
+    const next = switchSessionAccount(session, "default", "work");
+    expect(next.providerAccountId).toBe("work");
+    expect(next.pendingSwitch).toBeUndefined();
+  });
+
+  it("hands a started conversation off to a fresh thread", () => {
+    const session = {
+      ...newSession("claude", "/tmp"),
+      blocks: [user],
+      providerAccountId: "personal",
+      providerSessionId: "thread-1",
+    };
+    const next = switchSessionAccount(session, "personal", "work");
+    expect(next.providerAccountId).toBe("work");
+    expect(next.providerSessionId).toBeUndefined();
+    expect(next.pendingSwitch).toMatchObject({
+      from: "claude",
+      fromProviderSessionId: "thread-1",
+      fromProviderAccountId: "personal",
+    });
+  });
+
+  it("resumes the original thread when switched back", () => {
+    const session = {
+      ...newSession("claude", "/tmp"),
+      blocks: [user],
+      providerAccountId: "personal",
+      providerSessionId: "thread-1",
+    };
+    const away = switchSessionAccount(session, "personal", "work");
+    const back = switchSessionAccount(away, "work", "personal");
+    expect(back.providerAccountId).toBe("personal");
+    expect(back.providerSessionId).toBe("thread-1");
+    expect(back.pendingSwitch).toBeUndefined();
+  });
+
+  it("persists the account it already runs on", () => {
+    const session = { ...newSession("claude", "/tmp"), blocks: [user] };
+    expect(
+      switchSessionAccount(session, "personal", "personal").providerAccountId,
+    ).toBe("personal");
   });
 });

@@ -77,6 +77,8 @@ export type QuickLaunch = {
   detached?: boolean;
   /** The project coordinator that wrote the prompt, shown on the turn. */
   forwardedBy?: string;
+  /** The provider account to run on, in place of the folder's pick. */
+  providerAccountId?: string;
 };
 
 /** The panel exists on macOS only; elsewhere the shortcut is never claimed. */

@@ -201,6 +201,15 @@ export function selectedProviderAccountId(
     : DEFAULT_PROVIDER_ACCOUNT_ID;
 }
 
+/** The account a conversation runs on: its own, or its folder's pick. */
+export function conversationProviderAccountId(
+  provider: ProviderAccountProvider,
+  accountId: string | undefined,
+  project: string | undefined,
+): string {
+  return accountId ?? selectedProviderAccountId(provider, project);
+}
+
 export function selectProviderAccount(
   provider: ProviderAccountProvider,
   project: string | undefined,

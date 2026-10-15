@@ -322,6 +322,7 @@ import {
   sessionChildHarnesses,
   sessionThroughTurn,
   shouldAskOutgoingAgent,
+  switchSessionAccount,
   type HandoffComposerCard,
   userMessagesAfterHandoff,
   wrapHandoffPrompt,
@@ -428,9 +429,10 @@ import {
 import { createSessionRemover } from "../features/sessions/model/sessionRemoval";
 import { shouldGenerateSessionTitle } from "../features/sessions/model/sessionTitle";
 import {
+  conversationProviderAccountId,
   DEFAULT_PROVIDER_ACCOUNT_ID,
   providerAccountExists,
-  selectedProviderAccountId,
+  subscribeProviderAccounts,
   supportsProviderAccounts,
   type ProviderAccountProvider,
 } from "../features/providers/model/providerAccounts";
@@ -588,6 +590,7 @@ import {
   COORDINATOR_PROMPT_VERSION,
   allProjectThreadIds,
   forgetProjectThreads,
+  listProjectThreads,
   projectThreadsSnapshot,
   subscribeProjectThreads,
   projectForThread,
@@ -988,6 +991,30 @@ function withPlanBuildTarget(
     return { ...next, pendingSwitch: undefined };
   }
   return next;
+}
+
+/**
+ * The account a project's thread must run on: the one its coordinator runs
+ * on, which is also what the footer shows. Undefined outside a project or for
+ * a thread on another provider than its coordinator.
+ */
+function projectThreadAccountId(
+  sessions: Session[],
+  sessionId: string,
+  harness: HarnessId,
+): string | undefined {
+  if (!supportsProviderAccounts(harness)) return undefined;
+  const projectId = projectForThread(sessionId);
+  const coordinatorId = projectId ? findMono(projectId)?.sessionId : undefined;
+  const coordinator = coordinatorId
+    ? sessions.find((session) => session.id === coordinatorId)
+    : undefined;
+  if (!coordinator || coordinator.harness !== harness) return undefined;
+  return conversationProviderAccountId(
+    harness,
+    coordinator.providerAccountId,
+    coordinator.cwd,
+  );
 }
 
 function openSessionIds(tabs: WorkspaceTab[]): Set<string> {
@@ -2076,6 +2103,15 @@ function Workspace({
     }
     return [];
   }, [active?.harness]);
+  // A folder's account pick lives outside React; re-resolve when it changes.
+  const [providerAccountsVersion, setProviderAccountsVersion] = useState(0);
+  useEffect(
+    () =>
+      subscribeProviderAccounts(() =>
+        setProviderAccountsVersion((value) => value + 1),
+      ),
+    [],
+  );
   // In a project the footer follows the coordinator, or the thread in focus.
   const footerSession = viewedProject
     ? ((threadPaneFocused ? openThreadSession : undefined) ?? monoViewSession)
@@ -2087,11 +2123,14 @@ function Workspace({
       harness: footerSession.harness,
       model: footerSession.model,
       authRequired: latestTurnNeedsHarnessLogin(footerSession.blocks),
-      providerAccountId:
-        footerSession.providerAccountId ??
-        (footerSession.blocks.some((block) => block.role === "user")
-          ? DEFAULT_PROVIDER_ACCOUNT_ID
-          : undefined),
+      // Resolved exactly as the next turn resolves it.
+      providerAccountId: supportsProviderAccounts(footerSession.harness)
+        ? conversationProviderAccountId(
+            footerSession.harness,
+            footerSession.providerAccountId,
+            footerSession.cwd,
+          )
+        : undefined,
     };
   }, [
     footerSession?.id,
@@ -2099,6 +2138,8 @@ function Workspace({
     footerSession?.model,
     footerSession?.blocks,
     footerSession?.providerAccountId,
+    footerSession?.cwd,
+    providerAccountsVersion,
   ]);
   // Every working Claude or Codex session keeps its account's usage fresh,
   // whichever session is on screen.
@@ -2776,14 +2817,44 @@ function Workspace({
 
   const onSelectProviderAccount = useCallback(
     (provider: ProviderAccountProvider, accountId: string) => {
-      if (!active || active.harness !== provider) return;
-      const currentId = active.providerAccountId ?? DEFAULT_PROVIDER_ACCOUNT_ID;
+      // The footer's conversation, which in a project is not the workspace tab.
+      const target = footerSession;
+      if (!target || target.harness !== provider) return;
+
+      // A project's coordinator and threads share the footer's account. They
+      // all move in place; a started one hands off on its next turn.
+      if (viewedProject && monoViewId) {
+        const members = new Set([
+          monoViewId,
+          ...listProjectThreads(viewedProject.id).map(
+            (thread) => thread.sessionId,
+          ),
+        ]);
+        const next = sessionsRef.current.map((session) =>
+          session.harness === provider && members.has(session.id)
+            ? switchSessionAccount(
+                session,
+                conversationProviderAccountId(
+                  provider,
+                  session.providerAccountId,
+                  session.cwd,
+                ),
+                accountId,
+              )
+            : session,
+        );
+        sessionsRef.current = next;
+        setSessions(next);
+        return;
+      }
+
+      const currentId = target.providerAccountId ?? DEFAULT_PROVIDER_ACCOUNT_ID;
       if (currentId === accountId) return;
 
-      if (active.blocks.length === 0 && !active.busy) {
+      if (target.blocks.length === 0 && !target.busy) {
         setSessions((current) =>
           current.map((session) =>
-            session.id === active.id
+            session.id === target.id
               ? { ...session, providerAccountId: accountId }
               : session,
           ),
@@ -2795,21 +2866,21 @@ function Workspace({
       // pinned to its account and open a clean one for the selected profile.
       const session = {
         ...newSession(
-          active.harness,
-          active.cwd,
-          active.model,
-          active.runtimeMode,
-          active.modelSettings,
+          target.harness,
+          target.cwd,
+          target.model,
+          target.runtimeMode,
+          target.modelSettings,
         ),
         providerAccountId: accountId,
       };
       const tab = newTab(session.id);
       setSessions((current) => [...current, session]);
-      appendTab(tab, active.cwd);
+      appendTab(tab, target.cwd);
       setActiveTabId(tab.id);
       setComposerFocused(true);
     },
-    [active, appendTab],
+    [footerSession, viewedProject, monoViewId, appendTab],
   );
 
   const onOpenWhatsNew = useCallback((version: string) => {
@@ -7111,8 +7182,41 @@ function Workspace({
         workspaceNavigation.isSwitching(sessionId)
       )
         return false;
-      const storedCurrent = sessionsRef.current.find((s) => s.id === sessionId);
+      let storedCurrent = sessionsRef.current.find((s) => s.id === sessionId);
       if (options?.appRequestId && storedCurrent?.busy) return false;
+      // A project's thread follows its coordinator's account, so every turn
+      // runs on the account the footer shows.
+      const projectAccount =
+        storedCurrent && !storedCurrent.busy
+          ? projectThreadAccountId(
+              sessionsRef.current,
+              sessionId,
+              storedCurrent.harness,
+            )
+          : undefined;
+      if (
+        storedCurrent &&
+        projectAccount &&
+        supportsProviderAccounts(storedCurrent.harness)
+      ) {
+        const realigned = switchSessionAccount(
+          storedCurrent,
+          conversationProviderAccountId(
+            storedCurrent.harness,
+            storedCurrent.providerAccountId,
+            storedCurrent.cwd,
+          ),
+          projectAccount,
+        );
+        if (realigned !== storedCurrent) {
+          const next = sessionsRef.current.map((session) =>
+            session.id === sessionId ? realigned : session,
+          );
+          sessionsRef.current = next;
+          flushSync(() => setSessions(next));
+          storedCurrent = realigned;
+        }
+      }
       if (
         options?.ciRepair &&
         storedCurrent &&
@@ -7211,8 +7315,11 @@ function Workspace({
         ? current.harness
         : undefined;
       const providerAccountId = accountProvider
-        ? (current.providerAccountId ??
-          selectedProviderAccountId(accountProvider, current.cwd))
+        ? conversationProviderAccountId(
+            accountProvider,
+            current.providerAccountId,
+            current.cwd,
+          )
         : undefined;
       if (
         accountProvider &&
@@ -10316,8 +10423,11 @@ function Workspace({
             model: current.model,
             modelSettings: current.modelSettings,
             providerAccountId: supportsProviderAccounts(current.harness)
-              ? (current.providerAccountId ??
-                selectedProviderAccountId(current.harness, current.cwd))
+              ? conversationProviderAccountId(
+                  current.harness,
+                  current.providerAccountId,
+                  current.cwd,
+                )
               : undefined,
             runtimeMode: current.runtimeMode,
             ephemeral: current.ephemeral === true,
@@ -11058,6 +11168,16 @@ function Workspace({
                     detached: true,
                     reveal: false,
                     forwardedBy,
+                    ...(requested.harness === source.harness &&
+                    supportsProviderAccounts(source.harness)
+                      ? {
+                          providerAccountId: conversationProviderAccountId(
+                            source.harness,
+                            source.providerAccountId,
+                            source.cwd,
+                          ),
+                        }
+                      : {}),
                   }
                 : requested;
               const placement = sourceProject ? undefined : requestedPlacement;
@@ -13826,9 +13946,10 @@ function Workspace({
                   providers={usageProviders}
                   session={usageSession}
                   project={
-                    viewedProject
+                    footerSession?.cwd ??
+                    (viewedProject
                       ? (viewedProject.projects[0] ?? projectCwd)
-                      : (active?.cwd ?? projectCwd)
+                      : projectCwd)
                   }
                   onSelectAccount={onSelectProviderAccount}
                   onManageAccounts={() =>

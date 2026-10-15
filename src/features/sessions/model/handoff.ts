@@ -137,6 +137,53 @@ export function pendingComposerSwitch(
     : null;
 }
 
+/**
+ * Moves a conversation to another account of its provider in place. A started
+ * one hands off to a fresh thread on its next turn; switching back resumes.
+ */
+export function switchSessionAccount(
+  session: Session,
+  from: string,
+  to: string,
+): Session {
+  if (sameProviderAccountId(from, to))
+    return session.providerAccountId === to
+      ? session
+      : { ...session, providerAccountId: to };
+  const pending = session.pendingSwitch;
+  if (
+    pending &&
+    pending.from === session.harness &&
+    sameProviderAccountId(pending.fromProviderAccountId, to)
+  )
+    return {
+      ...session,
+      providerAccountId: to,
+      providerSessionId: pending.fromProviderSessionId,
+      pendingSwitch: undefined,
+    };
+  if (
+    !pending &&
+    !session.blocks.some((block) => block.role === "user" && !block.draft)
+  )
+    return { ...session, providerAccountId: to };
+  return {
+    ...session,
+    providerAccountId: to,
+    providerSessionId: undefined,
+    pendingSwitch: pending ?? {
+      from: session.harness,
+      fromModel: session.model,
+      fromSettings: session.modelSettings,
+      ...(session.usageLimit ? { skipOutgoingRecap: true } : {}),
+      ...(session.providerSessionId
+        ? { fromProviderSessionId: session.providerSessionId }
+        : {}),
+      fromProviderAccountId: from,
+    },
+  };
+}
+
 /** Session as of the end of this turn, so a later turn is not in the recap. */
 export function sessionThroughTurn(session: Session, turn: Block[]): Session {
   const lastId = turn[turn.length - 1]?.id;

@@ -79,6 +79,8 @@ export async function acceptQuickLaunch(
     );
   session.id = deliveryId;
   if (!existing && launch.sidebarHidden) session.sidebarHidden = true;
+  if (!existing && launch.providerAccountId)
+    session.providerAccountId = launch.providerAccountId;
   if (!existing && launch.title?.trim())
     session.title = formatSessionTitle(session.harness, launch.title.trim());
   if (launch.modelSettings) {
