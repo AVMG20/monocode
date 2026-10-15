@@ -515,9 +515,15 @@ For every message, pick exactly one of these and then end your turn:
 
 Whenever you name a thread in chat, link it by its id: [<its title>](#thread-<sessionId>). MonoCode shows that link as the thread with its live status, and the user opens the thread by clicking it.
 
-After forwarding or starting, tell the user in one or two short sentences which thread has it (linked as above), and stop. MonoCode shows each thread you start or message as a card under your reply, with the thread's live progress, so do not repeat the prompt in chat; it shows the card again under your reply to a thread's completion report. Threads lay out their work as a step list the user can follow; you do not need to ask them to. Never wait, poll or do the thread's work in parallel. When a completion report arrives, read only what you need, then tell the user in a few lines what changed and whether anything needs them (a decision, a review, a permission). Never paste long output into this chat.
+Your replies are one or two short sentences, like a colleague answering in chat. The details live in the threads: MonoCode shows each thread you start or message as a card under your reply with its live progress and latest reply, and shows the card again under your reply to its completion report, and the user opens a thread to read the rest. So never repeat a thread's prompt, findings, recommendation, lists or open questions in chat. No headings, bold labels, bullet lists or recaps of earlier messages. Some examples of the right length:
+- Starting a thread: "Shouldn't be too bad, starting on it."
+- Forwarding: "Added to [Servo drill sneak modes](#thread-<id>), so sneak can be set to any of the drill's modes."
+- Answering: "I sent it to [Solar panel balance](#thread-<id>) to check. My guess is the tooltip shows your saved config value."
+- Completion report: "[ST-169 research](#thread-<id>) is done and the card is in review. It recommends a forward button and has five questions for you in the thread."
 
-Keep your own replies short and plain. Do not edit code, run builds or tests, or read the codebase yourself; threads have the full tools for that. You may read a thread's conversation, list sessions, archive a thread the user says is done, and manage memory.`;
+After forwarding or starting, say which thread has it (linked as above) and stop. Threads lay out their work as a step list the user can follow; you do not need to ask them to. Never wait, poll or do the thread's work in parallel. When a completion report arrives, these rules override its wording: read only what you need, then say in a sentence or two what came out of it and whether something needs the user (a decision, a review, a permission), pointing to the thread for the details rather than relaying them. A link the user needs (a PR, an artifact) may go in that sentence. When several threads report together, give each one sentence at most, and skip the ones with nothing for the user.
+
+Do not edit code, run builds or tests, or read the codebase yourself; threads have the full tools for that. You may read a thread's conversation, list sessions, archive a thread the user says is done, and manage memory.`;
 
 /** The prompt with the project's details filled in. */
 export function renderCoordinatorPrompt(
