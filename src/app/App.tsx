@@ -1244,7 +1244,22 @@ function Workspace({
     loadSessionSidebarOpen,
   );
   const tabCloseScope = "project" as const;
-  const currentProjectDock = findProjectTerminal(projectTerminals, projectCwd);
+  /**
+   * A project's chat keeps a terminal dock of its own, in the project's main
+   * folder; any other Mono in full view covers the workspace's dock.
+   */
+  const coveringMono = monoViewId ? monoForSession(monoViewId) : undefined;
+  const projectDockCwd =
+    coveringMono && isCoordinatorProject(coveringMono)
+      ? (coveringMono.projects[0] ?? "")
+      : undefined;
+  const dockCwd = projectDockCwd ?? projectCwd;
+  const dockCwdRef = useRef(dockCwd);
+  dockCwdRef.current = dockCwd;
+  const dockCovered = !!monoViewId && projectDockCwd === undefined;
+  const dockCoveredRef = useRef(dockCovered);
+  dockCoveredRef.current = dockCovered;
+  const currentProjectDock = findProjectTerminal(projectTerminals, dockCwd);
   const dockVisible = !!currentProjectDock?.open;
   const [filesSearchOpen, setFilesSearchOpen] = useState(false);
   const [searchFocusToken, setSearchFocusToken] = useState(0);
@@ -1310,9 +1325,14 @@ function Workspace({
     () => true,
   );
   const monosSnap = useSyncExternalStore(subscribeMonos, monosSnapshot);
-  /** A Mono hides the terminal, so reaching for one leaves it. */
+  /**
+   * A Mono hides the terminal, so reaching for one leaves it. A project's chat
+   * keeps a terminal of its own.
+   */
   const leaveCoveringMono = useCallback(() => {
-    if (monoViewIdRef.current) closeMonoView();
+    const monoViewId = monoViewIdRef.current;
+    if (monoViewId && !isCoordinatorProject(monoForSession(monoViewId)))
+      closeMonoView();
   }, [closeMonoView]);
   const [providerSignInRequest, setProviderSignInRequest] = useState<{
     key: string;
@@ -1991,6 +2011,7 @@ function Workspace({
     session: active,
     fallback: sidebarCwd,
   });
+  const dockTerminalCwd = projectDockCwd ?? terminalCwd;
   const gitCwdBranches = useProjectBranches(
     gitCwd,
     Boolean(gitCwd) && gitCwd !== "~" && !isRemoteProjectPath(sidebarCwd),
@@ -2136,15 +2157,16 @@ function Workspace({
   }, [active?.id, providerSignInRequest]);
   const runningTerminals = useMemo(() => {
     const files: FilePaneTab[] = [];
-    const dock = findProjectTerminal(projectTerminals, projectCwd);
+    const dock = findProjectTerminal(projectTerminals, dockCwd);
     if (dock) files.push(...dock.pane.files);
-    for (const tab of tabs) {
+    // A project's chat covers the workspace tabs and their terminals.
+    for (const tab of projectDockCwd === undefined ? tabs : []) {
       for (const pane of tab.terminalPanes ?? []) {
         files.push(...pane.files);
       }
     }
     return listRunningTerminals(files);
-  }, [projectCwd, projectTerminals, tabs]);
+  }, [dockCwd, projectDockCwd, projectTerminals, tabs]);
   const runningTerminalOpen = useMemo(() => {
     const ids = new Set(runningTerminals.map((terminal) => terminal.id));
     if (
@@ -3050,8 +3072,8 @@ function Workspace({
 
   const openProjectTerminal = useCallback(
     (cwd: string) => {
-      const workdir = cwd || projectCwdRef.current;
-      const projectPath = projectCwdRef.current;
+      const workdir = cwd || dockCwdRef.current;
+      const projectPath = dockCwdRef.current;
       if (!isLocalProject(projectPath)) return false;
       setProjectTerminals((prev) => {
         const existing = findProjectTerminal(prev, projectPath);
@@ -3083,7 +3105,7 @@ function Workspace({
   const onOpenTerminal = useCallback(
     (cwd: string, asWorkspaceTab = false, occupySessionId?: string) => {
       const workdir = cwd || terminalCwd;
-      if (!isLocalProject(projectCwdRef.current) || !isLocalProject(workdir))
+      if (!isLocalProject(dockCwdRef.current) || !isLocalProject(workdir))
         return;
       if (openProjectTerminal(workdir)) return;
 
@@ -3127,31 +3149,8 @@ function Workspace({
   );
 
   const onNewTerminal = useCallback(() => {
-    onOpenTerminal(terminalCwd);
-  }, [terminalCwd, onOpenTerminal]);
-
-  const onShowProjectTerminal = useCallback(() => {
-    leaveCoveringMono();
-    const dock = findProjectTerminal(projectTerminalsRef.current, projectCwd);
-    if (dock && dock.pane.files.length > 0) {
-      if (!dock.open) {
-        setProjectTerminals((prev) =>
-          mapProjectTerminal(prev, projectCwd, (entry) =>
-            withDockOpen(entry, true),
-          ),
-        );
-      }
-      focusProjectTerminal();
-      return;
-    }
-    onOpenTerminal(terminalCwd);
-  }, [
-    terminalCwd,
-    focusProjectTerminal,
-    leaveCoveringMono,
-    onOpenTerminal,
-    projectCwd,
-  ]);
+    onOpenTerminal(dockTerminalCwd);
+  }, [dockTerminalCwd, onOpenTerminal]);
 
   const onNewTerminalInSession = useCallback(
     (sessionId: string) => {
@@ -3169,32 +3168,32 @@ function Workspace({
   );
 
   const onToggleProjectTerminal = useCallback(() => {
-    if (!isLocalProject(projectCwd)) return;
+    if (!isLocalProject(dockCwd)) return;
     leaveCoveringMono();
-    const dock = findProjectTerminal(projectTerminalsRef.current, projectCwd);
+    const dock = findProjectTerminal(projectTerminalsRef.current, dockCwd);
     if (!dock) {
-      openProjectTerminal(terminalCwd);
+      openProjectTerminal(dockTerminalCwd);
       return;
     }
     const nextOpen = !dock.open;
     setProjectTerminals((prev) =>
-      mapProjectTerminal(prev, projectCwd, (entry) =>
+      mapProjectTerminal(prev, dockCwd, (entry) =>
         withDockOpen(entry, nextOpen),
       ),
     );
     if (nextOpen) focusProjectTerminal();
     else setProjectTerminalFocused(false);
   }, [
-    terminalCwd,
+    dockTerminalCwd,
     focusProjectTerminal,
     leaveCoveringMono,
     openProjectTerminal,
-    projectCwd,
+    dockCwd,
   ]);
 
   const onHideProjectTerminal = useCallback(() => {
     setProjectTerminals((prev) =>
-      mapProjectTerminal(prev, projectCwdRef.current, (dock) =>
+      mapProjectTerminal(prev, dockCwdRef.current, (dock) =>
         withDockOpen(dock, false),
       ),
     );
@@ -3204,7 +3203,7 @@ function Workspace({
   const onProjectTerminalSide = useCallback((side: DockSide) => {
     setLastDockSide(side);
     setProjectTerminals((prev) =>
-      mapProjectTerminal(prev, projectCwdRef.current, (dock) =>
+      mapProjectTerminal(prev, dockCwdRef.current, (dock) =>
         withDockSide(dock, side, {
           width: window.innerWidth,
           height: window.innerHeight,
@@ -3215,7 +3214,7 @@ function Workspace({
 
   const onProjectTerminalSize = useCallback((size: number) => {
     setProjectTerminals((prev) =>
-      mapProjectTerminal(prev, projectCwdRef.current, (dock) =>
+      mapProjectTerminal(prev, dockCwdRef.current, (dock) =>
         withDockSize(dock, size, {
           width: window.innerWidth,
           height: window.innerHeight,
@@ -3227,7 +3226,7 @@ function Workspace({
   const onSelectProjectTerminal = useCallback(
     (fileId: string) => {
       setProjectTerminals((prev) =>
-        mapProjectTerminal(prev, projectCwdRef.current, (dock) =>
+        mapProjectTerminal(prev, dockCwdRef.current, (dock) =>
           selectDockTerminal(dock, fileId),
         ),
       );
@@ -3238,7 +3237,7 @@ function Workspace({
 
   const onReorderProjectTerminals = useCallback((ids: string[]) => {
     setProjectTerminals((prev) =>
-      mapProjectTerminal(prev, projectCwdRef.current, (dock) =>
+      mapProjectTerminal(prev, dockCwdRef.current, (dock) =>
         reorderDockTerminals(dock, orderByIds(dock.pane.files, ids)),
       ),
     );
@@ -3247,13 +3246,13 @@ function Workspace({
   const onCloseProjectTerminal = useCallback((fileId: string) => {
     const dock = findProjectTerminal(
       projectTerminalsRef.current,
-      projectCwdRef.current,
+      dockCwdRef.current,
     );
     const file = dock?.pane.files.find((entry) => entry.id === fileId);
     if (!file) return;
     const finishClose = () => {
       setProjectTerminals((prev) =>
-        mapProjectTerminal(prev, projectCwdRef.current, (entry) =>
+        mapProjectTerminal(prev, dockCwdRef.current, (entry) =>
           closeTerminalInDock(entry, fileId),
         ),
       );
@@ -3262,7 +3261,7 @@ function Workspace({
   }, []);
 
   const onCloseOtherProjectTerminals = useCallback((fileId: string) => {
-    const projectPath = projectCwdRef.current;
+    const projectPath = dockCwdRef.current;
     const dock = findProjectTerminal(projectTerminalsRef.current, projectPath);
     if (!dock?.pane.files.some((file) => file.id === fileId)) return;
     const closingFiles = dock.pane.files.filter((file) => file.id !== fileId);
@@ -4020,7 +4019,7 @@ function Workspace({
       projectTerminalFocusedRef.current &&
       Boolean(document.activeElement?.closest("[data-project-terminal-dock]"));
     return focusedDockTerminalId(
-      findProjectTerminal(projectTerminalsRef.current, projectCwdRef.current),
+      findProjectTerminal(projectTerminalsRef.current, dockCwdRef.current),
       dockFocused,
     );
   }, []);
@@ -12677,14 +12676,24 @@ function Workspace({
   }, [run]);
 
   const dockGridRef = useRef<HTMLDivElement>(null);
+  /** A project's dock spans the chat and the panels beside it. */
+  const projectDockGridRef = useRef<HTMLDivElement>(null);
+  const [projectDockHost, setProjectDockHost] = useState<HTMLDivElement | null>(
+    null,
+  );
+  const projectDockShown = projectDockCwd !== undefined && dockVisible;
+  const projectDockShownRef = useRef(projectDockShown);
+  projectDockShownRef.current = projectDockShown;
   const dockDragSize = useRef<number | null>(null);
   const paintDockSize = useCallback((size: number) => {
     const dock = findProjectTerminal(
       projectTerminalsRef.current,
-      projectCwdRef.current,
+      dockCwdRef.current,
     );
-    const el = dockGridRef.current;
-    if (!dock || !el || monoViewIdRef.current) return;
+    const el = projectDockShownRef.current
+      ? projectDockGridRef.current
+      : dockGridRef.current;
+    if (!dock || !el || dockCoveredRef.current) return;
     dockDragSize.current = size;
     applyDockGridStyle(el, dock.side, size);
   }, []);
@@ -12696,18 +12705,19 @@ function Workspace({
     [onProjectTerminalSize],
   );
   useLayoutEffect(() => {
-    if (monoCovers) dockDragSize.current = null;
+    if (dockCovered) dockDragSize.current = null;
     if (dockDragSize.current != null) return;
     const el = dockGridRef.current;
-    if (!el) return;
-    applyDockGridStyle(
-      el,
-      dockVisible && !monoCovers && currentProjectDock
+    const projectEl = projectDockGridRef.current;
+    if (!el || !projectEl) return;
+    const side =
+      dockVisible && !dockCovered && currentProjectDock
         ? currentProjectDock.side
-        : null,
-      currentProjectDock?.size ?? 0,
-    );
-  }, [currentProjectDock, dockVisible, monoCovers]);
+        : null;
+    const size = currentProjectDock?.size ?? 0;
+    applyDockGridStyle(el, projectDockShown ? null : side, size);
+    applyDockGridStyle(projectEl, projectDockShown ? side : null, size);
+  }, [currentProjectDock, dockVisible, dockCovered, projectDockShown]);
 
   const lastRemoteSnapshot = useRef(new Map<string, HostSession>());
   const onRemoteSnapshot = useCallback(
@@ -13389,261 +13399,299 @@ function Workspace({
                     }}
                   />
                 ) : null}
-                <div className="flex min-h-0 min-w-0 flex-1">
-                  <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-                    {compactTitleBar ? null : workspaceTitleBar}
+                <div
+                  ref={projectDockGridRef}
+                  className="grid min-h-0 min-w-0 flex-1"
+                >
+                  <div
+                    className="flex min-h-0 min-w-0"
+                    style={{ gridArea: "main" }}
+                  >
+                    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                      {compactTitleBar ? null : workspaceTitleBar}
 
-                    <main className="relative flex min-h-0 min-w-0 flex-1">
-                      <div
-                        ref={dockGridRef}
-                        className="grid h-full min-h-0 min-w-0 flex-1"
-                      >
-                        {projectTerminals.map((dock) => {
-                          const show =
-                            dock.open &&
-                            !monoCovers &&
-                            sameProjectPath(dock.projectPath, projectCwd);
-                          return (
-                            <div
-                              key={dock.projectPath}
-                              className={
-                                show
-                                  ? "h-full min-h-0 min-w-0 w-full overflow-hidden"
-                                  : "hidden"
-                              }
-                              style={show ? { gridArea: "dock" } : undefined}
-                              aria-hidden={!show}
-                            >
-                              <ProjectTerminalDock
-                                dock={dock}
-                                focused={show && projectTerminalFocused}
-                                onFocus={focusProjectTerminal}
-                                onHide={onHideProjectTerminal}
-                                onSideChange={onProjectTerminalSide}
-                                onSizePaint={paintDockSize}
-                                onSizeCommit={commitDockSize}
-                                onAddTerminal={onNewTerminal}
-                                onSelectTerminal={onSelectProjectTerminal}
-                                onCloseTerminal={onCloseProjectTerminal}
-                                onCloseOtherTerminals={
-                                  onCloseOtherProjectTerminals
-                                }
-                                onReorderTerminals={onReorderProjectTerminals}
-                                onTerminalMetaChange={onTerminalMetaChange}
-                              />
-                            </div>
-                          );
-                        })}
+                      <main className="relative flex min-h-0 min-w-0 flex-1">
                         <div
-                          className="relative flex min-h-0 min-w-0 flex-row"
-                          style={{ gridArea: "main" }}
+                          ref={dockGridRef}
+                          className="grid h-full min-h-0 min-w-0 flex-1"
                         >
-                          <div className="relative min-h-0 min-w-0 flex-1">
-                            {tabs.map((tab) => (
+                          {projectTerminals.map((dock) => {
+                            const show =
+                              dock.open &&
+                              !dockCovered &&
+                              sameProjectPath(dock.projectPath, dockCwd);
+                            const inProject = show && projectDockShown;
+                            return (
                               <div
-                                key={tab.id}
-                                aria-hidden={
-                                  tab.id !== activeTabId || monoCovers
-                                }
+                                key={dock.projectPath}
                                 className={
-                                  tab.id === activeTabId && !monoCovers
-                                    ? "absolute inset-0 flex h-full min-h-0 flex-col"
+                                  show && !inProject
+                                    ? "h-full min-h-0 min-w-0 w-full overflow-hidden"
                                     : "hidden"
                                 }
+                                style={
+                                  show && !inProject
+                                    ? { gridArea: "dock" }
+                                    : undefined
+                                }
+                                aria-hidden={!show}
                               >
-                                <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
-                                  <PaneTree
-                                    {...sessionPaneProps}
-                                    visible={
-                                      tab.id === activeTabId &&
-                                      !inboxViewOpen &&
-                                      !monoCovers
+                                <SessionSurface
+                                  host={
+                                    (inProject && projectDockHost) || undefined
+                                  }
+                                >
+                                  <ProjectTerminalDock
+                                    dock={dock}
+                                    focused={show && projectTerminalFocused}
+                                    onFocus={focusProjectTerminal}
+                                    onHide={onHideProjectTerminal}
+                                    onSideChange={onProjectTerminalSide}
+                                    onSizePaint={paintDockSize}
+                                    onSizeCommit={commitDockSize}
+                                    onAddTerminal={onNewTerminal}
+                                    onSelectTerminal={onSelectProjectTerminal}
+                                    onCloseTerminal={onCloseProjectTerminal}
+                                    onCloseOtherTerminals={
+                                      onCloseOtherProjectTerminals
                                     }
-                                    layout={tab.layout}
-                                    sessions={sessions}
-                                    editorPanes={[
-                                      ...tab.editorPanes,
-                                      ...(tab.terminalPanes ?? []),
-                                    ]}
-                                    dirtyFileIds={dirtyFiles}
-                                    fileErrorCounts={fileErrorCounts}
-                                    focusedId={
-                                      tab.id === activeTabId &&
-                                      !monoViewId &&
-                                      !inboxViewOpen &&
-                                      !tab.diffFocused &&
-                                      !projectTerminalFocused
-                                        ? tab.focusedId
-                                        : ""
+                                    onReorderTerminals={
+                                      onReorderProjectTerminals
                                     }
-                                    addToChatSessionId={
-                                      tab.id === activeTabId
-                                        ? active?.id
-                                        : undefined
-                                    }
-                                    composerFocused={
-                                      composerFocused &&
-                                      !projectTerminalFocused &&
-                                      !monoViewId
-                                    }
-                                    composerFocusToken={composerFocusToken}
-                                    onSelectFile={onSelectFileSurface}
-                                    onCloseFile={onCloseFile}
-                                    onCloseOtherFiles={onCloseOtherFiles}
-                                    onPinFile={onPinFile}
-                                    onReorderFiles={onReorderFiles}
-                                    onFileDirtyChange={onFileDirtyChange}
-                                    onFileErrorCountChange={
-                                      onFileErrorCountChange
-                                    }
-                                    transcriptPool={transcriptPool}
-                                    onRatio={(splitId, index, ratio) =>
-                                      onRatio(tab.id, splitId, index, ratio)
-                                    }
-                                    editorNavigation={editorNavigation}
-                                    onUpdatePlan={onUpdatePlan}
-                                    onMovePane={onMovePane}
-                                    onDetachPane={onDetachPane}
                                     onTerminalMetaChange={onTerminalMetaChange}
                                   />
-                                </div>
+                                </SessionSurface>
                               </div>
-                            ))}
-                            {sessions
-                              .filter((session) => isMonoSession(session.id))
-                              .map((session) => {
-                                const visible = monoViewId === session.id;
-                                const threadFocused =
-                                  visible && !!threadPanel && threadPaneFocused;
-                                return (
-                                  <div
-                                    key={session.id}
-                                    data-mono-view={session.id}
-                                    onPointerDownCapture={
-                                      threadFocused
-                                        ? () => setThreadPaneFocused(false)
-                                        : undefined
-                                    }
-                                    aria-hidden={!visible}
-                                    inert={!visible || undefined}
-                                    className={
-                                      visible
-                                        ? "absolute inset-0 flex h-full min-h-0 flex-col"
-                                        : "hidden"
-                                    }
-                                  >
-                                    <SessionPane
+                            );
+                          })}
+                          <div
+                            className="relative flex min-h-0 min-w-0 flex-row"
+                            style={{ gridArea: "main" }}
+                          >
+                            <div className="relative min-h-0 min-w-0 flex-1">
+                              {tabs.map((tab) => (
+                                <div
+                                  key={tab.id}
+                                  aria-hidden={
+                                    tab.id !== activeTabId || monoCovers
+                                  }
+                                  className={
+                                    tab.id === activeTabId && !monoCovers
+                                      ? "absolute inset-0 flex h-full min-h-0 flex-col"
+                                      : "hidden"
+                                  }
+                                >
+                                  <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
+                                    <PaneTree
                                       {...sessionPaneProps}
-                                      session={session}
-                                      visible={visible}
-                                      focused={
-                                        visible &&
-                                        !projectTerminalFocused &&
-                                        !threadFocused
+                                      visible={
+                                        tab.id === activeTabId &&
+                                        !inboxViewOpen &&
+                                        !monoCovers
                                       }
-                                      inSplit={false}
-                                      addToChatTarget={
-                                        visible && !threadFocused
+                                      layout={tab.layout}
+                                      sessions={sessions}
+                                      editorPanes={[
+                                        ...tab.editorPanes,
+                                        ...(tab.terminalPanes ?? []),
+                                      ]}
+                                      dirtyFileIds={dirtyFiles}
+                                      fileErrorCounts={fileErrorCounts}
+                                      focusedId={
+                                        tab.id === activeTabId &&
+                                        !monoViewId &&
+                                        !inboxViewOpen &&
+                                        !tab.diffFocused &&
+                                        !projectTerminalFocused
+                                          ? tab.focusedId
+                                          : ""
+                                      }
+                                      addToChatSessionId={
+                                        tab.id === activeTabId
+                                          ? active?.id
+                                          : undefined
                                       }
                                       composerFocused={
-                                        visible &&
                                         composerFocused &&
                                         !projectTerminalFocused &&
-                                        !threadFocused
+                                        !monoViewId
                                       }
                                       composerFocusToken={composerFocusToken}
-                                      onShowMonoActivity={onShowMonoActivity}
-                                      onOpenArtifact={onOpenMonoArtifact}
-                                      onOpenDiff={onOpenMonoDiff}
-                                      onCommitChanges={onCommitMonoChanges}
-                                      monoActivityTurnId={
-                                        selectedMonoActivity?.turnId
+                                      onSelectFile={onSelectFileSurface}
+                                      onCloseFile={onCloseFile}
+                                      onCloseOtherFiles={onCloseOtherFiles}
+                                      onPinFile={onPinFile}
+                                      onReorderFiles={onReorderFiles}
+                                      onFileDirtyChange={onFileDirtyChange}
+                                      onFileErrorCountChange={
+                                        onFileErrorCountChange
                                       }
-                                      onShowMonoSessions={onShowMonoSessions}
-                                      monoSessionsTurnId={
-                                        selectedMonoSessions?.turnId
+                                      transcriptPool={transcriptPool}
+                                      onRatio={(splitId, index, ratio) =>
+                                        onRatio(tab.id, splitId, index, ratio)
                                       }
-                                      projectThreads={
-                                        visible && viewedProject
-                                          ? viewedProjectThreads
-                                          : undefined
-                                      }
-                                      onOpenProjectThread={
-                                        visible && viewedProject
-                                          ? openViewedProjectThread
-                                          : undefined
+                                      editorNavigation={editorNavigation}
+                                      onUpdatePlan={onUpdatePlan}
+                                      onMovePane={onMovePane}
+                                      onDetachPane={onDetachPane}
+                                      onTerminalMetaChange={
+                                        onTerminalMetaChange
                                       }
                                     />
                                   </div>
-                                );
-                              })}
+                                </div>
+                              ))}
+                              {sessions
+                                .filter((session) => isMonoSession(session.id))
+                                .map((session) => {
+                                  const visible = monoViewId === session.id;
+                                  const threadFocused =
+                                    visible &&
+                                    !!threadPanel &&
+                                    threadPaneFocused;
+                                  return (
+                                    <div
+                                      key={session.id}
+                                      data-mono-view={session.id}
+                                      onPointerDownCapture={
+                                        threadFocused
+                                          ? () => setThreadPaneFocused(false)
+                                          : undefined
+                                      }
+                                      aria-hidden={!visible}
+                                      inert={!visible || undefined}
+                                      className={
+                                        visible
+                                          ? "absolute inset-0 flex h-full min-h-0 flex-col"
+                                          : "hidden"
+                                      }
+                                    >
+                                      <SessionPane
+                                        {...sessionPaneProps}
+                                        session={session}
+                                        visible={visible}
+                                        focused={
+                                          visible &&
+                                          !projectTerminalFocused &&
+                                          !threadFocused
+                                        }
+                                        inSplit={false}
+                                        addToChatTarget={
+                                          visible && !threadFocused
+                                        }
+                                        composerFocused={
+                                          visible &&
+                                          composerFocused &&
+                                          !projectTerminalFocused &&
+                                          !threadFocused
+                                        }
+                                        composerFocusToken={composerFocusToken}
+                                        onShowMonoActivity={onShowMonoActivity}
+                                        onOpenArtifact={onOpenMonoArtifact}
+                                        onOpenDiff={onOpenMonoDiff}
+                                        onCommitChanges={onCommitMonoChanges}
+                                        monoActivityTurnId={
+                                          selectedMonoActivity?.turnId
+                                        }
+                                        onShowMonoSessions={onShowMonoSessions}
+                                        monoSessionsTurnId={
+                                          selectedMonoSessions?.turnId
+                                        }
+                                        projectThreads={
+                                          visible && viewedProject
+                                            ? viewedProjectThreads
+                                            : undefined
+                                        }
+                                        onOpenProjectThread={
+                                          visible && viewedProject
+                                            ? openViewedProjectThread
+                                            : undefined
+                                        }
+                                      />
+                                    </div>
+                                  );
+                                })}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                      {[...linkedWorkItemPanels.values()].map((panel) => (
-                        <LinkedWorkItemPanel
-                          repairSessions={repairSessions}
-                          onRepairChecks={onRepairChecks}
-                          onOpenSession={(sessionId) => {
-                            closeLinkedWorkItemPanel(panel.sessionId);
-                            onOpenInboxSession(sessionId);
-                          }}
-                          key={panel.sessionId}
-                          target={panel.item}
-                          cwd={panel.cwd}
-                          recents={recents}
-                          visible={
-                            !searchViewOpen &&
-                            !settingsOpen &&
-                            !inboxViewOpen &&
-                            !notesViewOpen &&
-                            !automationsViewOpen &&
-                            !monoViewId &&
-                            activeLinkedWorkItemPanel?.sessionId ===
-                              panel.sessionId
-                          }
-                          onClose={() =>
-                            closeLinkedWorkItemPanel(panel.sessionId)
+                        {[...linkedWorkItemPanels.values()].map((panel) => (
+                          <LinkedWorkItemPanel
+                            repairSessions={repairSessions}
+                            onRepairChecks={onRepairChecks}
+                            onOpenSession={(sessionId) => {
+                              closeLinkedWorkItemPanel(panel.sessionId);
+                              onOpenInboxSession(sessionId);
+                            }}
+                            key={panel.sessionId}
+                            target={panel.item}
+                            cwd={panel.cwd}
+                            recents={recents}
+                            visible={
+                              !searchViewOpen &&
+                              !settingsOpen &&
+                              !inboxViewOpen &&
+                              !notesViewOpen &&
+                              !automationsViewOpen &&
+                              !monoViewId &&
+                              activeLinkedWorkItemPanel?.sessionId ===
+                                panel.sessionId
+                            }
+                            onClose={() =>
+                              closeLinkedWorkItemPanel(panel.sessionId)
+                            }
+                          />
+                        ))}
+                      </main>
+                    </div>
+                    <ProjectPanelWidth.Provider value={!!viewedProject}>
+                      {monoCovers ? monoDetailsPanel : null}
+                      {monoCovers ? monoActivityPanel : null}
+                      {monoCovers ? monoSessionsPanel : null}
+                      {threadPanel}
+                      {monoViewMono &&
+                      monoArtifact &&
+                      monoArtifact.sessionId === monoViewSession?.id ? (
+                        <ArtifactPanel
+                          key={monoArtifact.id}
+                          id={monoArtifact.id}
+                          color={monoViewMono.color}
+                          onClose={onCloseMonoArtifact}
+                          onOpenFile={onOpenFile}
+                          windowControls={
+                            monoCovers && !IS_MAC ? (
+                              <WindowControls />
+                            ) : undefined
                           }
                         />
-                      ))}
-                    </main>
+                      ) : null}
+                      {monoViewMono &&
+                      monoChanges &&
+                      monoChanges.sessionId === monoViewSession?.id ? (
+                        <MonoChangesPanel
+                          sessionId={monoChanges.sessionId}
+                          cwd={monoChanges.cwd}
+                          request={monoChanges.request}
+                          color={monoViewMono.color}
+                          textHarness={monoViewSession?.harness}
+                          onClose={onCloseMonoChanges}
+                          windowControls={
+                            monoCovers && !IS_MAC ? (
+                              <WindowControls />
+                            ) : undefined
+                          }
+                        />
+                      ) : null}
+                    </ProjectPanelWidth.Provider>
                   </div>
-                  <ProjectPanelWidth.Provider value={!!viewedProject}>
-                    {monoCovers ? monoDetailsPanel : null}
-                    {monoCovers ? monoActivityPanel : null}
-                    {monoCovers ? monoSessionsPanel : null}
-                    {threadPanel}
-                    {monoViewMono &&
-                    monoArtifact &&
-                    monoArtifact.sessionId === monoViewSession?.id ? (
-                      <ArtifactPanel
-                        key={monoArtifact.id}
-                        id={monoArtifact.id}
-                        color={monoViewMono.color}
-                        onClose={onCloseMonoArtifact}
-                        onOpenFile={onOpenFile}
-                        windowControls={
-                          monoCovers && !IS_MAC ? <WindowControls /> : undefined
-                        }
-                      />
-                    ) : null}
-                    {monoViewMono &&
-                    monoChanges &&
-                    monoChanges.sessionId === monoViewSession?.id ? (
-                      <MonoChangesPanel
-                        sessionId={monoChanges.sessionId}
-                        cwd={monoChanges.cwd}
-                        request={monoChanges.request}
-                        color={monoViewMono.color}
-                        textHarness={monoViewSession?.harness}
-                        onClose={onCloseMonoChanges}
-                        windowControls={
-                          monoCovers && !IS_MAC ? <WindowControls /> : undefined
-                        }
-                      />
-                    ) : null}
-                  </ProjectPanelWidth.Provider>
+                  <div
+                    ref={setProjectDockHost}
+                    className={
+                      projectDockShown
+                        ? "h-full min-h-0 min-w-0 w-full overflow-hidden"
+                        : "hidden"
+                    }
+                    style={projectDockShown ? { gridArea: "dock" } : undefined}
+                  />
                 </div>
               </div>
               {searchViewOpen ? (
@@ -13780,22 +13828,22 @@ function Workspace({
                   onManageAccounts={() =>
                     openSettings("providers", "provider-accounts")
                   }
-                  // A Mono in full view has no terminal of its own.
-                  terminals={monoCovers ? undefined : runningTerminals}
-                  terminalOpen={!monoCovers && runningTerminalOpen}
+                  // A Mono in full view has no terminal of its own; a project does.
+                  terminals={dockCovered ? undefined : runningTerminals}
+                  terminalOpen={!dockCovered && runningTerminalOpen}
                   onToggleTerminal={onToggleRunningTerminal}
                   onNewTerminal={
-                    !monoCovers && isLocalProject(projectCwd)
+                    !dockCovered && isLocalProject(dockCwd)
                       ? onNewTerminal
                       : undefined
                   }
-                  onShowTerminal={
-                    !monoCovers && isLocalProject(projectCwd)
-                      ? onShowProjectTerminal
+                  onToggleProjectTerminal={
+                    !dockCovered && isLocalProject(dockCwd)
+                      ? onToggleProjectTerminal
                       : undefined
                   }
                   projectTerminalActive={
-                    !monoCovers &&
+                    !dockCovered &&
                     !!currentProjectDock &&
                     currentProjectDock.pane.files.length > 0
                   }

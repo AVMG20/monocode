@@ -63,7 +63,7 @@ export function UsageFooter({
   terminalOpen = false,
   onToggleTerminal,
   onNewTerminal,
-  onShowTerminal,
+  onToggleProjectTerminal,
   projectTerminalActive = false,
   onSelectAccount,
   onManageAccounts,
@@ -75,7 +75,7 @@ export function UsageFooter({
   terminalOpen?: boolean;
   onToggleTerminal?: (fileId: string) => void;
   onNewTerminal?: () => void;
-  onShowTerminal?: () => void;
+  onToggleProjectTerminal?: () => void;
   projectTerminalActive?: boolean;
   onSelectAccount?: (
     provider: ProviderAccountProvider,
@@ -292,20 +292,21 @@ export function UsageFooter({
   const showOpencodeChip = wantOpencode && opencode.status !== "unavailable";
   const showUsage = wantClaude || wantCodex || showOpencodeChip;
   const showTerminals = terminals.length > 0;
-  const showTerminalButton = Boolean(onNewTerminal || onShowTerminal);
+  const showTerminalButton = Boolean(onNewTerminal || onToggleProjectTerminal);
   const terminalLabel = projectTerminalActive
     ? "Terminal"
     : `New Terminal (${MOD}\`)`;
   const onTerminalClick = projectTerminalActive
-    ? (onShowTerminal ?? onNewTerminal)
-    : (onNewTerminal ?? onShowTerminal);
-  const ariaLabel = showUsage || session?.harness === "pi"
-    ? "Provider usage"
-    : showTerminals || showTerminalButton
-      ? "Terminals"
-      : session
-        ? "Session"
-        : undefined;
+    ? (onToggleProjectTerminal ?? onNewTerminal)
+    : (onNewTerminal ?? onToggleProjectTerminal);
+  const ariaLabel =
+    showUsage || session?.harness === "pi"
+      ? "Provider usage"
+      : showTerminals || showTerminalButton
+        ? "Terminals"
+        : session
+          ? "Session"
+          : undefined;
 
   return (
     <footer
@@ -313,7 +314,11 @@ export function UsageFooter({
       className="flex h-7 shrink-0 items-center gap-1.5 overflow-x-auto border-t border-stroke px-3 text-[11px] text-content/55"
     >
       {session?.harness === "pi" ? (
-        <PiUsage key={`${session.id}:${session.model}`} model={session.model} now={now} />
+        <PiUsage
+          key={`${session.id}:${session.model}`}
+          model={session.model}
+          now={now}
+        />
       ) : showUsage ? (
         <>
           {wantClaude ? (

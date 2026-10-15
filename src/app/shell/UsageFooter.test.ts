@@ -19,7 +19,7 @@ describe("UsageFooter terminal control", () => {
         terminalOpen: true,
         onToggleTerminal: vi.fn(),
         onNewTerminal: vi.fn(),
-        onShowTerminal: vi.fn(),
+        onToggleProjectTerminal: vi.fn(),
         projectTerminalActive: true,
       }),
     );
