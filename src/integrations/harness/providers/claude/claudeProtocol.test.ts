@@ -135,10 +135,13 @@ describe("buildClaudeSpawnArgs", () => {
     expect(JSON.parse(settings).disableAllHooks).toBeUndefined();
   });
 
-  it("opts interactive sessions into the Artifact tools", () => {
+  it("opts interactive sessions into the Artifact and task tools", () => {
     const args = buildClaudeSpawnArgs({});
     const settings = args[args.indexOf("--settings") + 1];
-    expect(JSON.parse(settings).env).toEqual({ CLAUDE_CODE_ARTIFACT: "1" });
+    expect(JSON.parse(settings).env).toEqual({
+      CLAUDE_CODE_ARTIFACT: "1",
+      CLAUDE_CODE_ENABLE_TODO_TOOLS: "1",
+    });
   });
 
   it("only disables hooks for interactive sessions when asked", () => {

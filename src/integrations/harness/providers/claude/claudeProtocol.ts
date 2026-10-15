@@ -77,13 +77,15 @@ export type ClaudeCliSettings = {
 };
 
 /**
- * Claude Code keeps its Artifact tools off by default when driven over
- * stream-json, the way SDK embedders are. MonoCode is an interactive client,
- * so it opts back in; `enableArtifact: false` and
- * `CLAUDE_CODE_DISABLE_ARTIFACT` still turn them off.
+ * Claude Code keeps its Artifact and task-list tools off by default when
+ * driven over stream-json, the way SDK embedders are. MonoCode is an
+ * interactive client that shows both, so it opts back in;
+ * `enableArtifact: false` and `CLAUDE_CODE_DISABLE_ARTIFACT` still turn
+ * Artifacts off.
  */
 const CLAUDE_INTERACTIVE_ENV: Record<string, string> = {
   CLAUDE_CODE_ARTIFACT: "1",
+  CLAUDE_CODE_ENABLE_TODO_TOOLS: "1",
 };
 
 export function asRecord(value: unknown): Record<string, unknown> | null {
