@@ -5193,16 +5193,13 @@ function Workspace({
 
   closeMonoPanelsRef.current = closeMonoPanels;
 
-  const onToggleThreads = useCallback(
+  /** Shows a project's threads; only the panel's close button puts them away. */
+  const onShowThreads = useCallback(
     (projectId: string) => {
-      if (openThreadIdsRef.current[projectId] || threadListOpen[projectId])
-        onCloseProjectThread(projectId);
-      else {
-        closeMonoPanels();
-        setThreadListOpen((previous) => ({ ...previous, [projectId]: true }));
-      }
+      closeMonoPanels();
+      onBackToThreads(projectId);
     },
-    [closeMonoPanels, onCloseProjectThread, threadListOpen],
+    [closeMonoPanels, onBackToThreads],
   );
 
   /** Moves a thread out of the project view into a workspace tab. */
@@ -13258,7 +13255,7 @@ function Workspace({
             open={threadPanelOpen}
             waiting={coordinatorRail.counts.get(viewedProject.id)?.waiting ?? 0}
             busy={coordinatorRail.counts.get(viewedProject.id)?.busy ?? 0}
-            onClick={() => onToggleThreads(viewedProject.id)}
+            onClick={() => onShowThreads(viewedProject.id)}
           />
         ) : undefined
       }

@@ -16,7 +16,8 @@ export function ThreadsButton({
   busy: number;
   onClick: () => void;
 }) {
-  const label = open ? "Hide threads" : "Show threads";
+  // Only the panel's own close button puts the threads away.
+  const label = "Show threads";
   const detail = [
     waiting ? `${waiting} waiting for you` : "",
     busy ? `${busy} busy` : "",
