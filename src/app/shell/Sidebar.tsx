@@ -3615,7 +3615,7 @@ function CompactProjectRail({
   monoViewActive?: boolean;
   /** Claude Projects, as mascot buttons below the shortcuts. */
   coordinators?: CoordinatorRailProps;
-  /** Choosing the open project again; toggles its threads drawer. */
+  /** Choosing the open project again. */
   onReselectCoordinator?: () => void;
 }) {
   const monosSnap = useSyncExternalStore(subscribeMonos, monosSnapshot);

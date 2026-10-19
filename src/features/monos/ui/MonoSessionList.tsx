@@ -4,6 +4,8 @@ import { projectName } from "../../../shared/lib/paths";
 import { IconButton } from "../../../app/shell/TitleBar";
 import {
   ExternalLink,
+  Maximize2,
+  Minimize2,
   PanelRightToggle,
   Search,
 } from "../../../shared/ui/icons";
@@ -403,12 +405,17 @@ export function LaunchedSessionPage({
   title,
   onBack,
   onOpenInWorkspace,
+  expanded = false,
+  onToggleExpanded,
   onClose,
   children,
 }: {
   title: string;
   onBack: () => void;
-  onOpenInWorkspace: () => void | Promise<void>;
+  onOpenInWorkspace?: () => void | Promise<void>;
+  /** Fills the view in place of opening in the workspace, as a project does. */
+  expanded?: boolean;
+  onToggleExpanded?: () => void;
   onClose: () => void;
   children: ReactNode;
 }) {
@@ -416,21 +423,35 @@ export function LaunchedSessionPage({
   return (
     <>
       <PageHeader title={title} onBack={onBack}>
-        <IconButton
-          label="Open in workspace"
-          onClick={() => {
-            setError(undefined);
-            void Promise.resolve(onOpenInWorkspace()).catch((cause) =>
-              setError(
-                cause instanceof Error
-                  ? cause.message
-                  : "Could not open this session.",
-              ),
-            );
-          }}
-        >
-          <ExternalLink className="size-3.5" strokeWidth={1.75} />
-        </IconButton>
+        {onToggleExpanded ? (
+          <IconButton
+            label={expanded ? "Exit full view" : "Full view"}
+            active={expanded}
+            onClick={onToggleExpanded}
+          >
+            {expanded ? (
+              <Minimize2 className="size-3.5" strokeWidth={1.75} />
+            ) : (
+              <Maximize2 className="size-3.5" strokeWidth={1.75} />
+            )}
+          </IconButton>
+        ) : onOpenInWorkspace ? (
+          <IconButton
+            label="Open in workspace"
+            onClick={() => {
+              setError(undefined);
+              void Promise.resolve(onOpenInWorkspace()).catch((cause) =>
+                setError(
+                  cause instanceof Error
+                    ? cause.message
+                    : "Could not open this session.",
+                ),
+              );
+            }}
+          >
+            <ExternalLink className="size-3.5" strokeWidth={1.75} />
+          </IconButton>
+        ) : null}
         <IconButton label="Hide overview" active onClick={onClose}>
           <PanelRightToggle className="size-3.5" strokeWidth={1.75} />
         </IconButton>

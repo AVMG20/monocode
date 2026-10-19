@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
-import type { ThreadView } from "../model/coordinator";
-import { ThreadStatusIcon } from "./ThreadHandoffs";
+import { CheckCircle } from "../../../shared/ui/icons";
+import { TerminalSpinner } from "../../sessions/ui/TerminalSpinner";
+import type { ThreadStatus, ThreadView } from "../model/coordinator";
 
 const THREAD_HREF = /^#thread-(.+)$/;
 
@@ -36,5 +37,36 @@ export function ThreadLink({
       </span>
       <span className="min-w-0 truncate">{view.title}</span>
     </button>
+  );
+}
+
+const STATUS_DOT: Record<ThreadStatus, string> = {
+  waiting: "bg-amber-400",
+  busy: "bg-accent",
+  inactive: "bg-content/30",
+  solved: "bg-emerald-400",
+};
+
+/** Where a thread stands, as one small mark: spinning, solved or a dot. */
+function ThreadStatusIcon({
+  status,
+  failed,
+}: {
+  status?: ThreadStatus;
+  failed?: boolean;
+}) {
+  if (status === "busy")
+    return (
+      <TerminalSpinner className="inline-block w-3 select-none text-center text-[11px] leading-none text-accent" />
+    );
+  if (status === "solved")
+    return <CheckCircle className="size-3.5 text-emerald-400" />;
+  return (
+    <span
+      aria-hidden
+      className={`size-2 rounded-full ${
+        failed ? "bg-red-400" : status ? STATUS_DOT[status] : "bg-content/30"
+      }`}
+    />
   );
 }

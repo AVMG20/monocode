@@ -6,7 +6,6 @@ import {
   DashboardSquare,
   Inbox,
   PanelLeft,
-  PanelRightToggle,
   GitBranch,
   Plus,
   Search,
@@ -129,15 +128,9 @@ type Props = {
   /** Shows or hides the Mono's overview panel beside its chat. */
   onToggleMonoOverview?: () => void;
   monoOverviewOpen?: boolean;
+  /** A project's threads: how many wait for the user and how many run. */
+  monoThreads?: ThreadCounts;
   onOpenMonoSettings?: () => void;
-  /** A project coordinator's settings toggle, in place of a Mono's actions. */
-  onShowMonoDetails?: () => void;
-  /** Beside the details toggle, such as a project's threads button. */
-  monoAction?: ReactNode;
-  /** The details toggle's label; a project calls them its settings. */
-  monoDetailsLabel?: string;
-  /** A gear for a project's settings; the panel toggle otherwise. */
-  monoDetailsIcon?: "panel" | "settings";
   /** The full-height Mono panel owns these while it is open. */
   hideWindowControls?: boolean;
   projectRailOpen?: boolean;
@@ -679,27 +672,42 @@ export function TabVisitNav({
   );
 }
 
+type ThreadCounts = { waiting: number; busy: number };
+
 /** A Mono's overview toggle and settings, beside its conversation. */
 export function MonoViewActions({
   name,
   overviewOpen,
   onToggleOverview,
   onOpenSettings,
+  threads,
   className = "",
 }: {
   name: string;
   overviewOpen: boolean;
   onToggleOverview?: () => void;
   onOpenSettings?: () => void;
+  /** A project's threads, counted on the overview button. */
+  threads?: ThreadCounts;
   className?: string;
 }) {
+  const label = overviewOpen ? "Hide overview" : "Show overview";
+  const detail = threads
+    ? [
+        threads.waiting ? `${threads.waiting} waiting for you` : "",
+        threads.busy ? `${threads.busy} busy` : "",
+      ]
+        .filter(Boolean)
+        .join(", ")
+    : "";
   return (
     <div className={`flex items-center gap-1 ${className}`}>
       {onToggleOverview ? (
         <button
           type="button"
           aria-pressed={overviewOpen}
-          title={overviewOpen ? "Hide overview" : "Show overview"}
+          title={detail ? `${label} (${detail})` : label}
+          aria-label={detail ? `${label}, ${detail}` : label}
           data-tauri-drag-region="false"
           onClick={onToggleOverview}
           className={`flex h-6 items-center gap-1.5 rounded-md px-2 text-[12px] ${
@@ -710,6 +718,17 @@ export function MonoViewActions({
         >
           <DashboardSquare className="size-3.5" strokeWidth={1.75} />
           Overview
+          {threads?.busy ? (
+            <span className="flex items-center gap-1 rounded-full bg-accent/12 px-1.5 text-[10.5px] tabular-nums text-accent">
+              <TerminalSpinner className="inline-block w-2.5 select-none text-center text-[10px] leading-none" />
+              {threads.busy}
+            </span>
+          ) : null}
+          {threads?.waiting ? (
+            <span className="grid min-w-4 place-items-center rounded-full bg-amber-400/90 px-1 text-[10.5px] font-semibold tabular-nums leading-4 text-black">
+              {threads.waiting}
+            </span>
+          ) : null}
         </button>
       ) : null}
       {onOpenSettings ? (
@@ -757,11 +776,8 @@ function TitleBarComponent({
   content,
   onToggleMonoOverview,
   monoOverviewOpen = false,
+  monoThreads,
   onOpenMonoSettings,
-  onShowMonoDetails,
-  monoAction,
-  monoDetailsLabel = "Show Mono details",
-  monoDetailsIcon = "panel",
   hideWindowControls = false,
   projectRailOpen = true,
   sessionSidebarOpen = true,
@@ -1068,7 +1084,6 @@ function TitleBarComponent({
   const trailingControls =
     showTrailingActions ||
     showRightPanelToggle ||
-    (mono && (onShowMonoDetails || monoAction)) ||
     (mono && (onToggleMonoOverview || onOpenMonoSettings)) ||
     (!IS_MAC && !hideWindowControls) ? (
       <div className="flex h-full shrink-0 items-stretch">
@@ -1101,26 +1116,13 @@ function TitleBarComponent({
             </IconButton>
           </div>
         ) : null}
-        {mono && (onShowMonoDetails || monoAction) ? (
-          <div className="flex items-center gap-1 px-3">
-            {monoAction}
-            {onShowMonoDetails ? (
-              <IconButton label={monoDetailsLabel} onClick={onShowMonoDetails}>
-                {monoDetailsIcon === "settings" ? (
-                  <Settings className="size-3.5" strokeWidth={1.75} />
-                ) : (
-                  <PanelRightToggle className="size-3.5" strokeWidth={1.75} />
-                )}
-              </IconButton>
-            ) : null}
-          </div>
-        ) : null}
         {mono && (onToggleMonoOverview || onOpenMonoSettings) ? (
           <MonoViewActions
             name={mono.look.name}
             overviewOpen={monoOverviewOpen}
             onToggleOverview={onToggleMonoOverview}
             onOpenSettings={onOpenMonoSettings}
+            threads={monoThreads}
             className="px-3"
           />
         ) : null}

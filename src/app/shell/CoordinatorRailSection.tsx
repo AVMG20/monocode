@@ -294,7 +294,7 @@ export function CoordinatorRailSection(props: CoordinatorRailProps) {
 /**
  * The compact rail's Claude Projects: one mascot button per project and a
  * plus for a new one. Choosing the open project again calls `onReselect`
- * (the compact rail uses it to toggle the threads drawer).
+ * (the compact rail uses it).
  */
 export function CompactCoordinatorItems({
   onReselect,

@@ -1,12 +1,10 @@
 import { GripVertical, X } from "../../../shared/ui/icons";
-import { ThreadHandoffs } from "../../coordinator/ui/ThreadHandoffs";
 import { ThreadLink, threadLinkId } from "../../coordinator/ui/ThreadLink";
 import { ThreadStepsBar } from "../../coordinator/ui/ThreadStepsBar";
 import { MarkdownLinkContext } from "./AgentMarkdown";
 import {
   coordinatorCompactAt,
   coordinatorContextUsage,
-  threadHandoffs,
   threadSteps,
   type ThreadView,
 } from "../../coordinator/model/coordinator";
@@ -156,8 +154,6 @@ import { markLinkedSessionUpdateSeen } from "../../inbox/model/linkedSessionSeen
 import { RemoteSession } from "../../connections/ui/RemoteSession";
 import { isRemoteProjectPath } from "../../projects/model/recents";
 import type { HostSession } from "../../connections/model/protocol";
-
-const NO_THREADS: readonly ThreadView[] = [];
 
 export type SessionPaneProps = {
   session: Session;
@@ -487,21 +483,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
     [sessionStepsEnabled, agent, hideSteps, session.blocks],
   );
   const coordinator = isCoordinatorProject(mono);
-  // Under each of its replies, the coordinator shows the threads it started
-  // or messaged in that turn and what it told them.
-  const turnExtras = useMemo(
-    () =>
-      coordinator
-        ? (turn: Block[]) => (
-            <ThreadHandoffs
-              handoffs={threadHandoffs(turn)}
-              threads={projectThreads ?? NO_THREADS}
-              onOpenThread={onOpenProjectThread}
-            />
-          )
-        : undefined,
-    [coordinator, projectThreads, onOpenProjectThread],
-  );
   // The threads it names in its replies link to them, with their status.
   const renderThreadLink = useMemo(
     () =>
@@ -1254,7 +1235,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
                         }
                         launchedSessions={monoLaunchedSessions}
                         openSessionId={openMonoSessionId}
-                        turnExtras={turnExtras}
                         // A Mono's turn keeps copy, save as note and the time.
                         daySeparators={!!agent}
                         hideTurnMetrics={!!agent}

@@ -54,6 +54,13 @@ const TABS: {
   { id: "changes", label: "Changes", icon: FileDiff },
 ];
 
+/** A project's overview speaks of threads and has no habits. */
+const PROJECT_TABS: typeof TABS = TABS.filter(
+  (entry) => entry.id !== "habits",
+).map((entry) =>
+  entry.id === "sessions" ? { ...entry, label: "Threads" } : entry,
+);
+
 /** The conversation's recorded changes, reviewed and committed on their tab. */
 export type MonoOverviewChanges = {
   sessionId: string;
@@ -91,6 +98,11 @@ type Props = {
   shownSession?: ShownMonoSession;
   onBackFromSession?: () => void;
   onOpenSessionInWorkspace?: (sessionId: string) => void | Promise<void>;
+  /** A Claude Project: its sessions are threads, and it keeps no habits. */
+  project?: boolean;
+  /** The shown thread fills the project view. */
+  expanded?: boolean;
+  onToggleExpanded?: () => void;
   /** A document it wrote, open over the list until Back. */
   shownDocumentId?: string;
   onBackFromDocument?: () => void;
@@ -116,12 +128,15 @@ export function MonoOverview({
   documents,
   changes,
   activity,
-  tab,
+  tab: requestedTab,
   onTabChange,
   onOpenSession,
   shownSession,
   onBackFromSession = () => {},
   onOpenSessionInWorkspace = () => {},
+  project = false,
+  expanded = false,
+  onToggleExpanded,
   shownDocumentId,
   onBackFromDocument = () => {},
   onOpenFile,
@@ -130,6 +145,8 @@ export function MonoOverview({
   windowControls,
 }: Props) {
   const lock = useLockOverscroll<HTMLDivElement>();
+  // A project has no habits tab to land on.
+  const tab = project && requestedTab === "habits" ? "sessions" : requestedTab;
   const habits = useHabits(monoId, state.status);
   const actions = habitActions(monoId);
   const [routes, setRoutes] = useState<Route[]>([]);
@@ -199,6 +216,8 @@ export function MonoOverview({
           onOpenInWorkspace={() =>
             onOpenSessionInWorkspace(shownSession.sessionId)
           }
+          expanded={expanded}
+          onToggleExpanded={onToggleExpanded}
           onClose={onClose}
         >
           {shownSession.pane}
@@ -221,6 +240,7 @@ export function MonoOverview({
       ),
     });
 
+  const tabs = project ? PROJECT_TABS : TABS;
   const habitsFull = !habits || habits.length >= HABITS_MAX;
   const counts: Record<(typeof TABS)[number]["id"], number | undefined> = {
     sessions: launches.length,
@@ -236,13 +256,20 @@ export function MonoOverview({
       label={`${agent.name} overview`}
       color={agent.color}
       windowControls={windowControls}
+      expanded={expanded && !!shownSession}
+      wide={project}
     >
       <PanelStack pages={pages}>
         {/* Pages replace this header too, keeping their back button at the top. */}
         <MonoSidebarHeader
           title="Overview"
           heading={
-            <OverviewTabs tab={tab} counts={counts} onChange={onTabChange} />
+            <OverviewTabs
+              tabs={tabs}
+              tab={tab}
+              counts={counts}
+              onChange={onTabChange}
+            />
           }
           onClose={onClose}
           actions={
@@ -310,7 +337,7 @@ export function MonoOverview({
           aria-label={
             tab === "activity"
               ? "Activity"
-              : TABS.find((entry) => entry.id === tab)?.label
+              : tabs.find((entry) => entry.id === tab)?.label
           }
           hidden={tab === "changes"}
           className="min-h-0 flex-1 overflow-y-auto overscroll-none px-2 py-2"
@@ -454,10 +481,12 @@ function SessionSearchBar({
  * others are just their icons.
  */
 function OverviewTabs({
+  tabs,
   tab,
   counts,
   onChange,
 }: {
+  tabs: typeof TABS;
   tab: MonoOverviewTab;
   counts: Record<(typeof TABS)[number]["id"], number | undefined>;
   onChange: (tab: MonoOverviewTab) => void;
@@ -468,7 +497,7 @@ function OverviewTabs({
       aria-label="Overview"
       className="-ml-2 flex items-center gap-0.5"
     >
-      {TABS.map(({ id, label, icon }) => {
+      {tabs.map(({ id, label, icon }) => {
         const selected = id === tab;
         return (
           <TabButton

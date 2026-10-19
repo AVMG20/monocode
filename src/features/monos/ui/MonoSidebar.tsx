@@ -1,17 +1,4 @@
-import {
-  useContext,
-  useEffect,
-  type CSSProperties,
-  type ReactNode,
-} from "react";
-import {
-  PROJECT_PANEL_MIN,
-  ProjectPanelWidth,
-  projectPanelDefault,
-  projectPanelMax,
-  projectPanelWidth,
-  rememberProjectPanelWidth,
-} from "../../coordinator/ui/projectPanelWidth";
+import type { CSSProperties, ReactNode } from "react";
 import { IconButton } from "../../../app/shell/TitleBar";
 import { useDragResize } from "../../../shared/hooks/useDragResize";
 import { PanelRightToggle } from "../../../shared/ui/icons";
@@ -19,6 +6,11 @@ import { PanelRightToggle } from "../../../shared/ui/icons";
 const MIN_WIDTH = 340;
 const DEFAULT_WIDTH = 400;
 let rememberedWidth = DEFAULT_WIDTH;
+/** A project's overview hosts whole threads, so it opens at half the window. */
+const WIDE_MIN_WIDTH = 420;
+let rememberedWideWidth: number | undefined;
+const wideDefault = () =>
+  Math.max(WIDE_MIN_WIDTH, Math.min(960, Math.round(window.innerWidth * 0.5)));
 
 /** The shared frame for a Mono's details and turn sidebars. */
 export function MonoSidebar({
@@ -27,37 +19,36 @@ export function MonoSidebar({
   label,
   color,
   windowControls,
+  expanded = false,
+  wide = false,
   children,
 }: {
   open: boolean;
+  /** Opens at half the window and may grow wider, as a project's does. */
+  wide?: boolean;
+  /** Fills the view beside it instead of keeping its dragged width. */
+  expanded?: boolean;
   kind: "details" | "sessions";
   label: string;
   color: string;
   windowControls?: ReactNode;
   children: ReactNode;
 }) {
-  // In a project every side panel shares one width instead.
-  const project = useContext(ProjectPanelWidth);
   const resize = useDragResize({
-    min: project ? PROJECT_PANEL_MIN : MIN_WIDTH,
+    min: wide ? WIDE_MIN_WIDTH : MIN_WIDTH,
     // The overview hosts whole sessions and documents, so it may grow wide;
     // either way the chat keeps a good share.
-    max: project
-      ? projectPanelMax
+    max: wide
+      ? () => Math.min(1200, Math.round(window.innerWidth * 0.7))
       : () => Math.min(960, Math.round(window.innerWidth * 0.62)),
-    defaultWidth: project ? projectPanelDefault() : DEFAULT_WIDTH,
-    initial: project ? projectPanelWidth() : rememberedWidth,
+    defaultWidth: wide ? wideDefault() : DEFAULT_WIDTH,
+    initial: wide ? (rememberedWideWidth ?? wideDefault()) : rememberedWidth,
     direction: "left",
     onCommit: (width) => {
-      if (project) rememberProjectPanelWidth(width);
+      if (wide) rememberedWideWidth = width;
       else rememberedWidth = width;
     },
   });
-  // Kept mounted while hidden: catch up with the width the others left.
-  const { sync } = resize;
-  useEffect(() => {
-    if (project && open) sync(projectPanelWidth());
-  }, [project, open, sync]);
   return (
     <aside
       ref={resize.setPaneRef}
@@ -75,16 +66,20 @@ export function MonoSidebar({
             : "0px",
         } as CSSProperties
       }
-      className="mono-details-panel relative flex h-full min-h-0 shrink-0 flex-col border-l border-stroke font-sans"
+      className={`mono-details-panel relative flex h-full min-h-0 flex-col font-sans ${
+        expanded ? "!w-auto min-w-0 flex-1" : "shrink-0 border-l border-stroke"
+      }`}
     >
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        aria-label={`Resize Mono ${kind}`}
-        className={`absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize touch-none ${resize.dragging ? "bg-content/15" : "hover:bg-content/10"}`}
-        onPointerDown={resize.onPointerDown}
-        onDoubleClick={resize.onDoubleClick}
-      />
+      {expanded ? null : (
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={`Resize Mono ${kind}`}
+          className={`absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize touch-none ${resize.dragging ? "bg-content/15" : "hover:bg-content/10"}`}
+          onPointerDown={resize.onPointerDown}
+          onDoubleClick={resize.onDoubleClick}
+        />
+      )}
       {windowControls ? (
         <div className="absolute right-0 top-0 z-30 h-10">{windowControls}</div>
       ) : null}
