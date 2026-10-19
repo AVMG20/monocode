@@ -1,5 +1,5 @@
 import { basename } from "../../../platform/tauri/fs";
-import { isImagePath, isVideoPath } from "../../files/model/filePreview";
+import { isImagePath, isChatVideoPath } from "../../files/model/filePreview";
 import { resolveWorkspaceFileReference } from "../../../shared/lib/paths";
 import { REMOTE_PATH_PREFIX } from "../../../shared/lib/remotePaths";
 import type { Block } from "./session";
@@ -44,7 +44,7 @@ function blank(text: string, index: number, length: number): string {
 
 export function mediaKind(path: string): TranscriptMediaKind | undefined {
   if (isImagePath(path)) return "image";
-  if (isVideoPath(path)) return "video";
+  if (isChatVideoPath(path)) return "video";
   return undefined;
 }
 

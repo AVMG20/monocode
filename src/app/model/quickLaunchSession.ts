@@ -52,6 +52,8 @@ export async function acceptQuickLaunch(
     ) => SubmissionAcceptance;
   },
   placement?: { direction: SplitDir; besideSessionId: string },
+  /** Off for a session followed elsewhere, such as from the Mono that ran it. */
+  openTab = true,
 ): Promise<void> {
   // Rehydrate image previews in this webview; the floating panel sends paths.
   const attachments = await prepareAttachments(launch.attachments ?? []);
@@ -98,8 +100,11 @@ export async function acceptQuickLaunch(
       : tab.id;
     if (!tabId) throw new Error("The target pane is unavailable");
     workspace.updateSessions((sessions) => [...sessions, session]);
-    if (!placement && !launch.detached) workspace.appendTab(tab, launch.cwd);
-    if (launch.reveal && (placement || !launch.detached)) {
+    // A detached launch (a project thread) and one followed elsewhere (from
+    // the Mono that ran it) both start without a workspace tab.
+    const showTab = openTab && !launch.detached;
+    if (!placement && showTab) workspace.appendTab(tab, launch.cwd);
+    if (launch.reveal && (placement || showTab)) {
       // The title bar filters tabs by this project. Select it before the tab.
       workspace.setProjectCwd(launch.cwd);
       workspace.setRecents(rememberProject(launch.cwd));

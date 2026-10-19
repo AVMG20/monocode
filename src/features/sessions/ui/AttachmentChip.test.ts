@@ -10,6 +10,9 @@ vi.mock("../../../platform/tauri/fs", () => ({
   basename: (path: string) => path.split("/").pop() ?? path,
   readBinaryFile: vi.fn(),
 }));
+vi.mock("../../../platform/tauri/trackpadZoom", () => ({
+  claimTrackpadMagnify: () => () => {},
+}));
 import { AttachmentChip } from "./AttachmentChip";
 
 const attachment: Attachment = {

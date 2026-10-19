@@ -59,7 +59,7 @@ export function MonoHeader({
             ? "Tell me what you need. I answer quick questions myself and hand real work to threads; you’ll see them on the left."
             : agent.projects.length
               ? `I can see every session, note and folder in ${monoProjectsPhrase(agent.projects)}. Ask what’s going on, or hand me work.`
-              : "Add the projects I should work on from my details, or just ask me something."}
+              : "Add the projects I should work on in my settings, or just ask me something."}
         </p>
       ) : (
         <MonoStatus

@@ -1,6 +1,6 @@
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal } from "@xterm/xterm";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef } from "react";
 import {
   getPtyStatus,
@@ -115,19 +115,6 @@ function terminalTheme(light: boolean) {
   };
 }
 
-function openTerminalLink(uri: string) {
-  let protocol: string;
-  try {
-    protocol = new URL(uri).protocol;
-  } catch {
-    return;
-  }
-  if (protocol !== "http:" && protocol !== "https:" && protocol !== "mailto:") {
-    return;
-  }
-  void openUrl(uri).catch(() => undefined);
-}
-
 function terminalFont(): string {
   const fromCss = getComputedStyle(document.documentElement)
     .getPropertyValue("--font-terminal")
@@ -160,6 +147,15 @@ function oscColors() {
   };
 }
 
+/**
+ * Open an HTTP(S) terminal link in the default browser, ignoring other schemes
+ * and opener failures.
+ */
+function openTerminalLink(uri: string) {
+  if (!/^https?:\/\//i.test(uri)) return;
+  void openUrl(uri).catch(() => undefined);
+}
+
 export function TerminalView({ id, cwd, active, onMetaChange }: Props) {
   const outerRef = useRef<HTMLDivElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
@@ -182,7 +178,8 @@ export function TerminalView({ id, cwd, active, onMetaChange }: Props) {
       fontSize: 13,
       lineHeight: 1,
       letterSpacing: 0,
-      scrollback: 5000,
+      // About 12 bytes per cell, retained for every open terminal.
+      scrollback: 2000,
       allowTransparency: true,
       smoothScrollDuration: 0,
       theme: terminalTheme(isLightScheme()),

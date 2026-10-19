@@ -12,6 +12,10 @@ vi.mock("../../../platform/tauri/fs", () => ({
 }));
 vi.mock("../../../integrations/harness/core/child", () => ({
   resolveCodexBinary: async () => ({ path: "/bin/codex" }),
+  inspectHarnessBinary: async () => ({
+    path: "/bin/devin",
+    version: "devin 3000.6.7 (260a97c8)",
+  }),
   spawnChild: async (
     _id: string,
     _path: string,
@@ -52,7 +56,12 @@ vi.mock("../../../integrations/harness/core/jsonRpc", () => ({
 }));
 
 import { invoke } from "@tauri-apps/api/core";
-import { fetchClaudeRateLimits, fetchCodexRateLimits } from "./rateLimitsFetch";
+import {
+  cachedDevinIdentity,
+  fetchClaudeRateLimits,
+  fetchCodexRateLimits,
+  fetchDevinRateLimits,
+} from "./rateLimitsFetch";
 
 describe("fetchClaudeRateLimits", () => {
   const endpoint = "API token · gw.example.dev";
@@ -87,6 +96,38 @@ describe("fetchClaudeRateLimits", () => {
     const limits = await fetchClaudeRateLimits("account-gw");
     expect(limits.status).toBe("untracked");
     expect(limits.error).toBe(endpoint);
+  });
+});
+
+describe("fetchDevinRateLimits", () => {
+  const signedIn = {
+    status: "ok",
+    httpStatus: 200,
+    usage: { name: "Ada", email: "ada@example.com", plan: "Pro", weeklyRemainingPercent: 42 },
+  };
+
+  it("sends the installed CLI's version and keeps the identity it returns", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce(signedIn);
+    const limits = await fetchDevinRateLimits();
+    expect(invoke).toHaveBeenLastCalledWith("fetch_devin_usage", { cliVersion: "3000.6.7" });
+    expect(limits.weekly?.usedPercent).toBe(58);
+    expect(cachedDevinIdentity()).toEqual({ name: "Ada", email: "ada@example.com", plan: "Pro" });
+  });
+
+  it("forgets the identity when the key is rejected, not on a network failure", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce(signedIn);
+    await fetchDevinRateLimits();
+    vi.mocked(invoke).mockResolvedValueOnce({ status: "error", error: "Devin usage request failed: timeout" });
+    await fetchDevinRateLimits();
+    expect(cachedDevinIdentity()?.email).toBe("ada@example.com");
+    vi.mocked(invoke).mockResolvedValueOnce({
+      status: "error",
+      httpStatus: 401,
+      error: "Devin sign-in expired",
+    });
+    const limits = await fetchDevinRateLimits();
+    expect(limits.status).toBe("error");
+    expect(cachedDevinIdentity()).toBeNull();
   });
 });
 

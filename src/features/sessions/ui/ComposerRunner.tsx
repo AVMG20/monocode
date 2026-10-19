@@ -1,4 +1,10 @@
-import { useLayoutEffect, useMemo, useRef, type RefObject } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  type RefObject,
+} from "react";
 import { createPortal } from "react-dom";
 import {
   COIN_EDGE_PATH,
@@ -122,6 +128,7 @@ export function ComposerRunner({
   const workingRef = useRef(working);
   const enabledRef = useRef(enabled);
   const onExitedRef = useRef(onExited);
+  const wakeRef = useRef(() => {});
   busyRef.current = busy;
   workingRef.current = working;
   enabledRef.current = enabled;
@@ -173,6 +180,7 @@ export function ComposerRunner({
     let prevWidth = 0;
     let last = performance.now();
     let raf = 0;
+    let parked = false;
     let coinId = 0;
     let nextCoinAt = last + nextCoinDelay(true);
     let exiting = false;
@@ -237,8 +245,10 @@ export function ComposerRunner({
       return el;
     });
 
+    // Not `visibility: hidden`: the sprites' looping CSS animations would
+    // keep running behind it.
     const showLayer = (shown: boolean) => {
-      layer.style.visibility = shown ? "visible" : "hidden";
+      layer.style.display = shown ? "" : "none";
     };
     showLayer(false);
 
@@ -513,6 +523,10 @@ export function ComposerRunner({
           clearCoins();
           onExitedRef.current();
         }
+        // A pane in a background tab is disabled and stops re-rendering, so
+        // `busy` can't change until the tab is shown. Draw no frames until
+        // a prop does.
+        parked = true;
         return;
       }
       if (!box || document.hidden) {
@@ -836,9 +850,15 @@ export function ComposerRunner({
     apply(last);
     const tick = (now: number) => {
       apply(now);
-      raf = requestAnimationFrame(tick);
+      if (!parked) raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
+    wakeRef.current = () => {
+      if (!parked) return;
+      parked = false;
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(tick);
+    };
     return () => {
       cancelAnimationFrame(raf);
       resetStage();
@@ -847,12 +867,14 @@ export function ComposerRunner({
     };
   }, [boxRef]);
 
+  useEffect(() => wakeRef.current(), [busy, enabled]);
+
   return createPortal(
     <div
       ref={layerRef}
       aria-hidden
       className="pointer-events-none fixed inset-0 z-40 overflow-visible"
-      style={{ visibility: "hidden" }}
+      style={{ display: "none" }}
     >
       <div ref={backRef} className="absolute inset-0" />
       <div ref={coinsRef} className="absolute inset-0" />

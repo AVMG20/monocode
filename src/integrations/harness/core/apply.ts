@@ -18,6 +18,7 @@ import {
   stubFilePreview,
 } from "./preview";
 import { joinStreamText } from "./streamText";
+import { hasReadableText } from "../../../features/sessions/model/transcriptActivity";
 import { taskListText } from "../../../features/sessions/model/taskList";
 import { isReviewablePlan } from "../../../features/sessions/model/plan";
 import { resolveModel } from "../../../features/sessions/model/models";
@@ -76,6 +77,7 @@ export function applyHarnessEvent(
         kind: event.kind,
         status: event.status,
         preview: event.preview,
+        paths: event.paths,
         streaming: true,
         agentModel: event.agentModel,
         ...(event.background ? { background: true } : {}),
@@ -88,6 +90,7 @@ export function applyHarnessEvent(
         status: event.status,
         detail: event.detail,
         preview: event.preview,
+        paths: event.paths,
         streaming: event.status !== "completed" && event.status !== "failed",
         agentModel: event.agentModel,
         artifactTitle: event.artifactTitle,
@@ -536,7 +539,12 @@ export function stopStreaming(session: Session, endedAt = Date.now()): Session {
     busy: false,
     turnReady: false,
     pendingQuestion: undefined,
-    blocks: stampTurnDuration(settled.blocks.map(stopBlockProgress), endedAt),
+    blocks: stampTurnDuration(
+      settled.blocks
+        .filter((block) => !isBareProseStream(block))
+        .map(stopBlockProgress),
+      endedAt,
+    ),
   };
 }
 
@@ -951,6 +959,7 @@ function upsertTool(
     status?: string;
     detail?: string;
     preview?: ToolPreview;
+    paths?: string[];
     streaming: boolean;
     agentModel?: string;
     background?: boolean;
@@ -983,6 +992,7 @@ function upsertTool(
         status: patch.status,
         ...(detail ? { detail } : {}),
         ...(preview ? { preview } : {}),
+        ...(patch.paths ? { paths: patch.paths } : {}),
         ...(patch.background ? { background: true } : {}),
         ...(patch.artifactTitle ? { artifactTitle: patch.artifactTitle } : {}),
       },
@@ -1005,6 +1015,7 @@ function upsertTool(
   const kind = patch.kind ?? prev.tool?.kind;
   const status = patch.status ?? prev.tool?.status;
   const artifactTitle = patch.artifactTitle ?? prev.tool?.artifactTitle;
+  const paths = patch.paths ?? prev.tool?.paths;
   const agentName = prev.agentRun?.steps.length ? prev.agentRun.name : label;
   if (
     prev.text === label &&
@@ -1014,6 +1025,7 @@ function upsertTool(
     prev.tool?.status === status &&
     prev.tool?.detail === detail &&
     prev.tool?.artifactTitle === artifactTitle &&
+    prev.tool?.paths === paths &&
     (!patch.agentModel || prev.agentRun?.model === patch.agentModel) &&
     (!prev.agentRun || prev.agentRun.name === agentName) &&
     samePreview(prev.tool?.preview, preview)
@@ -1045,7 +1057,9 @@ function upsertTool(
       kind,
       status,
       ...(detail ? { detail } : {}),
+      ...(!detail && prev.tool?.detailOmitted ? { detailOmitted: true } : {}),
       ...(preview ? { preview } : {}),
+      ...(paths ? { paths } : {}),
       ...(prev.tool?.background ? { background: true } : {}),
       ...(artifactTitle ? { artifactTitle } : {}),
     },
@@ -1238,8 +1252,17 @@ function sealLastStream(blocks: Block[]): Block[] {
     return blocks.slice();
   }
   const next = blocks.slice();
-  next[index] = { ...last, streaming: false };
+  if (isBareProseStream(last)) next.splice(index, 1);
+  else next[index] = { ...last, streaming: false };
   return next;
+}
+
+function isBareProseStream(block: Block): boolean {
+  return (
+    block.role === "assistant" &&
+    !!block.streaming &&
+    !hasReadableText(block.text)
+  );
 }
 
 function displayLabel(
@@ -1344,10 +1367,9 @@ function isCallId(value: string): boolean {
 function finishRole(session: Session, role: Block["role"]): Session {
   return {
     ...session,
-    blocks: session.blocks.map((block) =>
-      block.role === role && block.streaming
-        ? { ...block, streaming: false }
-        : block,
-    ),
+    blocks: session.blocks.flatMap((block) => {
+      if (block.role !== role || !block.streaming) return [block];
+      return isBareProseStream(block) ? [] : [{ ...block, streaming: false }];
+    }),
   };
 }

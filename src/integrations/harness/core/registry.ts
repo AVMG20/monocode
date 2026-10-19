@@ -5,6 +5,7 @@ import type {
   TurnIntent,
 } from "../../../features/sessions/model/session";
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { transferProviderSession } from "./child";
 import type { GeneratedSessionTitle } from "../../../features/sessions/model/sessionTitle";
 import type { PrContent } from "../../../features/source-control/model/gitText";
 import { hasLiveCatalog } from "../../../features/sessions/model/models";
@@ -95,7 +96,11 @@ export type HarnessAdapter = {
   /** Optional LLM tab title for the first turn. */
   generateTitle?(input: TitleInput): Promise<GeneratedSessionTitle | null>;
   /** Optional LLM commit message from staged changes. */
-  generateCommitMessage?(cwd: string, signal?: AbortSignal): Promise<string>;
+  generateCommitMessage?(
+    cwd: string,
+    signal?: AbortSignal,
+    paths?: readonly string[],
+  ): Promise<string>;
   /** Optional LLM pull request title/body from branch diff context. */
   generatePrContent?(
     cwd: string,
@@ -116,8 +121,30 @@ const adapters = new Map<HarnessId, HarnessAdapter>();
  * After a turn settles, keep the child warm for follow-ups, then park it.
  * Resume state stays, so the next prompt respawns instead of starting over.
  */
-export const HARNESS_IDLE_PARK_MS = 5 * 60_000;
-const idleParkTimers = new Map<string, ReturnType<typeof setTimeout>>();
+export const HARNESS_IDLE_PARK_MS = 3 * 60_000;
+
+/**
+ * Each warm child is a CLI process of a few hundred MB, plus its MCP servers.
+ * Past `limit` idle ones, the least recently settled is parked early, never
+ * one `keep` claims (the conversation on screen) unless the limit is zero.
+ * Running turns are not idle, so they never count.
+ */
+export type HarnessIdleParkPolicy = {
+  limit: () => number;
+  keep: (sessionId: string) => boolean;
+};
+
+let idleParkPolicy: HarnessIdleParkPolicy = {
+  limit: () => Number.POSITIVE_INFINITY,
+  keep: () => false,
+};
+let idleLimitCheck: ReturnType<typeof setTimeout> | undefined;
+
+/** Map order is settle order: the first entry has been idle longest. */
+const idleParkTimers = new Map<
+  string,
+  { harness: HarnessId; timer: ReturnType<typeof setTimeout> }
+>();
 const sessionOperationTails = new Map<string, Promise<void>>();
 const sessionSteerTails = new Map<string, Promise<void>>();
 const activeTurnSessions = new Set<string>();
@@ -169,26 +196,56 @@ function queueSteerOperation<T>(
 }
 
 function cancelIdlePark(sessionId: string): void {
-  const timer = idleParkTimers.get(sessionId);
-  if (timer) clearTimeout(timer);
+  const idle = idleParkTimers.get(sessionId);
+  if (idle) clearTimeout(idle.timer);
   idleParkTimers.delete(sessionId);
 }
 
 function scheduleIdlePark(harness: HarnessId, sessionId: string): void {
   cancelIdlePark(sessionId);
-  idleParkTimers.set(
-    sessionId,
-    setTimeout(() => {
+  idleParkTimers.set(sessionId, {
+    harness,
+    timer: setTimeout(() => {
       idleParkTimers.delete(sessionId);
       void stopHarnessSession(harness, sessionId);
     }, HARNESS_IDLE_PARK_MS),
-  );
+  });
+  // Checked once the settling operation has left the queue, so a session
+  // with a follow-up already queued is told apart from the one finishing.
+  if (idleLimitCheck === undefined) {
+    idleLimitCheck = setTimeout(enforceHarnessIdleLimit, 0);
+  }
+}
+
+export function configureHarnessIdlePark(policy: HarnessIdleParkPolicy) {
+  idleParkPolicy = policy;
+}
+
+/** Park the longest-idle children past the limit; also run when it drops. */
+export function enforceHarnessIdleLimit(): void {
+  clearTimeout(idleLimitCheck);
+  idleLimitCheck = undefined;
+  const limit = Math.max(0, idleParkPolicy.limit());
+  let excess = idleParkTimers.size - limit;
+  for (const [sessionId, { harness }] of [...idleParkTimers]) {
+    if (excess <= 0) return;
+    if (sessionOperationTails.has(sessionId)) continue;
+    if (limit > 0 && idleParkPolicy.keep(sessionId)) continue;
+    excess -= 1;
+    void stopHarnessSession(harness, sessionId);
+  }
 }
 
 /** Test seam. */
 export function resetHarnessIdlePark(): void {
-  for (const timer of idleParkTimers.values()) clearTimeout(timer);
+  for (const { timer } of idleParkTimers.values()) clearTimeout(timer);
   idleParkTimers.clear();
+  clearTimeout(idleLimitCheck);
+  idleLimitCheck = undefined;
+  idleParkPolicy = {
+    limit: () => Number.POSITIVE_INFINITY,
+    keep: () => false,
+  };
 }
 
 export function registerHarness(adapter: HarnessAdapter): void {
@@ -403,6 +460,38 @@ export function bindHarnessSession(
 }
 
 /**
+ * Continue a provider conversation under another account of the same provider.
+ * The old process stops first so its transcript is complete, then the native
+ * transcript is copied to the new account and the thread resumes from it.
+ * Throws when the transcript cannot be carried, leaving the thread unbound.
+ */
+export async function transferHarnessSessionAccount(input: {
+  harness: "claude" | "codex";
+  threadId: string;
+  providerSessionId: string;
+  cwd: string;
+  fromAccountId?: string;
+  toAccountId: string;
+  blocks?: Block[];
+}): Promise<void> {
+  await forgetHarnessSession(input.harness, input.threadId);
+  await transferProviderSession(
+    input.harness,
+    input.fromAccountId,
+    input.toAccountId,
+    input.providerSessionId,
+  );
+  bindHarnessSession(
+    input.harness,
+    input.threadId,
+    input.providerSessionId,
+    input.cwd,
+    input.toAccountId,
+    input.blocks,
+  );
+}
+
+/**
  * Probe model lists only for the harnesses the caller actually needs.
  * Boot used to refresh every adapter; that spawned unused CLIs (Pi with
  * extensions can sit at ~1GB) even when the workspace never touched them.
@@ -442,13 +531,16 @@ export async function generateHarnessCommitMessage(
   harness: HarnessId,
   cwd: string,
   signal?: AbortSignal,
+  paths?: readonly string[],
 ): Promise<string> {
   const adapter = requireHarness(harness);
   if (!adapter.generateCommitMessage) {
     throw new Error(`${harness} does not support commit message generation`);
   }
   signal?.throwIfAborted();
-  return adapter.generateCommitMessage(cwd, signal);
+  return paths === undefined
+    ? adapter.generateCommitMessage(cwd, signal)
+    : adapter.generateCommitMessage(cwd, signal, paths);
 }
 
 export async function generateHarnessPrContent(
