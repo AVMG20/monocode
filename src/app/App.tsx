@@ -201,6 +201,14 @@ import {
 } from "../features/settings/model/projectSidebarTab";
 import { HAS_NATIVE_GLASS, IS_MAC } from "../platform/tauri/platform";
 import {
+  runBashModeCommand,
+  type BashModeChunk,
+} from "../platform/tauri/bashMode";
+import {
+  pendingBashContext,
+  unsentBashRuns,
+} from "../features/sessions/model/bashMode";
+import {
   applyUiScale,
   loadUiScale,
   saveUiScale,
@@ -513,6 +521,7 @@ import {
   sessionWorkCwd,
   titleFromPrompt,
   type Attachment,
+  type BashRun,
   type Block,
   type BtwThread,
   type ComposerTurnOptions,
@@ -942,6 +951,8 @@ type SubmitOptions = ComposerTurnOptions & {
   refreshTitle?: boolean;
   /** Internal guard for the retry after resolving a renamed project. */
   projectLocationReady?: boolean;
+  /** The text is finished `!command` output; the bash row stands in for it. */
+  bashRun?: boolean;
 };
 
 type Submit = (
@@ -7865,9 +7876,13 @@ function Workspace({
         !operatorCommand.matched &&
         isNativeCommandPrompt(submittedText, current.harness);
       const ciContext = options?.ciRepair?.prompt ?? options?.ciContext;
+      const bashContext =
+        rawCommand || options?.bashRun ? "" : pendingBashContext(current.blocks);
       const harnessText =
         options?.ciRepair?.prompt ??
-        (rawCommand ? submittedText : composeNoteMessage(noteCard, promptText));
+        (rawCommand
+          ? submittedText
+          : bashContext + composeNoteMessage(noteCard, promptText));
 
       const pendingSwitch = pendingComposerSwitch(current);
 
@@ -8218,6 +8233,7 @@ function Workspace({
         ) || !!draftBlock;
       const titleSeed =
         isFirstTurn &&
+        !options?.bashRun &&
         !current.inboxCard &&
         !current.noteCard &&
         placeholderTitle
@@ -8248,7 +8264,7 @@ function Workspace({
           : {}),
         ...(options?.forwardedBy ? { forwardedBy: options.forwardedBy } : {}),
         // The orchestrator writes these turns, not the user; hide them.
-        ...(options?.managed || options?.monoSessionCompletion
+        ...(options?.managed || options?.monoSessionCompletion || options?.bashRun
           ? { internal: true }
           : {}),
         ...(options?.monoSessionCompletion
@@ -9229,6 +9245,119 @@ function Workspace({
     );
   };
   decideMonoBlockRef.current = decideMonoBlock;
+
+  /** Mutates one block of a session in place, outside any harness turn. */
+  const updateSessionBlock = (
+    sessionId: string,
+    blockId: string,
+    updater: (block: Block) => Block,
+  ) => {
+    const update = (session: Session) =>
+      session.id === sessionId
+        ? {
+            ...session,
+            blocks: session.blocks.map((block) =>
+              block.id === blockId ? updater(block) : block,
+            ),
+          }
+        : session;
+    sessionsRef.current = sessionsRef.current.map(update);
+    setSessions(sessionsRef.current);
+    persistSession(
+      sessionsRef.current.find((session) => session.id === sessionId),
+    );
+  };
+
+  /** Like Claude Code, a finished `!command` starts a turn of its own. A run
+   * that lands mid-turn waits for it, unless a newer message carried it. */
+  const deliverBashRuns = (sessionId: string, attempt = 0) => {
+    const session = sessionsRef.current.find((s) => s.id === sessionId);
+    if (!session) return;
+    // The run still going delivers everything when it settles.
+    if (unsentBashRuns(session.blocks).some((run) => run.status === "running"))
+      return;
+    const text = pendingBashContext(session.blocks).trim();
+    if (!text) return;
+    if (session.busy) {
+      if (attempt < 3_600) {
+        window.setTimeout(() => deliverBashRuns(sessionId, attempt + 1), 1_000);
+      }
+      return;
+    }
+    void Promise.resolve(
+      submitAfterProjectSyncRef.current(sessionId, text, [], { bashRun: true }),
+    ).catch(() => undefined);
+  };
+
+  /** `!command` in the composer: run it locally and show what it printed. */
+  const onRunBashCommand = useCallback((sessionId: string, command: string) => {
+    const session = sessionsRef.current.find((s) => s.id === sessionId);
+    if (!session) return;
+    const blockId = crypto.randomUUID();
+    const block: Block = {
+      id: blockId,
+      role: "bash",
+      text: command,
+      startedAt: Date.now(),
+      bash: { command, stdout: "", stderr: "", status: "running" },
+    };
+    sessionsRef.current = sessionsRef.current.map((s) =>
+      s.id === sessionId ? { ...s, blocks: [...s.blocks, block] } : s,
+    );
+    setSessions(sessionsRef.current);
+    persistSession(sessionsRef.current.find((s) => s.id === sessionId));
+
+    const settle = (bash: BashRun) => {
+      updateSessionBlock(sessionId, blockId, (current) => ({
+        ...current,
+        bash,
+      }));
+      deliverBashRuns(sessionId);
+    };
+    // Live output only repaints; the settled run is what gets saved.
+    const append = (chunk: BashModeChunk) => {
+      sessionsRef.current = sessionsRef.current.map((s) =>
+        s.id === sessionId
+          ? {
+              ...s,
+              blocks: s.blocks.map((b) =>
+                b.id === blockId && b.bash
+                  ? {
+                      ...b,
+                      bash: {
+                        ...b.bash,
+                        [chunk.stream]: b.bash[chunk.stream] + chunk.data,
+                      },
+                    }
+                  : b,
+              ),
+            }
+          : s,
+      );
+      setSessions(sessionsRef.current);
+    };
+    void runBashModeCommand(command, sessionWorkCwd(session), append)
+      .then((result) =>
+        settle({
+          command,
+          stdout: result.stdout,
+          stderr: result.stderr,
+          exitCode: result.exitCode,
+          timedOut: result.timedOut,
+          status:
+            result.timedOut || (result.exitCode ?? 0) !== 0 ? "failed" : "done",
+        }),
+      )
+      .catch((error: unknown) =>
+        settle({
+          command,
+          stdout: "",
+          stderr: error instanceof Error ? error.message : String(error),
+          exitCode: null,
+          status: "failed",
+        }),
+      );
+  }, []);
 
   useMonoHabits({
     sessions: () => sessionsRef.current,
@@ -14039,6 +14168,7 @@ function Workspace({
     onSaveDraft,
     onRemoveDraft,
     onSubmit,
+    onRunBashCommand,
     onStop,
     onStopBackgroundTask,
     onCompactContext,

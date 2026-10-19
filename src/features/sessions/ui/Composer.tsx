@@ -297,6 +297,8 @@ type Props = {
     attachments: Attachment[],
     options?: ComposerTurnOptions,
   ) => boolean | void;
+  /** A leading `!<command>` runs locally instead of starting a turn. */
+  onRunBashCommand?: (command: string) => void;
   /** `draft` opens the side question with the text unsent, for a typed `/btw `. */
   onBtwCommand?: (
     text: string,
@@ -428,6 +430,7 @@ export function Composer({
   onQuestionReply,
   onQuestionInteraction,
   onSubmit,
+  onRunBashCommand,
   canSaveDraft = false,
   onSaveDraft,
   onStop,
@@ -637,6 +640,7 @@ export function Composer({
     [slashItems],
   );
   const leadingMode = leadingModeCommand(draft, skillNames);
+  const bashMode = !!onRunBashCommand && draft.startsWith("!");
   const modeIndent = leadingMode ? MODE_COMMAND_INDENT : undefined;
   useLayoutEffect(() => {
     // The indent can rewrap the first line after the input already resized.
@@ -1033,6 +1037,12 @@ export function Composer({
 
   const syncTokensFromTextarea = (el: HTMLTextAreaElement) => {
     if (creatingSkill) return;
+    // A shell command's `/` and `@` are paths and arguments, not pickers.
+    if (onRunBashCommand && el.value.startsWith("!")) {
+      setSlash(null);
+      setMention(null);
+      return;
+    }
     const cursor = el.selectionStart ?? 0;
     const token = slashTokenAt(el.value, cursor, hasNativeCommands(harness));
     setSlash(token);
@@ -1356,6 +1366,20 @@ export function Composer({
     }
     const value = ref.current?.value ?? submittedValue;
     if (disabled || worktreeRemoved) return;
+    if (onRunBashCommand && value.startsWith("!")) {
+      const command = value.slice(1).trim();
+      if (!command) return;
+      pasteGenerationRef.current += 1;
+      if (ref.current) {
+        ref.current.value = "";
+        ref.current.style.height = "auto";
+      }
+      setDraft("");
+      onDraftChange?.("");
+      syncHasValue("", attachmentsRef.current);
+      onRunBashCommand(command);
+      return;
+    }
     if (isMcpCommand(value)) {
       mcpInsertAt.current = 0;
       if (ref.current) {
@@ -2094,14 +2118,19 @@ export function Composer({
           ref={boxRef}
           data-composer-box
           data-composer-editing={resendEdited ? "" : undefined}
+          data-composer-bash={bashMode ? "" : undefined}
           className={`relative z-10 border ${
             resendEdited
               ? "edit-last-turn-composer rounded-lg"
               : "rounded-lg border-content/10 has-focus:border-content/20"
           } ${
+            bashMode
+              ? "border-pink-500/50 has-focus:border-pink-500/60"
+              : ""
+          } ${
             fileDrag
               ? "border-accent/60"
-              : resendEdited
+              : resendEdited || bashMode
                 ? ""
                 : "border-content/10 has-focus:border-content/20"
           }`}
@@ -2158,6 +2187,7 @@ export function Composer({
               <ComposerHighlight
                 text={draft}
                 mode={leadingMode}
+                bash={bashMode}
                 names={skillNames}
                 mentions={mentionIndex.labels}
                 mcpTags={selectedMcp}
@@ -2174,16 +2204,18 @@ export function Composer({
               placeholder={
                 worktreeRemoved
                   ? "Select a branch or worktree to continue…"
-                  : inboxCard
-                    ? "Add a note, or send to start…"
-                    : noteCard
-                      ? "Add a message, or send…"
-                      : handoffCard
-                        ? "Add context, or send to continue…"
-                        : (placeholder ??
-                          (shell
-                            ? "Ask, build, / for commands, @ for references... "
-                            : "Ask, build, / for commands, @ for references... "))
+                  : bashMode
+                    ? "Run a shell command…"
+                    : inboxCard
+                      ? "Add a note, or send to start…"
+                      : noteCard
+                        ? "Add a message, or send…"
+                        : handoffCard
+                          ? "Add context, or send to continue…"
+                          : (placeholder ??
+                            (shell
+                              ? "Ask, build, / for commands, @ for references... "
+                              : "Ask, build, / for commands, @ for references... "))
               }
               aria-label={inputAriaLabel}
               disabled={disabled}
@@ -2539,16 +2571,27 @@ export function Composer({
 function ComposerHighlight({
   text,
   mode,
+  bash,
   names,
   mentions,
   mcpTags,
 }: {
   text: string;
   mode: ModeCommandToken | null;
+  bash?: boolean;
   names: ReadonlySet<string>;
   mentions: ReadonlyMap<string, ProjectFile>;
   mcpTags: McpTag[];
 }) {
+  if (bash) {
+    return (
+      <>
+        <span className="text-pink-600 dark:text-pink-400">!</span>
+        {text.slice(1)}
+        {text.endsWith("\n") ? "\n" : null}
+      </>
+    );
+  }
   const rest = mode ? text.slice(mode.end) : text;
   const parts = skillTextParts(rest, names);
   return (

@@ -1,3 +1,4 @@
+import { BashRunRow } from "./BashRunRow";
 import {
   ArrowUp,
   Check,
@@ -2490,6 +2491,10 @@ const TranscriptBlock = memo(function TranscriptBlock({
 
   if (block.role === "image") {
     return block.image ? <GeneratedImage image={block.image} /> : null;
+  }
+
+  if (block.role === "bash") {
+    return block.bash ? <BashRunRow run={block.bash} /> : null;
   }
 
   if (block.role === "tool") {

@@ -103,6 +103,7 @@ type Shared = {
     attachments: Attachment[],
     options?: ComposerTurnOptions,
   ) => boolean | void;
+  onRunBashCommand?: (sessionId: string, command: string) => void;
   onSaveDraft: (
     sessionId: string,
     text: string,
@@ -241,6 +242,7 @@ function PaneTreeComponent({
   onSaveDraft,
   onRemoveDraft,
   onSubmit,
+  onRunBashCommand,
   onStop,
   onStopBackgroundTask,
   onCompactContext,
@@ -808,6 +810,7 @@ function PaneTreeComponent({
                   onSaveDraft={onSaveDraft}
                   onRemoveDraft={onRemoveDraft}
                   onSubmit={onSubmit}
+                  onRunBashCommand={onRunBashCommand}
                   onStop={onStop}
                   onStopBackgroundTask={onStopBackgroundTask}
                   onCompactContext={onCompactContext}

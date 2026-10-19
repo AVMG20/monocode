@@ -1032,6 +1032,14 @@ function sanitizeBlock(
   const turnMetrics = sanitizeTurnMetrics(block.turnMetrics);
   if (block.role === "user" && turnMetrics) next.turnMetrics = turnMetrics;
   if (block.tool) next.tool = block.tool;
+  if (block.role === "bash") {
+    if (!block.bash) return null;
+    // A run still going when the app quit never reported back.
+    next.bash =
+      block.bash.status === "running" && options?.hydrate
+        ? { ...block.bash, status: "failed", stderr: "Interrupted" }
+        : block.bash;
+  }
   if (block.approval?.decided) {
     next.approval = {
       requestId: block.approval.requestId,
