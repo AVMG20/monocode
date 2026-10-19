@@ -1951,6 +1951,19 @@ html.theme-light .agent-chat-composer {
     0 2px 6px color-mix(in srgb, var(--color-content) 6%, transparent);
 }
 
+/* Bash mode (`!command`) tints the box like Claude Code's shell prompt. */
+[data-composer-box][data-composer-bash]::before {
+  background: color-mix(in srgb, var(--color-pink-500, #ec4899) 6%, transparent);
+}
+
+html.theme-light [data-composer-box][data-composer-bash] {
+  background: color-mix(
+    in srgb,
+    var(--color-pink-500, #ec4899) 4%,
+    var(--color-background-base)
+  );
+}
+
 /* Solid primary actions share the composer submit treatment. */
 .primary-action:not(:disabled) {
   background: white;

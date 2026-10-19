@@ -359,7 +359,8 @@ function groupTranscriptTurns(
       current = [];
       continue;
     }
-    if (block.role === "user" && current.length > 0) {
+    // A `!command` is the user's own input, so it opens a turn like a message.
+    if ((block.role === "user" || block.role === "bash") && current.length > 0) {
       turns.push(current);
       current = [];
     }

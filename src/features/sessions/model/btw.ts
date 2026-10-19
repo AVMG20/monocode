@@ -9,6 +9,7 @@ import type {
   HarnessId,
 } from "./session";
 import { newSession } from "./session";
+import { formatBashRun } from "./bashMode";
 import type { BuiltinSkill } from "../../skills/model/skills";
 import { harnessForTurn } from "./secondOpinion";
 import { groupTurns } from "./transcriptActivity";
@@ -206,6 +207,7 @@ const SNAPSHOT_ROLES: Record<Block["role"], true | undefined> = {
   tasks: true,
   plan: true,
   tool: true,
+  bash: true,
   reasoning: undefined,
   approval: undefined,
   system: undefined,
@@ -223,6 +225,7 @@ const PRIVATE_ROLES: Record<Block["role"], true | undefined> = {
   tasks: undefined,
   plan: undefined,
   tool: undefined,
+  bash: undefined,
 };
 
 /** Keep isolated prompts below the context limits of the supported runners. */
@@ -304,6 +307,9 @@ export function btwVisibleBlocks(
 export function serializeBtwBlock(block: Block, cwd?: string): string {
   const attachments = attachmentSummary(block.attachments);
   const body = normalizeText(block.text);
+  if (block.role === "bash" && block.bash) {
+    return formatBashRun(block.bash).slice(0, BTW_MAX_BLOCK_CHARS);
+  }
   if (block.role === "tool") {
     return [...toolSummary(block, cwd), ...attachments]
       .filter(Boolean)

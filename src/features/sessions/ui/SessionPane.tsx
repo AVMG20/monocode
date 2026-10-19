@@ -220,6 +220,7 @@ export type SessionPaneProps = {
     attachments: Attachment[],
     options?: ComposerTurnOptions,
   ) => boolean | void;
+  onRunBashCommand?: (sessionId: string, command: string) => void;
   onSaveDraft: (
     sessionId: string,
     text: string,
@@ -372,6 +373,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   onSaveDraft,
   onRemoveDraft,
   onSubmit,
+  onRunBashCommand,
   onStop,
   onStopBackgroundTask,
   onCompactContext,
@@ -930,6 +932,11 @@ const LocalSessionPane = memo(function LocalSessionPane({
         setViewedSubagentId(null);
         return onSubmit(session.id, text, attachments, options);
       }}
+      onRunBashCommand={
+        onRunBashCommand
+          ? (command) => onRunBashCommand(session.id, command)
+          : undefined
+      }
       onBtwCommand={btw.openWith}
       onStop={() => onStop(session.id)}
       backgroundTasks={

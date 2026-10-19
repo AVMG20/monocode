@@ -52,7 +52,19 @@ export type BlockRole =
   | "tasks"
   | "plan"
   | "system"
-  | "handoff";
+  | "handoff"
+  /** A `!command` the user ran locally from the composer. */
+  | "bash";
+
+/** A composer `!command`: what ran, and what it printed. */
+export type BashRun = {
+  command: string;
+  stdout: string;
+  stderr: string;
+  status: "running" | "done" | "failed";
+  exitCode?: number | null;
+  timedOut?: boolean;
+};
 
 /** A session created by a Mono during this conversation turn. */
 export type MonoSpawnedSession = {
@@ -346,6 +358,7 @@ export type Block = {
   forwardedBy?: string;
   /** Provider-reported token metrics for this user turn, when available. */
   turnMetrics?: TurnMetrics;
+  bash?: BashRun;
   tool?: {
     callId?: string;
     title?: string;
