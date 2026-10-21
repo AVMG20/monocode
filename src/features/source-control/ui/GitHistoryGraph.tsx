@@ -492,7 +492,7 @@ function useGitHistory(cwd: string, enabled: boolean) {
     };
     window.addEventListener("focus", onResume);
     document.addEventListener("visibilitychange", onResume);
-    const unsub = subscribeGitChanged(onGitChanged);
+    const unsub = subscribeGitChanged(onGitChanged, { refsOnly: true });
     return () => {
       request.current++;
       window.removeEventListener("focus", onResume);

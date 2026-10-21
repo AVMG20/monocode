@@ -477,20 +477,45 @@ export function isCheckoutBlockedByChanges(message: string): boolean {
 
 const GIT_CHANGED = "monocode-git-changed";
 
-/** Tell git UIs (diff pane, branch picker) to reload after a local git mutation. */
-export function notifyGitChanged({ invalidatePending = true } = {}) {
+/**
+ * Tell git UIs (diff pane, branch picker) to reload after a local git mutation.
+ * `workingTreeOnly` marks a change seen only in the working tree, such as an
+ * agent editing files: branches, worktrees and history cannot have moved.
+ */
+export function notifyGitChanged({
+  invalidatePending = true,
+  workingTreeOnly = false,
+} = {}) {
   // Publishing an already-read index is not a mutation. All actual mutations
   // invalidate both new readers and original callers still awaiting old data.
   if (invalidatePending) {
     gitReadEpoch++;
     pendingGitReads.clear();
   }
-  window.dispatchEvent(new Event(GIT_CHANGED));
+  window.dispatchEvent(
+    new CustomEvent(GIT_CHANGED, { detail: { workingTreeOnly } }),
+  );
 }
 
-export function subscribeGitChanged(listener: () => void): () => void {
-  window.addEventListener(GIT_CHANGED, listener);
-  return () => window.removeEventListener(GIT_CHANGED, listener);
+/**
+ * `refsOnly` listeners skip working-tree-only changes. While agents edit
+ * files those arrive every poll, and each reload spawns several git processes.
+ */
+export function subscribeGitChanged(
+  listener: () => void,
+  { refsOnly = false } = {},
+): () => void {
+  const handle = (event: Event) => {
+    if (
+      refsOnly &&
+      (event as CustomEvent<{ workingTreeOnly?: boolean }>).detail
+        ?.workingTreeOnly
+    )
+      return;
+    listener();
+  };
+  window.addEventListener(GIT_CHANGED, handle);
+  return () => window.removeEventListener(GIT_CHANGED, handle);
 }
 
 export function createPath(

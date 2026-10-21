@@ -7,6 +7,7 @@ import {
   gitDiffStats,
   gitDiffFiles,
   notifyGitChanged,
+  subscribeGitChanged,
   type GitDiffIndex,
   gitHeadMessage,
   isCheckoutBlockedByChanges,
@@ -252,6 +253,26 @@ it("does not publish a stale failure after a mutation", async () => {
       additions: 2,
       deletions: 3,
     });
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it("keeps ref-only git views asleep for working-tree-only changes", () => {
+  vi.stubGlobal("window", new EventTarget());
+  try {
+    const any = vi.fn();
+    const refs = vi.fn();
+    const stopAny = subscribeGitChanged(any);
+    const stopRefs = subscribeGitChanged(refs, { refsOnly: true });
+    notifyGitChanged({ invalidatePending: false, workingTreeOnly: true });
+    expect(any).toHaveBeenCalledTimes(1);
+    expect(refs).not.toHaveBeenCalled();
+    notifyGitChanged();
+    expect(any).toHaveBeenCalledTimes(2);
+    expect(refs).toHaveBeenCalledTimes(1);
+    stopAny();
+    stopRefs();
   } finally {
     vi.unstubAllGlobals();
   }
