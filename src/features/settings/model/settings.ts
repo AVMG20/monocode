@@ -471,6 +471,13 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "email privacy blur hide screenshot account",
   },
   {
+    id: "claude-auto-compact",
+    section: "providers",
+    label: "Claude auto-compact window",
+    keywords:
+      "compact compaction context window tokens 1m 500k opus summarize autocompact",
+  },
+  {
     id: "claude-hooks",
     section: "providers",
     label: "Claude Code hooks",
@@ -1138,6 +1145,42 @@ export function loadClaudeHooks(): boolean {
 
 export function saveClaudeHooks(value: boolean) {
   writeFlag(CLAUDE_HOOKS_KEY, value);
+}
+
+const CLAUDE_AUTO_COMPACT_WINDOW_KEY = "monocode.claudeAutoCompactWindow";
+
+/**
+ * Token windows Claude Code may auto-compact at. Claude Code clamps the
+ * window to the model's own, so only 1M-context models see the larger ones;
+ * 0 leaves the window to Claude Code.
+ */
+export const CLAUDE_AUTO_COMPACT_WINDOWS = [
+  0, 200_000, 300_000, 400_000, 500_000, 750_000,
+] as const;
+export type ClaudeAutoCompactWindow =
+  (typeof CLAUDE_AUTO_COMPACT_WINDOWS)[number];
+export const CLAUDE_AUTO_COMPACT_WINDOW_DEFAULT: ClaudeAutoCompactWindow = 500_000;
+
+export function loadClaudeAutoCompactWindow(): ClaudeAutoCompactWindow {
+  try {
+    const raw = Number(
+      localStorage.getItem(CLAUDE_AUTO_COMPACT_WINDOW_KEY) ?? NaN,
+    );
+    return (
+      CLAUDE_AUTO_COMPACT_WINDOWS.find((window) => window === raw) ??
+      CLAUDE_AUTO_COMPACT_WINDOW_DEFAULT
+    );
+  } catch {
+    return CLAUDE_AUTO_COMPACT_WINDOW_DEFAULT;
+  }
+}
+
+export function saveClaudeAutoCompactWindow(value: ClaudeAutoCompactWindow) {
+  try {
+    localStorage.setItem(CLAUDE_AUTO_COMPACT_WINDOW_KEY, String(value));
+  } catch {
+    // private mode / quota
+  }
 }
 
 const IDLE_AGENT_LIMIT_KEY = "monocode.idleAgentLimit";

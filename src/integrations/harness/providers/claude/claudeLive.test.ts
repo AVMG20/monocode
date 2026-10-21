@@ -59,7 +59,10 @@ const {
   __claudeTestReset,
 } = await import("./claude");
 import type { HarnessEvent } from "../../core/types";
-import type { RuntimeMode, TurnIntent } from "../../../../features/sessions/model/session";
+import type {
+  RuntimeMode,
+  TurnIntent,
+} from "../../../../features/sessions/model/session";
 
 function parse() {
   return sent.map((line) => JSON.parse(line) as Record<string, unknown>);
@@ -258,7 +261,8 @@ function emitBashFinished(taskId = "b1") {
     task_id: taskId,
     tool_use_id: "toolu_bash",
     status: "completed",
-    summary: 'Background command "sleep 30 && echo done" completed (exit code 0)',
+    summary:
+      'Background command "sleep 30 && echo done" completed (exit code 0)',
   });
 }
 
@@ -775,7 +779,9 @@ describe("claude task tools", () => {
       {
         key: "claude-tasks",
         providerSessionId: "sess_2",
-        items: [{ id: "1", text: "Other conversation", status: "pending" as const }],
+        items: [
+          { id: "1", text: "Other conversation", status: "pending" as const },
+        ],
       },
     ];
 
@@ -818,7 +824,9 @@ describe("claude task tools", () => {
     );
 
     const events: HarnessEvent[] = [];
-    const { turn } = await restartedTurn(events, { providerSessionId: "sess_2" });
+    const { turn } = await restartedTurn(events, {
+      providerSessionId: "sess_2",
+    });
     expect(spawned.at(-1)).toEqual(
       expect.arrayContaining(["--resume", "sess_2"]),
     );
@@ -877,7 +885,9 @@ describe("claude task tools", () => {
     await first.turn;
 
     const events: HarnessEvent[] = [];
-    const { turn: second } = await restartedTurn(events, { providerAccountId: "home" });
+    const { turn: second } = await restartedTurn(events, {
+      providerAccountId: "home",
+    });
     expect(spawned.at(-1)).not.toContain("--resume");
     emitTaskTool(
       "toolu_u1",
@@ -1655,9 +1665,7 @@ describe("claude subagents", () => {
       session.blocks.filter((block) => block.tool?.kind === "agent");
     const liveRowsByTurn = () => {
       const turns = groupTurns(session.blocks);
-      const start = session.busy
-        ? liveRunStartIndex(turns)
-        : turns.length;
+      const start = session.busy ? liveRunStartIndex(turns) : turns.length;
       return turns.map((blocks, index) =>
         groupTurnItems(blocks, { settled: index < start })
           .filter((item) => item.type === "subagents")
@@ -2206,9 +2214,9 @@ describe("claude background tasks", () => {
     });
     const items = groupTurnItems(session.blocks.slice(1));
     const group = items.at(-1);
-    expect(group?.type === "activity" && workSummaryLine(group.blocks, true)).toBe(
-      "Running in background",
-    );
+    expect(
+      group?.type === "activity" && workSummaryLine(group.blocks, true),
+    ).toBe("Running in background");
   });
 
   it("lets the turn go if a finished task never wakes Claude", async () => {
@@ -2468,5 +2476,44 @@ describe("claude manual compaction", () => {
       text: "Compacted context",
     });
     expect(events.some((event) => event.type === "message.delta")).toBe(false);
+  });
+});
+
+describe("claude auto-compact window", () => {
+  function spawnedEnv(): Record<string, string> | undefined {
+    const args = spawned[0]!;
+    return JSON.parse(args[args.indexOf("--settings") + 1]!).env;
+  }
+
+  const stored = new Map<string, string>();
+
+  beforeEach(() => {
+    stored.clear();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => stored.get(key) ?? null,
+      setItem: (key: string, value: string) => stored.set(key, value),
+      removeItem: (key: string) => stored.delete(key),
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("compacts at 500k by default", async () => {
+    const { turn } = await startTurn("s1");
+    expect(spawnedEnv()).toMatchObject({
+      CLAUDE_CODE_AUTO_COMPACT_WINDOW: "500000",
+    });
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    await turn;
+  });
+
+  it("leaves the window to Claude Code when set to Default", async () => {
+    localStorage.setItem("monocode.claudeAutoCompactWindow", "0");
+    const { turn } = await startTurn("s1");
+    expect(spawnedEnv()).not.toHaveProperty("CLAUDE_CODE_AUTO_COMPACT_WINDOW");
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    await turn;
   });
 });

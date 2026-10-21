@@ -6,7 +6,10 @@ import type {
   TaskListItem,
   TaskListMeta,
 } from "../../../../features/sessions/model/session";
-import { loadClaudeHooks } from "../../../../features/settings/model/settings";
+import {
+  loadClaudeAutoCompactWindow,
+  loadClaudeHooks,
+} from "../../../../features/settings/model/settings";
 import {
   killChild,
   resolveClaudeBinary,
@@ -1860,6 +1863,7 @@ function settingsKeyFor(input: HarnessSessionInput): string {
     context: input.modelSettings?.context,
     runtimeMode: input.runtimeMode,
     hooks: loadClaudeHooks(),
+    autoCompactWindow: loadClaudeAutoCompactWindow(),
   })}`;
 }
 
@@ -1890,6 +1894,14 @@ function launchOptions(
   }
   if (!loadClaudeHooks()) {
     settings.disableAllHooks = true;
+  }
+  // The env var outranks the per-model window `/autocompact` saves, so the
+  // MonoCode setting holds in every session.
+  const autoCompactWindow = loadClaudeAutoCompactWindow();
+  if (autoCompactWindow > 0) {
+    settings.env = {
+      CLAUDE_CODE_AUTO_COMPACT_WINDOW: String(autoCompactWindow),
+    };
   }
   return {
     model: resolveClaudeApiModelId(native, context),

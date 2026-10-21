@@ -1155,6 +1155,7 @@ export function claudeSettingsKey(input: {
   context?: string;
   runtimeMode: RuntimeMode;
   hooks?: boolean;
+  autoCompactWindow?: number;
 }): string {
   return [
     input.model,
@@ -1164,6 +1165,7 @@ export function claudeSettingsKey(input: {
     input.context ?? "",
     input.runtimeMode,
     input.hooks === false ? "nohooks" : "hooks",
+    input.autoCompactWindow ? String(input.autoCompactWindow) : "",
   ].join("|");
 }
 

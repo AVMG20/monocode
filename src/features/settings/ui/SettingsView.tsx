@@ -348,6 +348,7 @@ import { ConfirmReset } from "../../monos/ui/ConfirmReset";
 import {
   filterKeybindings,
   currentKeybindings,
+  loadClaudeAutoCompactWindow,
   loadClaudeHooks,
   loadIdleAgentLimit,
   loadCloseToTray,
@@ -370,10 +371,13 @@ import {
   loadQuickComposerShortcut,
   loadSessionSteps,
   loadTabAnimationsEnabled,
+  saveClaudeAutoCompactWindow,
   saveClaudeHooks,
   saveIdleAgentLimit,
   IDLE_AGENT_LIMITS,
   type IdleAgentLimit,
+  CLAUDE_AUTO_COMPACT_WINDOWS,
+  type ClaudeAutoCompactWindow,
   saveCloseToTray,
   saveCollapsedProjectRailMode,
   saveComposerRunner,
@@ -3426,6 +3430,8 @@ function ProvidersPage({
   const [choice, setChoice] = useState(loadLastModelChoice);
   const [defaultModels, setDefaultModels] = useState(loadDefaultModels);
   const [claudeHooks, setClaudeHooks] = useState(loadClaudeHooks);
+  const [claudeAutoCompactWindow, setClaudeAutoCompactWindow] =
+    useState<ClaudeAutoCompactWindow>(loadClaudeAutoCompactWindow);
   const [idleAgentLimit, setIdleAgentLimit] =
     useState<IdleAgentLimit>(loadIdleAgentLimit);
   const [scope, setScope] = useState<string>(GLOBAL_PROVIDER_SCOPE);
@@ -3485,6 +3491,12 @@ function ProvidersPage({
   const onClaudeHooks = (next: boolean) => {
     saveClaudeHooks(next);
     setClaudeHooks(next);
+  };
+
+  const onClaudeAutoCompactWindow = (next: string) => {
+    const window = Number(next) as ClaudeAutoCompactWindow;
+    saveClaudeAutoCompactWindow(window);
+    setClaudeAutoCompactWindow(window);
   };
 
   const onIdleAgentLimit = (next: string) => {
@@ -3609,6 +3621,21 @@ function ProvidersPage({
               label: limit === 0 ? "None" : String(limit),
             }))}
             onChange={onIdleAgentLimit}
+          />
+        </Row>
+        <Row
+          id="claude-auto-compact"
+          label="Claude auto-compact window"
+          description="How full a Claude Code conversation gets before it summarizes older context, for 1M-context models such as Opus 5.5. Compaction fires just under the chosen size; models with a smaller window keep compacting at their own limit. Default leaves it to Claude Code. Takes effect on the next turn."
+        >
+          <Segmented
+            label="Claude auto-compact window"
+            value={String(claudeAutoCompactWindow)}
+            options={CLAUDE_AUTO_COMPACT_WINDOWS.map((window) => ({
+              value: String(window),
+              label: window === 0 ? "Default" : `${window / 1000}k`,
+            }))}
+            onChange={onClaudeAutoCompactWindow}
           />
         </Row>
         <Row
@@ -4094,7 +4121,9 @@ function ProviderAccountEditor({
               value={editor.token ?? ""}
               disabled={working}
               placeholder={
-                editor.hasToken ? "New token (blank keeps current)" : "API token"
+                editor.hasToken
+                  ? "New token (blank keeps current)"
+                  : "API token"
               }
               autoComplete="off"
               spellCheck={false}
