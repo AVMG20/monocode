@@ -64,3 +64,56 @@ describe("resizeComposer", () => {
     expect(wrapper.style.minHeight).toBe("20px");
   });
 });
+
+describe("resizeComposer while typing", () => {
+  function typed(value: string, scrollHeight: number, height: string) {
+    const style = { height };
+    let collapsed = false;
+    const el = {
+      style,
+      value,
+      get scrollHeight() {
+        if (style.height === "auto") collapsed = true;
+        return scrollHeight;
+      },
+    };
+    return { el, collapsed: () => collapsed };
+  }
+
+  it("grows without collapsing when text is added at the end", () => {
+    const first = typed("hello", 22, "");
+    resizeComposer(first.el);
+    expect(first.el.style.height).toBe("22px");
+    first.el.value = "hello world";
+    Object.defineProperty(first.el, "scrollHeight", { get: () => 44 });
+    resizeComposer(first.el);
+    expect(first.el.style.height).toBe("44px");
+  });
+
+  it("collapses to remeasure when text is removed", () => {
+    const field = typed("hello world", 44, "44px");
+    resizeComposer(field.el);
+    field.el.value = "hello";
+    resizeComposer(field.el);
+    expect(field.collapsed()).toBe(true);
+  });
+
+  it("skips the collapse when appended text still fits", () => {
+    const field = typed("hello", 22, "22px");
+    resizeComposer(field.el);
+    const before = field.collapsed();
+    field.el.value = "hello!";
+    const style = field.el.style;
+    let collapsed = false;
+    Object.defineProperty(field.el, "scrollHeight", {
+      get: () => {
+        if (style.height === "auto") collapsed = true;
+        return 22;
+      },
+    });
+    resizeComposer(field.el);
+    expect(before).toBe(true);
+    expect(collapsed).toBe(false);
+    expect(style.height).toBe("22px");
+  });
+});

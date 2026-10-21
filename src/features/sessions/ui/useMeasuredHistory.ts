@@ -6,6 +6,8 @@ import {
 } from "../../../shared/lib/layoutTransition";
 
 export const historyHosts = new WeakMap<HTMLElement, HTMLElement>();
+/** The turn row each history host belongs to, even while it is detached. */
+export const historyRows = new WeakMap<HTMLElement, HTMLElement>();
 const detachedNodes = new WeakMap<HTMLElement, number>();
 
 export function detachedHistoryNodes(root: HTMLElement): number {
@@ -20,7 +22,8 @@ export function revealMeasuredTurn(element: HTMLElement) {
   const turn = element.closest<HTMLElement>("[data-history-height]");
   if (!turn) return;
   const host = historyHosts.get(turn);
-  if (host) turn.appendChild(host);
+  // Re-appending an attached host would move its whole subtree.
+  if (host && host.parentNode !== turn) turn.appendChild(host);
   turn.removeAttribute("data-history-height");
   turn.style.removeProperty("height");
   detachedNodes.delete(turn);
@@ -40,6 +43,9 @@ export function useMeasuredHistory(
 ) {
   const previous = useRef(new Map<string, Block[]>());
   const measuredWidth = useRef(0);
+  const scheduleRef = useRef<(() => void) | null>(null);
+  // The observers outlive streamed deliveries: rebuilding them for every
+  // new turns array re-observed the whole history several times a second.
   useLayoutEffect(() => {
     if (!visible || !scroller) return;
     const inner = scroller.querySelector<HTMLElement>(
@@ -52,22 +58,12 @@ export function useMeasuredHistory(
           child instanceof HTMLElement &&
           child.hasAttribute("data-transcript-turn"),
       );
-    const width = scroller.clientWidth;
-    const changedWidth =
-      !layoutTransitionActive() && width !== measuredWidth.current;
-    if (changedWidth) measuredWidth.current = width;
-    const versions = new Map(turns.map((turn) => [turn[0].id, turn]));
-    for (const row of rows()) {
-      const id = row.dataset.transcriptTurn!;
-      if (
-        searching ||
-        changedWidth ||
-        previous.current.get(id) !== versions.get(id)
-      )
-        revealMeasuredTurn(row);
-    }
-    previous.current = versions;
     if (searching) return;
+    const width = scroller.clientWidth;
+    if (!layoutTransitionActive() && width !== measuredWidth.current) {
+      measuredWidth.current = width;
+      for (const row of rows()) revealMeasuredTurn(row);
+    }
     let frame = 0;
     const update = () => {
       frame = 0;
@@ -83,13 +79,7 @@ export function useMeasuredHistory(
         for (const row of items) revealMeasuredTurn(row);
       }
       const viewport = scroller.getBoundingClientRect();
-      const selection = window.getSelection();
-      const selecting =
-        selection &&
-        !selection.isCollapsed &&
-        (scroller.contains(selection.anchorNode) ||
-          scroller.contains(selection.focusNode));
-      if (selecting) {
+      if (selectionInside()) {
         for (const row of items) revealMeasuredTurn(row);
         return;
       }
@@ -134,28 +124,44 @@ export function useMeasuredHistory(
     const schedule = () => {
       if (!frame) frame = requestAnimationFrame(update);
     };
+    scheduleRef.current = schedule;
+    const selectionInside = () => {
+      const selection = window.getSelection();
+      return (
+        !!selection &&
+        !selection.isCollapsed &&
+        (scroller.contains(selection.anchorNode) ||
+          scroller.contains(selection.focusNode))
+      );
+    };
+    // Every caret move in a composer fires selectionchange; only a selection
+    // in this transcript (or one leaving it) needs the history remeasured.
+    let selecting = false;
+    const onSelectionChange = () => {
+      const inside = selectionInside();
+      if (inside || selecting) schedule();
+      selecting = inside;
+    };
     const resize = new ResizeObserver(schedule);
     resize.observe(scroller);
     const observed = new WeakSet<HTMLElement>();
     const mutations = new MutationObserver((records) => {
+      const changed = new Set<HTMLElement>();
       for (const record of records) {
         const target =
           record.target instanceof HTMLElement
             ? record.target
             : record.target.parentElement;
-        if (target) {
-          const host = target.closest<HTMLElement>("[data-history-content]");
-          const row = host
-            ? rows().find((row) => historyHosts.get(row) === host)
-            : undefined;
-          if (row) revealMeasuredTurn(row);
-        }
+        const host = target?.closest<HTMLElement>("[data-history-content]");
+        const row = host ? historyRows.get(host) : undefined;
+        if (row) changed.add(row);
       }
+      for (const row of changed) revealMeasuredTurn(row);
       schedule();
     });
     mutations.observe(inner, { childList: true });
     scroller.addEventListener("scroll", schedule, { passive: true });
-    document.addEventListener("selectionchange", schedule);
+    document.addEventListener("selectionchange", onSelectionChange);
     const invalidate = () => {
       for (const row of rows()) revealMeasuredTurn(row);
       schedule();
@@ -165,12 +171,32 @@ export function useMeasuredHistory(
     schedule();
     return () => {
       if (frame) cancelAnimationFrame(frame);
+      if (scheduleRef.current === schedule) scheduleRef.current = null;
       stopTransitionEnd();
       resize.disconnect();
       mutations.disconnect();
       scroller.removeEventListener("scroll", schedule);
-      document.removeEventListener("selectionchange", schedule);
+      document.removeEventListener("selectionchange", onSelectionChange);
       document.fonts?.removeEventListener("loadingdone", invalidate);
     };
+  }, [scroller, visible, searching]);
+
+  // An edited or growing turn shows in full until it is measured again.
+  useLayoutEffect(() => {
+    if (!visible || !scroller) return;
+    const inner = scroller.querySelector<HTMLElement>(
+      "[data-transcript-content]",
+    );
+    if (!inner) return;
+    const versions = new Map(turns.map((turn) => [turn[0].id, turn]));
+    for (const row of inner.children) {
+      if (!(row instanceof HTMLElement)) continue;
+      const id = row.dataset.transcriptTurn;
+      if (id === undefined) continue;
+      if (searching || previous.current.get(id) !== versions.get(id))
+        revealMeasuredTurn(row);
+    }
+    previous.current = versions;
+    scheduleRef.current?.();
   }, [scroller, visible, turns, searching]);
 }

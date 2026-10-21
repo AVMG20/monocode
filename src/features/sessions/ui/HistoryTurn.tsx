@@ -5,7 +5,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { historyHosts } from "./useMeasuredHistory";
+import { historyHosts, historyRows } from "./useMeasuredHistory";
 
 /** A stable portal keeps offscreen content mounted without retaining layout. */
 export function HistoryTurn({
@@ -38,6 +38,7 @@ export function HistoryTurn({
         return;
       }
       historyHosts.set(row, host);
+      historyRows.set(host, row);
       row.appendChild(host);
       // Descendant layout effects must see a connected host (prompt sizing,
       // selection and focus all rely on its real ancestors).

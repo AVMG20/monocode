@@ -14397,7 +14397,7 @@ function Workspace({
     inboxViewOpen ||
     notesViewOpen ||
     automationsViewOpen;
-  const coordinatorRail = useMemo(() => {
+  const coordinatorRailNow = useMemo(() => {
     const counts = new Map<string, { waiting: number; busy: number }>();
     const states = new Map<string, MonoState>();
     const unseen = new Set<string>();
@@ -14417,6 +14417,8 @@ function Workspace({
     return { counts, states, unseen };
     // The roster is read through its snapshot.
   }, [monosSnap, sessions, unseenFinishedIds, coordinatorThreads]);
+  // Rebuilt for every streamed event; the rail re-renders only on a change.
+  const coordinatorRail = useStableValue(coordinatorRailNow);
   const viewedProjectThreads = useMemo(
     () =>
       viewedProject ? (coordinatorThreads.get(viewedProject.id) ?? []) : [],

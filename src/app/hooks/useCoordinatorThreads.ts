@@ -15,6 +15,7 @@ import {
   type ThreadView,
 } from "../../features/coordinator/model/coordinator";
 import { listCoordinatorProjects } from "../../features/monos/model/mono";
+import { useStableValue } from "../../shared/hooks/useStableValue";
 import {
   listSessionsByProject,
   type SessionSummary,
@@ -149,5 +150,7 @@ export function useCoordinatorThreads(
     wasBusy.current = busy;
   }, [registry, busyKey]);
 
-  return views;
+  // Sessions change with every streamed event; the rail and the overview
+  // only re-render when a thread's view actually changes.
+  return useStableValue(views);
 }
