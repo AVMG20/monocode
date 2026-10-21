@@ -807,6 +807,7 @@ function AgentTranscriptComponent({
     };
   }, [bottomAligned, scrollerEl, followTranscript, setShowJump, visible]);
 
+  usePromptHover(scrollerEl);
   useTurnScrollAnchor(scrollerEl, visible, stickToBottom, rememberScroll);
   useReplyReflowAnchor(
     scrollerEl,
@@ -3349,6 +3350,39 @@ function sameActivity(a: ActivityPhasesProps, b: ActivityPhasesProps): boolean {
     a.blocks.length === b.blocks.length &&
     a.blocks.every((block, index) => block === b.blocks[index])
   );
+}
+
+/**
+ * Marks the turn whose prompt or day stamp is under the pointer, so its
+ * reply actions stay hidden. CSS `:has(:hover)` did this, but made WebKit
+ * restyle the whole page on every hover change and streamed word.
+ */
+function usePromptHover(scroller: HTMLElement | null) {
+  useEffect(() => {
+    if (!scroller) return;
+    let marked: HTMLElement | null = null;
+    const mark = (turn: HTMLElement | null) => {
+      if (turn === marked) return;
+      marked?.removeAttribute("data-prompt-hover");
+      turn?.setAttribute("data-prompt-hover", "");
+      marked = turn;
+    };
+    const onOver = (event: PointerEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      const anchor = target?.closest(
+        "[data-prompt-anchor], [data-day-separator]",
+      );
+      mark(anchor?.closest<HTMLElement>(".transcript-turn") ?? null);
+    };
+    const onLeave = () => mark(null);
+    scroller.addEventListener("pointerover", onOver);
+    scroller.addEventListener("pointerleave", onLeave);
+    return () => {
+      scroller.removeEventListener("pointerover", onOver);
+      scroller.removeEventListener("pointerleave", onLeave);
+      mark(null);
+    };
+  }, [scroller]);
 }
 
 /**

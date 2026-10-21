@@ -436,8 +436,18 @@ function MarkdownCode({
     fence.language.toLowerCase(),
   );
 
+  // Which label the header shows, for the CSS. A `:has()` over the shell
+  // made WebKit restyle the whole page for every streamed word.
+  const label = fence.filePath
+    ? "path"
+    : isPlaintextFallback
+      ? fence.language
+        ? "fallback"
+        : "untagged"
+      : undefined;
+
   return (
-    <div className="markdown-code-shell" dir="ltr">
+    <div className="markdown-code-shell" dir="ltr" data-code-label={label}>
       {iconName ? (
         <span className="markdown-code-icon" aria-hidden="true">
           <FileTypeIcon name={iconName} isDir={false} />
