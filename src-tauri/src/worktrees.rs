@@ -30,7 +30,8 @@ pub struct Worktrees {
 }
 
 fn git(root: &Path, args: &[&str]) -> Result<String, String> {
-    let mut command = Command::new("git");
+    let path = crate::harness::cached_gui_search_path();
+    let mut command = Command::new(crate::harness::program_on_path("git", &path));
     crate::hide_window_console(&mut command);
     let output = command
         .arg("-C")
@@ -39,7 +40,7 @@ fn git(root: &Path, args: &[&str]) -> Result<String, String> {
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_OPTIONAL_LOCKS", "0")
         // `status` runs git-lfs on LFS files; see `fs::git_cmd`.
-        .env("PATH", crate::harness::cached_gui_search_path())
+        .env("PATH", path)
         .output()
         .map_err(|e| e.to_string())?;
     if !output.status.success() {

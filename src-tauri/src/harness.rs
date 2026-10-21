@@ -3142,6 +3142,24 @@ fn path_has_component(path: &Path, needle: &str) -> bool {
     })
 }
 
+/// `name` as found on `path`, absolute. std only uses `posix_spawn` when the
+/// program needs no lookup in an overridden PATH; otherwise it forks the whole
+/// app, which pauses every thread of a large process for each short-lived
+/// child. Falls back to the bare name, which still resolves the slow way.
+pub(crate) fn program_on_path(name: &str, path: &str) -> std::ffi::OsString {
+    #[cfg(unix)]
+    {
+        if let Some(found) = std::env::split_paths(path)
+            .map(|dir| dir.join(name))
+            .find(|candidate| candidate.is_absolute() && is_executable_file(candidate))
+        {
+            return found.into_os_string();
+        }
+    }
+    let _ = path;
+    name.into()
+}
+
 fn is_executable_file(path: &Path) -> bool {
     #[cfg(unix)]
     {
