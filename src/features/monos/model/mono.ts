@@ -316,6 +316,39 @@ export function saveOpenMono(monoId: string | undefined): void {
   }
 }
 
+const SHOWN_THREAD_KEY = "monocode:mono-shown-thread";
+
+function readShownThreads(): Record<string, string> {
+  try {
+    const parsed: unknown = JSON.parse(
+      localStorage.getItem(SHOWN_THREAD_KEY) ?? "{}",
+    );
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, string>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+/** The thread a Mono last showed over its overview, to open on next time. */
+export function loadShownThread(monoId: string): string | null {
+  const id = readShownThreads()[monoId];
+  return typeof id === "string" && id ? id : null;
+}
+
+export function saveShownThread(monoId: string, sessionId: string | null) {
+  const threads = readShownThreads();
+  if ((threads[monoId] ?? null) === sessionId) return;
+  if (sessionId) threads[monoId] = sessionId;
+  else delete threads[monoId];
+  try {
+    localStorage.setItem(SHOWN_THREAD_KEY, JSON.stringify(threads));
+  } catch {
+    // The Mono opens on its list instead; harmless.
+  }
+}
+
 function uniqueProjects(paths: readonly string[]): string[] {
   const seen = new Set<string>();
   return paths.filter((path) => {

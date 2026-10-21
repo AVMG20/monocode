@@ -638,6 +638,8 @@ import {
   monoState,
   removeMono,
   saveOpenMono,
+  loadShownThread,
+  saveShownThread,
   subscribeMonos,
   type MonoState,
 } from "../features/monos/model/mono";
@@ -1286,6 +1288,13 @@ function Workspace({
     monoViewId && monoOverviewOpen && monoShownSession
       ? monoShownSession
       : undefined;
+  // Remember the thread each Mono shows, so it opens on it next time.
+  // Hiding the overview or going back to its list forgets it.
+  useEffect(() => {
+    const monoId = monoViewId ? monoForSession(monoViewId)?.id : undefined;
+    if (!monoId) return;
+    saveShownThread(monoId, monoOverviewOpen ? monoShownSession : null);
+  }, [monoViewId, monoOverviewOpen, monoShownSession]);
   const shownMonoSessionIdRef = useRef(shownMonoSessionId);
   shownMonoSessionIdRef.current = shownMonoSessionId;
   // A turn's activity shows on the overview's Activity tab; picking the shown
@@ -5309,11 +5318,21 @@ function Workspace({
       });
       if (!session || request !== monoViewRequest.current) return;
       // What the last Mono had open over its overview is its own; another
-      // Mono opens on its list.
-      if (monoViewIdRef.current !== session.id) {
-        setMonoShownSession(null);
-        setMonoShownSessionFocused(false);
+      // Mono opens on the thread it showed last time, or on its list.
+      const switching = monoViewIdRef.current !== session.id;
+      const rememberedId = switching ? loadShownThread(monoId) : null;
+      const remembered = rememberedId
+        ? await ensureOpenSession(rememberedId).catch(() => null)
+        : null;
+      if (request !== monoViewRequest.current) return;
+      if (switching) {
+        setMonoShownSession(remembered ? remembered.id : null);
+        setMonoShownSessionFocused(!!remembered);
         setMonoOverviewDocument(null);
+        if (remembered) {
+          setMonoOverviewTab("sessions");
+          setMonoOverviewOpen(true);
+        }
       }
       monoViewIdRef.current = session.id;
       saveOpenMono(monoId);
