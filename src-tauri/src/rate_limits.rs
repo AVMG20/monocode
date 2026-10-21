@@ -19,6 +19,9 @@ const USER_AGENT: &str = "claude-code/2.1.0";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 const OAUTH_TOKEN_URL: &str = "https://platform.claude.com/v1/oauth/token";
 const OAUTH_CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+/// Claude Code renews through axios and sends its default agent. The token
+/// endpoint answers every request with `USER_AGENT` with HTTP 429.
+const OAUTH_TOKEN_USER_AGENT: &str = "axios/1.15.2";
 /// Claude Code's own refresh lock: a proper-lockfile folder that counts as
 /// abandoned once its mtime is a minute old.
 const REFRESH_LOCK_NAME: &str = ".oauth_refresh.lock";
@@ -474,7 +477,7 @@ fn renew_claude_credentials(
     let response = match agent
         .post(OAUTH_TOKEN_URL)
         .set("Content-Type", "application/json")
-        .set("User-Agent", USER_AGENT)
+        .set("User-Agent", OAUTH_TOKEN_USER_AGENT)
         .send_string(&body.to_string())
     {
         Ok(response) => response,
