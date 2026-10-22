@@ -9658,9 +9658,12 @@ function Workspace({
   }, [ensureAutomationRecovery, launchAutomation]);
 
   const onInboxAppeared = useCallback(
-    (items: Parameters<typeof claimInboxAutomationRuns>[0]) => {
+    (
+      items: Parameters<typeof claimInboxAutomationRuns>[0],
+      listed: Parameters<typeof claimInboxAutomationRuns>[2],
+    ) => {
       void ensureAutomationRecovery()
-        .then(() => claimInboxAutomationRuns(items))
+        .then(() => claimInboxAutomationRuns(items, Date.now(), listed))
         .then((due) => {
           for (const item of due) {
             void launchAutomation(

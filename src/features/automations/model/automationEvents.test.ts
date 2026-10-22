@@ -432,4 +432,72 @@ describe("inbox automation events", () => {
     invoke.mockReset();
     window.localStorage.clear();
   });
+  it("catches up on listed PRs opened after the automation that were never seen appearing", () => {
+    const review = automation({
+      triggers: [createAutomationTrigger("github", "pull_request_opened")],
+      createdAt: at("2026-09-19T09:00:00Z"),
+    });
+    const now = at("2026-09-20T08:00:00Z");
+    const missed = item({ number: 30, createdAt: "2026-09-20T07:00:00Z" });
+    const beforeAutomation = item({
+      number: 31,
+      createdAt: "2026-09-19T08:00:00Z",
+    });
+    const tooOld = item({ number: 32, createdAt: "2026-09-19T07:00:00Z" });
+    const stale = automation({
+      triggers: review.triggers,
+      createdAt: at("2026-09-18T09:00:00Z"),
+    });
+    expect(
+      matchInboxAutomations([review], [], [missed, beforeAutomation], now).map(
+        (match) => match.eventKey,
+      ),
+    ).toEqual(["github:pr:acme/web:30"]);
+    expect(matchInboxAutomations([stale], [], [tooOld], now)).toEqual([]);
+  });
+
+  it("claims a caught-up PR once and stops asking the store after it settles", async () => {
+    const storage = new Map<string, string>();
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        clear: () => storage.clear(),
+        getItem: (key: string) => storage.get(key) ?? null,
+        removeItem: (key: string) => storage.delete(key),
+        setItem: (key: string, value: string) => storage.set(key, value),
+      },
+    });
+    const review = automation({
+      triggers: [createAutomationTrigger("github", "pull_request_opened")],
+    });
+    const missed = item({ number: 40, createdAt: "2026-09-20T07:00:00Z" });
+    invoke.mockImplementation(async (command: string) => {
+      if (command === "automations_list") return [review];
+      if (command === "automations_claim_event") {
+        return {
+          automation: review,
+          run: {
+            id: "run-40",
+            automationId: review.id,
+            trigger: "event",
+            scheduledFor: at("2026-09-20T07:00:00Z"),
+            createdAt: at("2026-09-20T08:00:00Z"),
+            status: "pending",
+          },
+        };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+    const now = at("2026-09-20T08:00:00Z");
+
+    expect(await claimInboxAutomationRuns([], now, [missed])).toHaveLength(1);
+    expect(await claimInboxAutomationRuns([], now, [missed])).toEqual([]);
+    expect(
+      invoke.mock.calls.filter(
+        ([command]) => command === "automations_claim_event",
+      ),
+    ).toHaveLength(1);
+    invoke.mockReset();
+    window.localStorage.clear();
+  });
 });

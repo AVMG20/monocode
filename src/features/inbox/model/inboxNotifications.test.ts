@@ -67,3 +67,28 @@ it("does not announce history exposed by a changed query or repeat items after a
     appeared: [],
   });
 });
+
+it("keeps announcing new items in watched projects when the project set changes", () => {
+  const tracker = new InboxNotificationTracker();
+  const a = item("acme/app", "2026-09-14T08:00:00Z");
+  const other = { ...item("acme/other", "2026-08-01T08:00:00Z"), number: 3 };
+  tracker.observe([a], "open", [], ["/tmp/acme/app"]);
+  const opened = { ...a, number: 2, updatedAt: "2026-09-14T08:05:00Z" };
+  expect(
+    tracker.observe(
+      [a, opened, other],
+      "open",
+      [],
+      ["/tmp/acme/app", "/tmp/acme/other"],
+    ),
+  ).toEqual({ changed: [opened], appeared: [opened] });
+  const later = { ...other, number: 4, updatedAt: "2026-09-14T08:06:00Z" };
+  expect(
+    tracker.observe(
+      [a, opened, other, later],
+      "open",
+      [],
+      ["/tmp/acme/app", "/tmp/acme/other"],
+    ),
+  ).toEqual({ changed: [later], appeared: [later] });
+});

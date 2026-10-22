@@ -29,7 +29,11 @@ export type ClaimedInboxAutomationRun = DueAutomationRun & {
 
 const RETRY_STORAGE_KEY = "monocode.automation-inbox-retries.v1";
 const MAX_RETRY_ITEMS = 500;
+/** How far back a listed item may have been opened and still start a run. */
+const CATCH_UP_MS = 24 * 60 * 60_000;
 let retryItems: Map<string, InboxItem> | undefined;
+/** Automation/event pairs the store already settled this app session. */
+const settledClaims = new Set<string>();
 
 export const SUPPORTED_INBOX_TRIGGER_EVENTS = {
   github: ["draft_opened", "pull_request_opened", "issue_opened"],
@@ -114,16 +118,28 @@ function saveRetryItems(items: ReadonlyMap<string, InboxItem>) {
 export function matchInboxAutomations(
   automations: readonly Automation[],
   appeared: readonly InboxItem[],
+  recent: readonly InboxItem[] = [],
+  now = Date.now(),
 ): InboxAutomationMatch[] {
   const matches: InboxAutomationMatch[] = [];
   const seen = new Set<string>();
-  for (const item of appeared) {
+  const appearedKeys = new Set(appeared.map(automationEventKey));
+  for (const item of [...appeared, ...recent]) {
     const event = inboxAppearedEvent(item);
     if (!event) continue;
     const eventKey = automationEventKey(item);
     if (!eventKey) continue;
+    const created = item.createdAt ? Date.parse(item.createdAt) : Number.NaN;
     for (const automation of automations) {
       if (!automation.enabled) continue;
+      // A listed item that was not seen appearing still counts when it was
+      // opened after the automation existed: MonoCode may have been closed,
+      // asleep, or watching a different project set when it opened.
+      if (
+        !appearedKeys.has(eventKey) &&
+        !(created > automation.createdAt && now - created <= CATCH_UP_MS)
+      )
+        continue;
       const trigger = automationTriggers(automation).find((candidate) =>
         triggerMatchesInboxItem(candidate, automation.cwd, item, event),
       );
@@ -144,9 +160,14 @@ export function matchInboxAutomations(
   return matches;
 }
 
+/**
+ * `recent` is every item the poll listed. The store records each claim, so an
+ * item opened while MonoCode could not see it appear still runs exactly once.
+ */
 export async function claimInboxAutomationRuns(
   appeared: readonly InboxItem[],
   now = Date.now(),
+  recent: readonly InboxItem[] = [],
 ): Promise<ClaimedInboxAutomationRun[]> {
   const pending = pendingRetryItems();
   for (const item of appeared) {
@@ -159,11 +180,24 @@ export async function claimInboxAutomationRuns(
     pending.delete(oldest);
   }
   saveRetryItems(pending);
-  if (pending.size === 0) return [];
+  const candidates = [...pending.values()];
+  const pendingKeys = new Set(pending.keys());
+  const catchUp = recent.filter((item) => {
+    const key = automationEventKey(item);
+    const created = item.createdAt ? Date.parse(item.createdAt) : Number.NaN;
+    return !pendingKeys.has(key) && now - created <= CATCH_UP_MS;
+  });
+  if (candidates.length === 0 && catchUp.length === 0) return [];
 
   const automations = await listAutomations();
-  const candidates = [...pending.values()];
-  const matches = matchInboxAutomations(automations, candidates);
+  const matches = matchInboxAutomations(
+    automations,
+    candidates,
+    catchUp,
+    now,
+  ).filter(
+    (match) => !settledClaims.has(`${match.automation.id}:${match.eventKey}`),
+  );
   const claimed: ClaimedInboxAutomationRun[] = [];
   const failed = new Set<string>();
   for (const match of matches) {
@@ -182,6 +216,7 @@ export async function claimInboxAutomationRuns(
           now,
         },
       );
+      settledClaims.add(`${match.automation.id}:${match.eventKey}`);
       if (result) {
         const linkedWorkItem = linkedWorkItemFromInboxItem(match.item);
         claimed.push({

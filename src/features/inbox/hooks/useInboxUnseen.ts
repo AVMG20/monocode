@@ -11,6 +11,7 @@ import {
   inboxItemKey,
   inboxProjectsForRail,
   listInboxItems,
+  uniqueInboxProjects,
   type GithubWorkItem,
   type InboxItem,
   type InboxQuery,
@@ -106,7 +107,9 @@ export function useInboxActivity(
   cwd: string,
   sessions: readonly SessionSummary[],
   options?: {
-    onAppeared?: (items: InboxItem[]) => void;
+    /** `listed` is the whole poll, for automations catching up on items
+     * MonoCode did not see appear. */
+    onAppeared?: (items: InboxItem[], listed: InboxItem[]) => void;
     /** Only this project's items (and project-less ones) light the badge.
      * Polling, chimes and linked sessions still cover every project. */
     scopeProject?: string;
@@ -210,13 +213,14 @@ export function useInboxActivity(
         );
         const observed = notifications.current.observe(
           listed.items,
-          inboxListCacheKey(projects, query),
+          inboxListCacheKey([], query),
           Object.keys(listed.errors) as InboxProvider[],
+          uniqueInboxProjects(projects).map((project) => project.path),
         );
         const changed = observed.changed;
         // Invoke on every successful poll so retained automation claims can be
         // retried even when the item is no longer newly appeared.
-        onAppearedRef.current?.(observed.appeared);
+        onAppearedRef.current?.(observed.appeared, listed.items);
         const selfAuthored = changed.filter((item) =>
           consumeInboxSelfActivity(item),
         );
