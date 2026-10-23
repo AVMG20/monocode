@@ -647,6 +647,8 @@ export type ClaudeAgentTaskStarted = {
   taskType: string;
   backgrounded: boolean;
   ambient: boolean;
+  /** Spawned from inside another subagent rather than by the main thread. */
+  nested: boolean;
 };
 
 export function parseTaskStarted(
@@ -667,6 +669,9 @@ export function parseTaskStarted(
     taskType: stringField(rec, "task_type") ?? "",
     backgrounded: rec.is_backgrounded === true,
     ambient: rec.ambient === true,
+    nested:
+      (typeof rec.spawn_depth === "number" && rec.spawn_depth > 1) ||
+      !!stringField(rec, "parent_task_id"),
   };
 }
 
@@ -767,6 +772,8 @@ export type ClaudeBackgroundTask = {
   taskId: string;
   taskType: string;
   description: string;
+  /** Launched by a subagent rather than by the main thread. */
+  nested: boolean;
 };
 
 /** Every task Claude is running for the session: subagents, shells, monitors. */
@@ -791,6 +798,7 @@ export function parseBackgroundTasks(
         taskId,
         taskType,
         description: stringField(row, "description") ?? "Subagent",
+        nested: !!stringField(row, "parent_task_id"),
       },
     ];
   });

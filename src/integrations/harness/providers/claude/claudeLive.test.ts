@@ -1443,6 +1443,57 @@ describe("claude subagents", () => {
     });
   });
 
+  it("does not list a subagent's own subagents as runs under Main", async () => {
+    const { events, turn } = await startTurn("s1");
+    // A fork spawned inside a subagent: its start names a depth and parent,
+    // and its progress (here arriving with no start at all) names neither.
+    emit({
+      type: "system",
+      subtype: "task_started",
+      task_id: "fork1",
+      tool_use_id: "toolu_fork1",
+      task_type: "local_agent",
+      description: "Audit SSE stream payloads",
+      spawn_depth: 2,
+      parent_task_id: "audit",
+    });
+    emit({
+      type: "system",
+      subtype: "background_tasks_changed",
+      tasks: [
+        {
+          task_id: "fork1",
+          task_type: "local_agent",
+          description: "Audit SSE stream payloads",
+          parent_task_id: "audit",
+        },
+      ],
+    });
+    emit({
+      type: "system",
+      subtype: "task_progress",
+      task_id: "fork2",
+      tool_use_id: "toolu_fork2",
+      description: "Running Compare terminal message handling both sides",
+      last_tool_name: "SubagentHandback",
+    });
+    emit({
+      type: "system",
+      subtype: "background_tasks_changed",
+      tasks: [],
+    });
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    await turn;
+
+    const session = events.reduce(
+      applyHarnessEvent,
+      newSession("claude", "/repo"),
+    );
+    expect(
+      session.blocks.filter((block) => block.tool?.kind === "agent"),
+    ).toEqual([]);
+  });
+
   it("keeps a resumed subagent on its listed row when SendMessage wakes it", async () => {
     const { events, turn } = await startTurn("s1");
     const description = "Refactor shared modules";
