@@ -102,7 +102,11 @@ function start(entry: Entry) {
   entry.onGitChanged = () => void load(entry, true);
   window.addEventListener("focus", entry.onResume);
   document.addEventListener("visibilitychange", entry.onResume);
-  entry.unsubscribeGit = subscribeGitChanged(entry.onGitChanged);
+  // A working-tree-only change comes from the changes panel, which has
+  // already applied its exact stats (applyProjectDiffStats).
+  entry.unsubscribeGit = subscribeGitChanged(entry.onGitChanged, {
+    refsOnly: true,
+  });
 }
 
 function stop(entry: Entry) {

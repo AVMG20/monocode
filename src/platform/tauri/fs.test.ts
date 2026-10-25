@@ -277,3 +277,27 @@ it("keeps ref-only git views asleep for working-tree-only changes", () => {
     vi.unstubAllGlobals();
   }
 });
+
+it("hands listeners the index being published instead of reading it again", async () => {
+  vi.mocked(invoke).mockReset();
+  const reads: Promise<GitDiffIndex>[] = [];
+  vi.stubGlobal("window", {
+    dispatchEvent: () => reads.push(gitDiffIndex("/published")),
+  });
+  try {
+    const published = { files: ["edited"] } as unknown as GitDiffIndex;
+    vi.mocked(invoke).mockResolvedValueOnce(published);
+    await gitDiffIndex("/published");
+    notifyGitChanged({ invalidatePending: false, workingTreeOnly: true });
+    await expect(reads[0]).resolves.toBe(published);
+    expect(invoke).toHaveBeenCalledTimes(1);
+    // Outside a publication, and after a real change, reads go to git.
+    vi.mocked(invoke).mockResolvedValue({ files: [] });
+    await gitDiffIndex("/published");
+    notifyGitChanged();
+    await reads[1];
+    expect(invoke).toHaveBeenCalledTimes(3);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
