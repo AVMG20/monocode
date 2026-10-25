@@ -26,6 +26,8 @@ const DROP_AFTER_MS = 30_000;
 
 const entries = new Map<string, Entry>();
 const failed = new Set<string>();
+/** Paths that have loaded before; their thumbnail keeps its box on reload. */
+const loadedBefore = new Set<string>();
 const failedListeners = new Set<() => void>();
 let failedVersion = 0;
 
@@ -47,6 +49,8 @@ function settle(path: string, entry: Entry, state: LocalImageState) {
     return;
   }
   entry.state = state;
+  if (state.status === "ready") loadedBefore.add(path);
+  else if (state.status === "error") loadedBefore.delete(path);
   setFailed(path, state.status === "error");
   for (const listener of entry.listeners) listener();
 }
@@ -142,6 +146,11 @@ export function localImageSnapshot(path: string): LocalImageState {
     entries.get(path)?.state ??
     (failed.has(path) ? FAILED_IMAGE : LOADING_IMAGE)
   );
+}
+
+/** True when a file loaded as an image before, so it will most likely again. */
+export function wasLocalImageLoaded(path: string): boolean {
+  return loadedBefore.has(path);
 }
 
 /** True once a file has failed to load as an image (missing, unreadable, not an image). */

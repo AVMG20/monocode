@@ -288,15 +288,38 @@ it("hands listeners the index being published instead of reading it again", asyn
     const published = { files: ["edited"] } as unknown as GitDiffIndex;
     vi.mocked(invoke).mockResolvedValueOnce(published);
     await gitDiffIndex("/published");
-    notifyGitChanged({ invalidatePending: false, workingTreeOnly: true });
+    notifyGitChanged({
+      invalidatePending: false,
+      workingTreeOnly: true,
+      publishedIndexCwd: "/published",
+    });
     await expect(reads[0]).resolves.toBe(published);
     expect(invoke).toHaveBeenCalledTimes(1);
+    // Another checkout's (possibly stale) read is never handed out.
+    vi.mocked(invoke).mockResolvedValueOnce({ files: [] });
+    await gitDiffIndex("/other");
+    const calls = vi.mocked(invoke).mock.calls.length;
+    vi.stubGlobal("window", {
+      dispatchEvent: () => reads.push(gitDiffIndex("/other")),
+    });
+    vi.mocked(invoke).mockResolvedValueOnce({ files: ["fresh"] });
+    notifyGitChanged({
+      invalidatePending: false,
+      workingTreeOnly: true,
+      publishedIndexCwd: "/published",
+    });
+    await expect(reads[1]).resolves.toEqual({ files: ["fresh"] });
+    expect(invoke).toHaveBeenCalledTimes(calls + 1);
+    reads.splice(1);
+    vi.stubGlobal("window", {
+      dispatchEvent: () => reads.push(gitDiffIndex("/published")),
+    });
     // Outside a publication, and after a real change, reads go to git.
     vi.mocked(invoke).mockResolvedValue({ files: [] });
     await gitDiffIndex("/published");
     notifyGitChanged();
     await reads[1];
-    expect(invoke).toHaveBeenCalledTimes(3);
+    expect(invoke).toHaveBeenCalledTimes(calls + 3);
   } finally {
     vi.unstubAllGlobals();
   }

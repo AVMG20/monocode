@@ -5,7 +5,12 @@ import { expect, it, vi } from "vitest";
 import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
 import { MarkdownLinkContext } from "../../sessions/ui/markdownLinks";
 import type { ThreadView } from "../model/coordinator";
-import { ThreadLink, threadLinkId } from "./ThreadLink";
+import {
+  LiveThreadLink,
+  publishThreadViews,
+  ThreadLink,
+  threadLinkId,
+} from "./ThreadLink";
 
 it("shows a coordinator's thread link as the thread, opening it on click", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -46,4 +51,32 @@ it("shows a coordinator's thread link as the thread, opening it on click", async
   await act(async () => root.unmount());
   container.remove();
   vi.unstubAllGlobals();
+});
+
+it("keeps a live thread link in step with its thread", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const thread = (status: ThreadView["status"]) =>
+    ({ sessionId: "t1", title: "Fix rounding", status }) as ThreadView;
+  publishThreadViews(new Map([["p", [thread("busy")]]]));
+  await act(async () =>
+    root.render(
+      createElement(LiveThreadLink, {
+        sessionId: "t1",
+        onOpenThread: () => {},
+        children: "Fix rounding",
+      }),
+    ),
+  );
+  expect(container.querySelector("[data-thread-link]")).not.toBeNull();
+  expect(container.querySelector("svg")).toBeNull();
+  await act(async () =>
+    publishThreadViews(new Map([["p", [thread("solved")]]])),
+  );
+  expect(container.querySelector("svg")).not.toBeNull();
+  await act(async () => publishThreadViews(new Map()));
+  expect(container.querySelector("[data-thread-link]")).toBeNull();
+  expect(container.textContent).toBe("Fix rounding");
+  act(() => root.unmount());
 });

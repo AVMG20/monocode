@@ -92,13 +92,13 @@ function usePageTitles(artifacts: SessionArtifact[]): Map<string, string> {
     let cancelled = false;
     void Promise.all(
       missing.map(async (source) => {
-        let title: string | null = null;
         try {
-          title = titleFromPage(await readTextFile(source.path)) || null;
+          const title = titleFromPage(await readTextFile(source.path));
+          rememberPageTitle(pageTitleKey(source), title || null);
         } catch {
           // Scratchpads are cleaned up; the file name still names the page.
+          // Not remembered, so a file that turns up later is read then.
         }
-        rememberPageTitle(pageTitleKey(source), title);
       }),
     ).then(() => {
       if (cancelled) return;
@@ -116,12 +116,14 @@ function usePageTitles(artifacts: SessionArtifact[]): Map<string, string> {
 
 type PageSource = { id: string; path: string; version?: unknown };
 
-/** Titles read per file and version, kept across composer remounts. */
+/** Titles read per artifact, file and version, kept across remounts. */
 const pageTitleCache = new Map<string, string | null>();
 const PAGE_TITLE_CACHE_LIMIT = 500;
 
 function pageTitleKey(source: PageSource): string {
-  return `${source.path}\0${source.version ?? ""}`;
+  // Versions count per artifact: a new artifact from a rewritten file is
+  // Version 1 again, so the artifact is part of the key.
+  return `${source.id}\0${source.path}\0${source.version ?? ""}`;
 }
 
 function rememberPageTitle(key: string, title: string | null) {

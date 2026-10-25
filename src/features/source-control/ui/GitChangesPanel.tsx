@@ -1675,6 +1675,7 @@ function useDiffIndex(
             notifyGitChanged({
               invalidatePending: false,
               workingTreeOnly: true,
+              publishedIndexCwd: cwd,
             });
           } finally {
             publishing = false;

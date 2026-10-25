@@ -41,6 +41,7 @@ import {
   localImageSnapshot,
   subscribeFailedImages,
   subscribeLocalImage,
+  wasLocalImageLoaded,
   type LocalImageState,
 } from "../model/localImages";
 
@@ -197,8 +198,17 @@ function ImageReferenceThumbnail({ image }: { image: TranscriptImage }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   // Nothing until the file has loaded: replies often name paths that don't
-  // exist, and a placeholder that then collapsed shifted the transcript.
-  if (state.status !== "ready") return null;
+  // exist, and a placeholder that then collapsed shifted the transcript. One
+  // seen before (a revisit after its blob was dropped) keeps its box.
+  if (state.status === "error") return null;
+  if (state.status !== "ready")
+    return wasLocalImageLoaded(image.path) ? (
+      <div
+        role="status"
+        aria-label={`Loading ${image.name}`}
+        className="h-[132px] w-36 animate-pulse rounded-lg bg-content/8"
+      />
+    ) : null;
 
   return (
     <div className="group/image relative min-w-0 max-w-56" title={image.path}>

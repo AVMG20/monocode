@@ -1,11 +1,10 @@
 import { GripVertical, X } from "../../../shared/ui/icons";
-import { ThreadLink, threadLinkId } from "../../coordinator/ui/ThreadLink";
+import { LiveThreadLink, threadLinkId } from "../../coordinator/ui/ThreadLink";
 import { ThreadStepsBar } from "../../coordinator/ui/ThreadStepsBar";
 import {
   coordinatorCompactAt,
   coordinatorContextUsage,
   threadSteps,
-  type ThreadView,
 } from "../../coordinator/model/coordinator";
 import { useSessionSnapshot } from "../model/sessionStateStore";
 import {
@@ -178,8 +177,7 @@ export type SessionPaneProps = {
     blocks: Block[],
     launchedId: string,
   ) => void;
-  /** A project coordinator's threads, for the handoff cards in its chat. */
-  projectThreads?: readonly ThreadView[];
+  /** Opens a thread a project coordinator's chat links to. */
   onOpenProjectThread?: (sessionId: string) => void;
   /** Live status of the sessions this Mono launched, by id. */
   monoLaunchedSessions?: ReadonlyMap<string, LaunchedSessionView>;
@@ -403,7 +401,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
   monoLaunchedSessions,
   openMonoSessionId,
   monoComposerUsage = true,
-  projectThreads,
   onOpenProjectThread,
   onOpenPlan,
   onBuildPlan,
@@ -493,18 +490,16 @@ const LocalSessionPane = memo(function LocalSessionPane({
             const sessionId = threadLinkId(href);
             if (!sessionId) return undefined;
             return (
-              <ThreadLink
-                view={projectThreads?.find(
-                  (view) => view.sessionId === sessionId,
-                )}
+              <LiveThreadLink
+                sessionId={sessionId}
                 onOpenThread={onOpenProjectThread}
               >
                 {children}
-              </ThreadLink>
+              </LiveThreadLink>
             );
           }
         : undefined,
-    [coordinator, projectThreads, onOpenProjectThread],
+    [coordinator, onOpenProjectThread],
   );
   // A Mono shows only its own background, never the project's or the app's.
   const projectBackground = mono

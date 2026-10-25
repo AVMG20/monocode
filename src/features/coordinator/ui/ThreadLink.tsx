@@ -1,9 +1,56 @@
-import type { ReactNode } from "react";
+import { useSyncExternalStore, type ReactNode } from "react";
 import { CheckCircle } from "../../../shared/ui/icons";
 import { TerminalSpinner } from "../../sessions/ui/TerminalSpinner";
 import type { ThreadStatus, ThreadView } from "../model/coordinator";
 
 const THREAD_HREF = /^#thread-(.+)$/;
+
+/**
+ * Every project thread's view by session id, published by the app. Links
+ * read their own thread from here, so a thread changing state re-renders its
+ * links rather than the whole coordinator transcript.
+ */
+let threadViews: ReadonlyMap<string, ThreadView> = new Map();
+const threadViewListeners = new Set<() => void>();
+
+export function publishThreadViews(
+  byProject: ReadonlyMap<string, readonly ThreadView[]>,
+): void {
+  const next = new Map<string, ThreadView>();
+  for (const views of byProject.values())
+    for (const view of views) next.set(view.sessionId, view);
+  threadViews = next;
+  for (const listener of threadViewListeners) listener();
+}
+
+function subscribeThreadViews(listener: () => void) {
+  threadViewListeners.add(listener);
+  return () => {
+    threadViewListeners.delete(listener);
+  };
+}
+
+/** A coordinator's link to one thread, kept in step with that thread. */
+export function LiveThreadLink({
+  sessionId,
+  children,
+  onOpenThread,
+}: {
+  sessionId: string;
+  children: ReactNode;
+  onOpenThread?: (sessionId: string) => void;
+}) {
+  const view = useSyncExternalStore(
+    subscribeThreadViews,
+    () => threadViews.get(sessionId),
+    () => undefined,
+  );
+  return (
+    <ThreadLink view={view} onOpenThread={onOpenThread}>
+      {children}
+    </ThreadLink>
+  );
+}
 
 /** The thread a coordinator's `[title](#thread-<id>)` link points at. */
 export function threadLinkId(href: string): string | undefined {

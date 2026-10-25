@@ -670,7 +670,9 @@ import {
   sessionStepRules,
   threadRules,
   threadsBrief,
+  UNTITLED_THREAD,
 } from "../features/coordinator/model/coordinator";
+import { publishThreadViews } from "../features/coordinator/ui/ThreadLink";
 import { useFloatingMono } from "./hooks/useFloatingMono";
 import {
   dropRelays,
@@ -1275,9 +1277,20 @@ function Workspace({
   // Bumped by anything that changes what the overview shows, so a thread
   // still loading never replaces what was picked after it.
   const threadRevealRequest = useRef(0);
+  // What a reveal itself just showed: its own change, committed after a
+  // newer pick started, must not cancel that pick.
+  const revealedThread = useRef<string | null>(null);
   useEffect(() => {
-    threadRevealRequest.current += 1;
+    if (monoShownSession !== revealedThread.current)
+      threadRevealRequest.current += 1;
   }, [monoShownSession]);
+  // A thread loaded for a pick that was then abandoned may go again.
+  const releaseThreadLoad = useCallback((load: Promise<Session | null>) => {
+    void load.then((loaded) => {
+      if (loaded && shownMonoSessionIdRef.current !== loaded.id)
+        openingSessionIds.current.delete(loaded.id);
+    });
+  }, []);
   const [monoOverviewDocument, setMonoOverviewDocument] = useState<
     string | null
   >(null);
@@ -2554,6 +2567,10 @@ function Workspace({
   );
   const coordinatorThreadsRef = useRef(coordinatorThreads);
   coordinatorThreadsRef.current = coordinatorThreads;
+  // Thread links in a coordinator's chat read their thread from here.
+  useLayoutEffect(() => {
+    publishThreadViews(coordinatorThreads);
+  }, [coordinatorThreads]);
   // The thread the overview shows stays loaded while it is on screen, and so
   // do the last few shown and each project's remembered one, so switching
   // back to them is instant rather than a reload from disk.
@@ -5355,18 +5372,27 @@ function Workspace({
           setSessions(sessionsRef.current);
         },
       });
-      if (!session || request !== monoViewRequest.current) return;
+      if (!session || request !== monoViewRequest.current) {
+        releaseThreadLoad(threadLoad);
+        return;
+      }
       // What the last Mono had open over its overview is its own; another
       // Mono opens on the thread it showed last time, or on its list.
       const switching =
         monoViewIdRef.current !== session.id || !!options?.thread;
+      if (!switching) releaseThreadLoad(threadLoad);
       const remembered = switching ? await threadLoad : null;
-      if (request !== monoViewRequest.current) return;
+      if (request !== monoViewRequest.current) {
+        releaseThreadLoad(threadLoad);
+        return;
+      }
       if (switching) {
+        revealedThread.current = remembered ? remembered.id : null;
         setMonoShownSession(remembered ? remembered.id : null);
         setMonoShownSessionFocused(!!remembered);
         setMonoOverviewDocument(null);
-        if (remembered) {
+        // A thread asked for that is gone leaves the list open, which says so.
+        if (remembered || options?.thread) {
           setMonoOverviewTab("sessions");
           setMonoOverviewOpen(true);
         }
@@ -5389,7 +5415,7 @@ function Workspace({
       setComposerFocused(true);
       setComposerFocusToken((token) => token + 1);
     },
-    [ensureOpenSession, workspaceNavigation.cancel],
+    [ensureOpenSession, releaseThreadLoad, workspaceNavigation.cancel],
   );
 
   // A Mono open when the app last closed opens again; a moved window keeps
@@ -5638,6 +5664,7 @@ function Workspace({
         setMonoShownSession(null);
         return;
       }
+      revealedThread.current = launchedId;
       setMonoShownSession(launchedId);
       setMonoShownSessionFocused(true);
       setProjectTerminalFocused(false);
@@ -14246,13 +14273,13 @@ function Workspace({
   >(() => new Map());
   // A project's threads already carry their saved titles; reading each one
   // in full just for its title stalled opening a project with many threads.
+  // Untitled ones keep the launch's own name, as their saved title would.
   const threadTitles = useMemo(
     () =>
       new Map(
-        (viewedProjectThreadViews ?? []).map((view) => [
-          view.sessionId,
-          view.title,
-        ]),
+        (viewedProjectThreadViews ?? []).flatMap((view) =>
+          view.title === UNTITLED_THREAD ? [] : [[view.sessionId, view.title]],
+        ),
       ),
     [viewedProjectThreadViews],
   );
@@ -14529,11 +14556,6 @@ function Workspace({
   }, [monosSnap, sessions, unseenFinishedIds, coordinatorThreads]);
   // Rebuilt for every streamed event; the rail re-renders only on a change.
   const coordinatorRail = useStableValue(coordinatorRailNow);
-  const viewedProjectThreads = useMemo(
-    () =>
-      viewedProject ? (coordinatorThreads.get(viewedProject.id) ?? []) : [],
-    [viewedProject?.id, coordinatorThreads],
-  );
   const viewedProjectId = viewedProject?.id;
   // A thread the coordinator links to opens in the project's overview.
   const openViewedProjectThread = useCallback(
@@ -15285,11 +15307,6 @@ function Workspace({
                                           // project keeps its footer too.
                                           monoComposerUsage={
                                             !insetLayout && !viewedProject
-                                          }
-                                          projectThreads={
-                                            visible && viewedProject
-                                              ? viewedProjectThreads
-                                              : undefined
                                           }
                                           onOpenProjectThread={
                                             visible && viewedProject

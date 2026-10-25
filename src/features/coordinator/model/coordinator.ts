@@ -394,15 +394,16 @@ export function threadView(input: {
   return { ...base, status: "inactive", activity: reply };
 }
 
+/** What a thread with no title of its own is called. */
+export const UNTITLED_THREAD = "Untitled thread";
+
 /** A thread's name without the harness prefix session titles carry. */
 function threadTitle(
   source: Pick<Session, "title" | "harness"> | undefined,
 ): string {
   const title = source?.title?.trim();
-  if (!title) return "Untitled thread";
-  return (
-    sessionDisplayTitle(title, source!.harness).trim() || "Untitled thread"
-  );
+  if (!title) return UNTITLED_THREAD;
+  return sessionDisplayTitle(title, source!.harness).trim() || UNTITLED_THREAD;
 }
 
 /** Threads by status, most recently active first within each. */
