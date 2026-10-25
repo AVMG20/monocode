@@ -26,7 +26,6 @@ export type SettingsSectionId =
   | "providers"
   | "mcp"
   | "skills"
-  | "monos"
   | "inbox"
   | "worktrees"
   | "archive";
@@ -118,14 +117,6 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     keywords: "skill instructions prompt",
   },
   {
-    id: "monos",
-    group: "agents",
-    label: "Monos",
-    description:
-      "The resident agent beside your tabs, and which projects have one.",
-    keywords: "mono resident agent mascot claim project title bar",
-  },
-  {
     id: "inbox",
     group: "workspace",
     label: "Inbox",
@@ -184,25 +175,6 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     section: "mcp",
     label: "MCP servers",
     keywords: "claude tools connections oauth authenticate login add remove",
-  },
-  {
-    id: "monos-enabled",
-    section: "monos",
-    label: "Show monos",
-    keywords: "mono agent rail hide",
-  },
-  {
-    id: "rail-monos-pinned",
-    section: "monos",
-    label: "Pin monos to the icon rail",
-    keywords: "mono rail compact collapsed icons top divider project picker",
-  },
-  {
-    id: "mono-list",
-    section: "monos",
-    label: "Your monos",
-    keywords:
-      "mono reset soul name projects sessions sidebar visibility hidden show",
   },
   {
     id: "project-worktrees",
@@ -279,13 +251,6 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "dark light system appearance mode",
   },
   {
-    id: "workspace-theme",
-    section: "appearance",
-    label: "Workspace theme",
-    keywords:
-      "color colour palette scheme preset inset harbor moss ember orchid",
-  },
-  {
     id: "accent-color",
     section: "appearance",
     label: "Accent color",
@@ -317,12 +282,6 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "black brightness contrast background",
   },
   {
-    id: "inset-glass",
-    section: "appearance",
-    label: "Transparent window",
-    keywords: "glass inset translucent transparency opaque desktop blur layout",
-  },
-  {
     id: "sidebar-opacity",
     section: "appearance",
     label: "Sidebar opacity",
@@ -339,13 +298,6 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     section: "appearance",
     label: "Main pane glass",
     keywords: "translucent transparency body window",
-  },
-  {
-    id: "inset-layout",
-    section: "appearance",
-    label: "New layout",
-    keywords:
-      "classic preview sidebar navigation tabs inset workspace card rounded floating linear frame",
   },
   {
     id: "interface-scale",
@@ -554,36 +506,16 @@ function matchScore(
   return null;
 }
 
-const NO_HIDDEN_SETTINGS: ReadonlySet<string> = new Set();
-
-/** Appearance rows that only one layout shows: the inset workspace drops the
- * tint and translucency controls, and only it has workspace themes and its
- * own glass switch. */
-export const INSET_LAYOUT_HIDDEN_SETTINGS: ReadonlySet<string> = new Set([
-  "hue",
-  "saturation",
-  "dark-lightness",
-  "sidebar-opacity",
-  "blur",
-  "main-pane-glass",
-]);
-export const CLASSIC_LAYOUT_HIDDEN_SETTINGS: ReadonlySet<string> = new Set([
-  "workspace-theme",
-  "inset-glass",
-]);
-
 /** Individual settings first, then whole sections, so a row wins its own name. */
 export function searchSettings(
   query: string,
   limit = 8,
-  hidden: ReadonlySet<string> = NO_HIDDEN_SETTINGS,
 ): SettingsSearchResult[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return [];
   const scored: { score: number; result: SettingsSearchResult }[] = [];
 
   for (const entry of SETTINGS_INDEX) {
-    if (hidden.has(entry.id)) continue;
     const score = matchScore(needle, entry.label, entry.keywords);
     if (score == null) continue;
     scored.push({
@@ -891,33 +823,6 @@ export function subscribeNotesEnabled(onStoreChange: () => void) {
   window.addEventListener(NOTES_ENABLED_CHANGE_EVENT, onStoreChange);
   return () =>
     window.removeEventListener(NOTES_ENABLED_CHANGE_EVENT, onStoreChange);
-}
-
-const MONOS_ENABLED_KEY = "monocode.monosEnabled";
-
-export const MONOS_ENABLED_DEFAULT = true;
-
-/** Fired on `window` when monos are shown or hidden. */
-export const MONOS_ENABLED_CHANGE_EVENT = "monocode:monos-enabled-change";
-
-/** Whether monos show in the title bar at all, across every project. */
-export function loadMonosEnabled(): boolean {
-  return readFlag(MONOS_ENABLED_KEY) ?? MONOS_ENABLED_DEFAULT;
-}
-
-export function saveMonosEnabled(value: boolean) {
-  writeFlag(MONOS_ENABLED_KEY, value);
-  if (typeof window === "undefined") return;
-  window.dispatchEvent(
-    new CustomEvent<boolean>(MONOS_ENABLED_CHANGE_EVENT, { detail: value }),
-  );
-}
-
-export function subscribeMonosEnabled(onStoreChange: () => void) {
-  if (typeof window === "undefined") return () => {};
-  window.addEventListener(MONOS_ENABLED_CHANGE_EVENT, onStoreChange);
-  return () =>
-    window.removeEventListener(MONOS_ENABLED_CHANGE_EVENT, onStoreChange);
 }
 
 const MONO_MENU_BAR_KEY = "monocode.monoMenuBarIcon";

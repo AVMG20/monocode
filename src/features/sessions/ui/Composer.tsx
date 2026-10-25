@@ -207,11 +207,6 @@ import {
 } from "../../settings/model/mcpSettingsCache";
 import type { LastTurnRecall } from "../model/editLastTurn";
 import { useComposerAutocorrect } from "../../settings/model/displayPrefs";
-import {
-  INSET_LAYOUT_DEFAULT,
-  loadInsetLayout,
-  subscribeInsetLayout,
-} from "../../settings/model/appearance";
 
 type Props = {
   enabled?: boolean;
@@ -539,11 +534,6 @@ export function Composer({
   const fileCwd = enabled ? localCwd : "";
   const [files, setFiles] = useState<ProjectFile[]>(
     () => peekProjectFiles(fileCwd) ?? [],
-  );
-  const insetLayout = useSyncExternalStore(
-    subscribeInsetLayout,
-    loadInsetLayout,
-    () => INSET_LAYOUT_DEFAULT,
   );
   const notesEnabled = useSyncExternalStore(
     subscribeNotesEnabled,
@@ -1805,29 +1795,9 @@ export function Composer({
     });
   };
 
-  // The inset layout keeps the box to the prompt and its actions; where the
-  // work runs, and how full the context is, sit on the line beneath it. Its
-  // top padding matches the composer's own bottom padding, and the right
-  // padding centres the 14px context ring under the send button (border 1px,
-  // toolbar px-2, half of the 26px button: 22px in, less half the ring).
-  const workspaceBarOutside = insetLayout;
-  // Without the bar above it, the field's own top padding is the box's top
-  // edge. The field also starts two lines tall there, whether it is centred
-  // in an empty session (`shell`) or docked under a transcript, so both look
-  // the same: `rows` sets the natural height and `min-h-16` (two 22px lines
-  // plus the padding) keeps resizing from collapsing it.
-  const fieldPadding = workspaceBarOutside
-    ? "pt-3.5 pb-1.5 min-h-16"
-    : shell
-      ? "py-4"
-      : "py-3";
+  const fieldPadding = shell ? "py-4" : "py-3";
   const workspaceBar = hideTopBar ? null : (
-    <div
-      data-composer-workspace-bar={workspaceBarOutside ? "" : undefined}
-      className={`flex min-w-0 items-center gap-2.5 overflow-hidden ${
-        workspaceBarOutside ? "pt-1.5 pr-[15px] pl-[15px]" : "px-3 pt-2.5"
-      }`}
-    >
+    <div className="flex min-w-0 items-center gap-2.5 overflow-hidden px-3 pt-2.5">
       {!remote && !hideProjectPicker ? (
         <CwdPicker
           cwd={cwd}
@@ -2140,7 +2110,7 @@ export function Composer({
               Drop files to attach
             </div>
           ) : null}
-          {workspaceBarOutside ? null : workspaceBar}
+          {workspaceBar}
 
           {attachments.length > 0 ? (
             <div className="flex flex-wrap gap-1.5 px-3 pt-2">
@@ -2197,7 +2167,7 @@ export function Composer({
               ref={ref}
               data-composer-empty={navigationEmpty ? "true" : undefined}
               style={{ textIndent: modeIndent }}
-              rows={workspaceBarOutside ? 2 : 1}
+              rows={1}
               spellCheck={autocorrect}
               autoCorrect={autocorrect ? "on" : "off"}
               defaultValue={mountDraft}
@@ -2256,11 +2226,7 @@ export function Composer({
             />
           </div>
 
-          <div
-            className={`flex items-center gap-1 px-2 ${
-              workspaceBarOutside ? "pb-2.5" : "pb-2"
-            }`}
-          >
+          <div className="flex items-center gap-1 px-2 pb-2">
             <div
               ref={plusRef}
               className={compact ? "hidden" : "relative shrink-0"}
@@ -2550,7 +2516,6 @@ export function Composer({
             </div>
           </div>
         </div>
-        {workspaceBarOutside ? workspaceBar : null}
         {runnerLive && runnerEnabled && !remote ? (
           <ComposerRunner
             boxRef={boxRef}

@@ -4,11 +4,6 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { MonoOverview, type MonoOverviewTab } from "./MonoOverview";
 
-vi.mock("../model/monoHabits", async (original) => ({
-  ...(await original<object>()),
-  loadHabits: async () => [],
-}));
-
 vi.mock("./MonoChangesView", () => ({
   MonoChangesView: () => createElement("p", { "data-changes-view": "" }),
 }));
@@ -62,10 +57,7 @@ async function render(
     root.render(
       createElement(MonoOverview, {
         open: true,
-        monoId: "mono-1",
-        cwd: "/home",
         agent: { name: "Broski", mascot: "cat", color: "#9c9", projects: [] },
-        state: { status: "idle" },
         launches: [
           {
             sessionId: "a",
@@ -105,14 +97,13 @@ it("names only the open tab, with its count, and switches tabs", async () => {
   const labels = tabs().map((tab) =>
     tab.querySelector("[data-tab-label]")!.getAttribute("data-tab-label"),
   );
-  expect(labels).toEqual(["open", "closed", "closed", "closed"]);
+  expect(labels).toEqual(["open", "closed", "closed"]);
   expect(tabs().map((tab) => tab.getAttribute("aria-label"))).toEqual([
-    "Sessions",
+    "Threads",
     "Documents",
-    "Habits",
     "Changes",
   ]);
-  expect(tabs()[0].textContent).toBe("Sessions2");
+  expect(tabs()[0].textContent).toBe("Threads2");
   expect(tabs()[0].getAttribute("aria-selected")).toBe("true");
   act(() => tabs()[1].click());
   expect(onTabChange).toHaveBeenCalledWith("documents");
@@ -166,7 +157,7 @@ const changes = (totals: unknown) => ({
 
 it("always offers a Changes tab and keeps its view mounted once opened", async () => {
   await render("sessions", vi.fn(), changes(null));
-  expect(tabs()[3].getAttribute("aria-label")).toBe("Changes");
+  expect(tabs()[2].getAttribute("aria-label")).toBe("Changes");
   expect(container.querySelector("[data-changes-view]")).toBeNull();
   const onTabChange = vi.fn();
   await render(
@@ -174,11 +165,11 @@ it("always offers a Changes tab and keeps its view mounted once opened", async (
     onTabChange,
     changes({ files: 3, additions: 12, deletions: 4 }),
   );
-  expect(tabs()[3].textContent).toBe("Changes3");
+  expect(tabs()[2].textContent).toBe("Changes3");
   expect(container.querySelector("[data-changes-view]")).not.toBeNull();
   // Another tab keeps the view mounted, hidden, so a commit draft survives.
   await render("sessions", onTabChange, changes(null));
-  expect(tabs()[3].getAttribute("aria-label")).toBe("Changes");
+  expect(tabs()[2].getAttribute("aria-label")).toBe("Changes");
   expect(
     container.querySelector("[data-changes-view]")!.closest("[hidden]"),
   ).not.toBeNull();
@@ -186,20 +177,20 @@ it("always offers a Changes tab and keeps its view mounted once opened", async (
 
 it("dots the folded Changes icon while there are changes", async () => {
   await render("sessions", vi.fn(), changes(null));
-  expect(tabs()[3].querySelector("[data-changes-dot]")).toBeNull();
+  expect(tabs()[2].querySelector("[data-changes-dot]")).toBeNull();
   await render(
     "sessions",
     vi.fn(),
     changes({ files: 2, additions: 3, deletions: 1 }),
   );
-  expect(tabs()[3].querySelector("[data-changes-dot]")).not.toBeNull();
+  expect(tabs()[2].querySelector("[data-changes-dot]")).not.toBeNull();
   // Open, the tab names its count instead.
   await render(
     "changes",
     vi.fn(),
     changes({ files: 2, additions: 3, deletions: 1 }),
   );
-  expect(tabs()[3].querySelector("[data-changes-dot]")).toBeNull();
+  expect(tabs()[2].querySelector("[data-changes-dot]")).toBeNull();
 });
 
 it("lists every session it started, newest first", async () => {
@@ -211,12 +202,9 @@ it("lists every session it started, newest first", async () => {
   ]);
 });
 
-it("shows documents in their own tab, and a new-habit button only on Habits", async () => {
+it("shows documents in their own tab", async () => {
   await render("documents");
   expect(container.querySelector('[data-mono-document="d1"]')).not.toBeNull();
-  expect(container.querySelector('[aria-label="New habit"]')).toBeNull();
-  await render("habits");
-  expect(container.querySelector('[aria-label="New habit"]')).not.toBeNull();
 });
 
 it("opens a session over the list, at the same width, with back, workspace and hide", async () => {

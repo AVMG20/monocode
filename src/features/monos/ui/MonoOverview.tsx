@@ -1,5 +1,4 @@
 import { useRef, useState, type ReactNode } from "react";
-import { IconButton } from "../../../app/shell/TitleBar";
 import {
   Clock,
   File,
@@ -7,18 +6,13 @@ import {
   ListBullet,
   ListFilter,
   MessageMultiple,
-  Plus,
   Search,
 } from "../../../shared/ui/icons";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { artifactLabel, type ArtifactCard } from "../../artifacts/artifacts";
 import type { SessionSummary } from "../../sessions/data/sessionStore";
 import type { MonoSpawnedSession, Session } from "../../sessions/model/session";
-import type { MonoLook, MonoState } from "../model/mono";
-import { HABITS_MAX } from "../model/monoHabits";
-import { HabitPage } from "./HabitPage";
-import { NewHabitPage } from "./NewHabitPage";
-import { habitActions, HabitsList, useHabits } from "./MonoHabits";
+import type { MonoLook } from "../model/mono";
 import { ArtifactReader } from "../../artifacts/ui/ArtifactPanel";
 import { ArtifactIcon } from "../../artifacts/ui/ArtifactCard";
 import {
@@ -39,27 +33,19 @@ import { MonoSidebar, MonoSidebarHeader } from "./MonoSidebar";
 import type { SessionChangeTotals } from "../../sessions/ui/SessionReview";
 import { MonoChangesView, type MonoChangesRequest } from "./MonoChangesView";
 
-export type MonoOverviewTab =
-  "activity" | "sessions" | "habits" | "documents" | "changes";
+export type MonoOverviewTab = "activity" | "sessions" | "documents" | "changes";
 
 // Activity sits apart, beside the panel toggle, since it follows the chat.
+// A project's overview speaks of threads.
 const TABS: {
   id: Exclude<MonoOverviewTab, "activity">;
   label: string;
   icon: typeof Clock;
 }[] = [
-  { id: "sessions", label: "Sessions", icon: MessageMultiple },
+  { id: "sessions", label: "Threads", icon: MessageMultiple },
   { id: "documents", label: "Documents", icon: File },
-  { id: "habits", label: "Habits", icon: Clock },
   { id: "changes", label: "Changes", icon: FileDiff },
 ];
-
-/** A project's overview speaks of threads and has no habits. */
-const PROJECT_TABS: typeof TABS = TABS.filter(
-  (entry) => entry.id !== "habits",
-).map((entry) =>
-  entry.id === "sessions" ? { ...entry, label: "Threads" } : entry,
-);
 
 /** The conversation's recorded changes, reviewed and committed on their tab. */
 export type MonoOverviewChanges = {
@@ -73,15 +59,9 @@ export type MonoOverviewChanges = {
   projects: readonly string[];
 };
 
-type Route = { kind: "new-habit" } | { kind: "habit"; id: string };
-
 type Props = {
   open: boolean;
-  monoId: string;
-  /** Its conversation's folder, which habits run in. */
-  cwd: string;
   agent: MonoLook;
-  state: MonoState;
   /** Every session it has started, oldest first. */
   launches: readonly MonoSpawnedSession[];
   sessions: readonly Session[];
@@ -98,8 +78,6 @@ type Props = {
   shownSession?: ShownMonoSession;
   onBackFromSession?: () => void;
   onOpenSessionInWorkspace?: (sessionId: string) => void | Promise<void>;
-  /** A Claude Project: its sessions are threads, and it keeps no habits. */
-  project?: boolean;
   /** The shown thread fills the project view. */
   expanded?: boolean;
   onToggleExpanded?: () => void;
@@ -113,15 +91,12 @@ type Props = {
 };
 
 /**
- * The Mono's work at a glance: the sessions it started, its habits and the
- * documents it wrote. Who it is and how it works live in its settings.
+ * A project's work at a glance: the threads it started and the documents it
+ * wrote. Who it is and how it works live in its settings.
  */
 export function MonoOverview({
   open,
-  monoId,
-  cwd,
   agent,
-  state,
   launches,
   sessions,
   history,
@@ -134,7 +109,6 @@ export function MonoOverview({
   shownSession,
   onBackFromSession = () => {},
   onOpenSessionInWorkspace = () => {},
-  project = false,
   expanded = false,
   onToggleExpanded,
   shownDocumentId,
@@ -145,11 +119,7 @@ export function MonoOverview({
   windowControls,
 }: Props) {
   const lock = useLockOverscroll<HTMLDivElement>();
-  // A project has no habits tab to land on.
-  const tab = project && requestedTab === "habits" ? "sessions" : requestedTab;
-  const habits = useHabits(monoId, state.status);
-  const actions = habitActions(monoId);
-  const [routes, setRoutes] = useState<Route[]>([]);
+  const tab = requestedTab;
   const [query, setQuery] = useState("");
   const [filters, setFilters] = useState<SessionSidebarFilters>(
     DEFAULT_SESSION_SIDEBAR_FILTERS,
@@ -163,41 +133,8 @@ export function MonoOverview({
     tab === "activity" ? "sessions" : tab,
   );
   if (tab !== "activity") lastTab.current = tab;
-  const push = (route: Route) => setRoutes((current) => [...current, route]);
-  const back = () => setRoutes((current) => current.slice(0, -1));
 
-  const pages: StackPage[] = routes.flatMap((route, depth): StackPage[] => {
-    if (route.kind === "new-habit")
-      return [
-        {
-          key: "new-habit",
-          node: <NewHabitPage monoId={monoId} onBack={back} onCreated={back} />,
-        },
-      ];
-    // A habit removed while open closes its page.
-    const habit = habits?.find((entry) => entry.id === route.id);
-    if (!habit) return [];
-    return [
-      {
-        key: `habit:${route.id}:${depth}`,
-        node: (
-          <HabitPage
-            habit={habit}
-            color={agent.color}
-            cwd={cwd}
-            onBack={back}
-            onRunNow={() => actions.runNow(habit.id)}
-            onToggle={() => actions.toggle(habit.id)}
-            onRemove={() => {
-              actions.remove(habit.id);
-              back();
-            }}
-          />
-        ),
-      },
-    ];
-  });
-
+  const pages: StackPage[] = [];
   // What the overview opened goes on top of everything, the way it would
   // from the list beneath. One page for whichever session it shows: going
   // from one thread to another swaps it in place rather than sliding a
@@ -237,11 +174,9 @@ export function MonoOverview({
       ),
     });
 
-  const tabs = project ? PROJECT_TABS : TABS;
-  const habitsFull = !habits || habits.length >= HABITS_MAX;
+  const tabs = TABS;
   const counts: Record<(typeof TABS)[number]["id"], number | undefined> = {
     sessions: launches.length,
-    habits: habits?.length,
     documents: documents.length,
     changes: changes?.totals?.files,
   };
@@ -254,7 +189,7 @@ export function MonoOverview({
       color={agent.color}
       windowControls={windowControls}
       expanded={expanded && !!shownSession}
-      wide={project}
+      wide
     >
       <PanelStack pages={pages}>
         {/* Pages replace this header too, keeping their back button at the top. */}
@@ -271,19 +206,6 @@ export function MonoOverview({
           onClose={onClose}
           actions={
             <>
-              {tab === "habits" ? (
-                <IconButton
-                  label={
-                    habits && habits.length >= HABITS_MAX
-                      ? `At most ${HABITS_MAX} habits`
-                      : "New habit"
-                  }
-                  disabled={habitsFull}
-                  onClick={() => push({ kind: "new-habit" })}
-                >
-                  <Plus className="size-3.5" strokeWidth={1.75} />
-                </IconButton>
-              ) : null}
               <TabButton
                 label="Activity"
                 icon={ListBullet}
@@ -350,7 +272,7 @@ export function MonoOverview({
           ) : tab === "sessions" ? (
             launches.length ? (
               // Cards carry their own inset; this lines their icons up with
-              // the tabs above, as the habit and document rows do.
+              // the tabs above, as the document rows do.
               <div className="-mx-0.5">
                 <MonoSessionList
                   agent={agent}
@@ -369,18 +291,6 @@ export function MonoOverview({
                 like a bug fix or a review, and it shows up here.
               </EmptyState>
             )
-          ) : tab === "habits" ? (
-            <HabitsList
-              habits={habits}
-              actions={actions}
-              onOpen={(id) => push({ kind: "habit", id })}
-              empty={
-                <EmptyState icon={Clock}>
-                  Ask {agent.name} to put recurring work on a schedule, like a
-                  morning digest or a weekly report.
-                </EmptyState>
-              }
-            />
           ) : documents.length ? (
             <ul className="flex flex-col gap-px">
               {[...documents].reverse().map((card) => (

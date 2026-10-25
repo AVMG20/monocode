@@ -945,34 +945,3 @@ it.each([
   expect(upserts().some((note) => note.finalizeSlug)).toBe(false);
 });
 
-it("lists only the scoped project's notes, plus project-less ones", async () => {
-  const notes: Note[] = [
-    { ...stored, id: "here", title: "Here", sourceCwd: "/work/Edefyn" },
-    { ...stored, id: "there", title: "There", sourceCwd: "/work/portognjeeen" },
-    { ...stored, id: "loose", title: "Loose", sourceCwd: undefined },
-  ];
-  invoke.mockImplementation(async (command: string) => {
-    if (command === "notes_list") return notes.map((note) => ({ ...note }));
-    throw new Error(`Unexpected command: ${command}`);
-  });
-  const titles = () =>
-    [...container.querySelectorAll('[role="listbox"] [role="option"], li button')]
-      .map((row) => row.textContent ?? "");
-  await act(async () =>
-    root.render(
-      createElement(NotesView, {
-        cwd: "/work/portognjeeen",
-        scopeProject: "/work/portognjeeen",
-        recents,
-        onClose,
-      }),
-    ),
-  );
-  const listed = titles().join("\n");
-  expect(listed).toContain("There");
-  expect(listed).toContain("Loose");
-  expect(listed).not.toContain("Here");
-  // Opens on a note in scope rather than one remembered from elsewhere.
-  expect(container.querySelector<HTMLInputElement>('[aria-label="Note title"]')?.value)
-    .not.toBe("Here");
-});

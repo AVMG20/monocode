@@ -58,7 +58,6 @@ const SCOPES: { id: SearchScope; label: string }[] = [
 ];
 
 type Props = {
-  tabbed?: boolean;
   open: boolean;
   cwd: string;
   recents: RecentProject[];
@@ -75,7 +74,6 @@ type Props = {
 };
 
 export function SearchView({
-  tabbed = false,
   open,
   cwd,
   recents,
@@ -111,7 +109,7 @@ export function SearchView({
   const truncated = contentTruncated || sessionTruncated;
 
   useEffect(() => {
-    if (!open || tabbed) return;
+    if (!open) return;
     setQuery("");
     setScope("all");
     setActive(0);
@@ -120,7 +118,7 @@ export function SearchView({
     setContentTruncated(false);
     setSessionTruncated(false);
     setError(null);
-  }, [open, tabbed]);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -390,9 +388,9 @@ export function SearchView({
         className="flex h-10 shrink-0 select-none items-center border-b border-stroke"
         data-tauri-drag-region="deep"
       >
-        {!tabbed && IS_MAC && compactRail ? <div className="w-4 shrink-0" /> : null}
-        {!tabbed && IS_MAC && !besideRail ? <div className="w-[78px] shrink-0" /> : null}
-        {tabbed || besideRail ? null : (
+        {IS_MAC && compactRail ? <div className="w-4 shrink-0" /> : null}
+        {IS_MAC && !besideRail ? <div className="w-[78px] shrink-0" /> : null}
+        {besideRail ? null : (
           <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />
         )}
         <label className="flex min-w-0 flex-1 items-center gap-2 px-3 text-content/50">
@@ -418,7 +416,7 @@ export function SearchView({
             />
           ) : null}
         </label>
-        {!tabbed && !IS_MAC ? <WindowControls /> : null}
+        {!IS_MAC ? <WindowControls /> : null}
       </div>
 
       <div className="flex h-9 shrink-0 items-center gap-px border-b border-stroke px-3">

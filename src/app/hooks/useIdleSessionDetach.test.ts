@@ -28,7 +28,7 @@ import {
 } from "../../features/workspace/model/layout";
 import { useIdleSessionDetach } from "./useIdleSessionDetach";
 import {
-  createMono,
+  createCoordinatorProject,
   saveMonoSessionId,
 } from "../../features/monos/model/mono";
 
@@ -219,7 +219,10 @@ it("keeps the resident conversation mounted independently of ordinary tabs", asy
     getItem: (key: string) => values.get(key) ?? null,
     setItem: (key: string, value: string) => values.set(key, value),
   });
-  saveMonoSessionId(createMono([agent.cwd]).id, agent.id);
+  saveMonoSessionId(
+    createCoordinatorProject({ name: "Resident", path: agent.cwd }).id,
+    agent.id,
+  );
   const workspace = mountWorkspace({
     sessions: [agent, chat("other")],
     tabs: [newTab("other")],

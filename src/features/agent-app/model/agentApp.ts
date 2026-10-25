@@ -48,16 +48,6 @@ import {
   type MonoCard,
 } from "../../monos/model/monoCards";
 import {
-  HABITS_MAX,
-  checkHabitsNow,
-  habitRunningSince,
-  habitSchedule,
-  habitScheduleLabel,
-  newHabit,
-  nextHabitRunAt,
-  type Habit,
-} from "../../monos/model/monoHabits";
-import {
   memoryWithinBudget,
   MonoFileConflict,
   type AgentFilePath,
@@ -131,8 +121,8 @@ export type AgentAppHost = {
   /** Whether the session is a Mono's own conversation, which owns memory. */
   isMono(sessionId: string): boolean;
   /**
-   * The Mono a session works for: its own conversation or one of its habit
-   * runs. Its projects are the ones it may name with "project".
+   * The Mono a session works for: its own conversation. Its projects are the
+   * ones it may name with "project".
    */
   monoOf?(sessionId: string): {
     id: string;
@@ -141,17 +131,8 @@ export type AgentAppHost = {
     /** Files the sessions it starts into a folder named after it. */
     folder?: { name: string; color: string };
   } | undefined;
-  /** A hidden run of one of a Mono's habits: it may remember, not schedule. */
-  isHabitRun?(sessionId: string): boolean;
-  /** Puts a card in the Mono's chat, or holds it for a habit run's report. */
+  /** Puts a card in the Mono's chat. */
   postCard?(sourceSessionId: string, card: MonoCard): void;
-  habits?: {
-    load(monoId: string): Promise<Habit[]>;
-    update<T>(
-      monoId: string,
-      change: (habits: Habit[]) => { habits: Habit[]; result: T },
-    ): Promise<T>;
-  };
   agentFiles(monoId: string): Promise<MonoFiles>;
   readAgentFile(
     monoId: string,
@@ -215,11 +196,6 @@ const FIELDS = new Map<string, readonly string[]>([
   ["memory.add", ["fact", "topic", "until"]],
   ["memory.replace", ["find", "fact", "topic", "until"]],
   ["memory.remove", ["find", "topic"]],
-  ["habits.list", []],
-  ["habits.add", ["name", "instructions", "schedule"]],
-  ["habits.update", ["id", "name", "instructions", "schedule", "enabled"]],
-  ["habits.run", ["id"]],
-  ["habits.remove", ["id"]],
   ["chat.card", [...CARD_FIELDS]],
 ]);
 
@@ -698,135 +674,6 @@ async function handleMemory(
   throw new Error(`Unknown app action: ${action}`);
 }
 
-function habitView(habit: Habit) {
-  return {
-    id: habit.id,
-    name: habit.name,
-    instructions: habit.instructions,
-    schedule: habitScheduleLabel(habit.schedule),
-    enabled: habit.enabled,
-    nextRun: habit.enabled ? new Date(habit.nextRunAt).toLocaleString() : null,
-    ...(habitRunningSince(habit.id) != null ? { running: true } : {}),
-    ...(habit.lastRunAt
-      ? {
-          lastRun: new Date(habit.lastRunAt).toLocaleString(),
-          lastOutcome: habit.lastOutcome,
-          ...(habit.lastError ? { lastError: habit.lastError } : {}),
-        }
-      : {}),
-  };
-}
-
-async function handleHabits(
-  source: Session,
-  action: string,
-  input: Record<string, unknown>,
-  host: AgentAppHost,
-): Promise<unknown> {
-  const habits = host.habits;
-  // A habit's own run cannot schedule more runs.
-  const monoId = host.isMono(source.id)
-    ? host.monoOf?.(source.id)?.id
-    : undefined;
-  if (!habits || !monoId)
-    throw new Error("Only a Mono's own conversation can manage its habits");
-  const now = host.now?.() ?? new Date();
-  const find = (list: Habit[]) => {
-    const id = requiredString(input.id, "id", 128);
-    const habit = list.find((entry) => entry.id === id);
-    if (!habit) throw new Error("No habit with that id; run habits.list");
-    return habit;
-  };
-  switch (action) {
-    case "habits.list":
-      return { habits: (await habits.load(monoId)).map(habitView) };
-    case "habits.add": {
-      const name = requiredString(input.name, "name", 80);
-      const instructions = requiredString(input.instructions, "instructions", 4_000);
-      const schedule = habitSchedule(input.schedule);
-      const habit = await habits.update(monoId, (list) => {
-        if (list.length >= HABITS_MAX)
-          throw new Error(`A Mono can have at most ${HABITS_MAX} habits`);
-        const created = newHabit(
-          { name, instructions, schedule },
-          now.getTime(),
-        );
-        return { habits: [...list, created], result: created };
-      });
-      return { habit: habitView(habit) };
-    }
-    case "habits.update": {
-      const patch = {
-        ...(input.name === undefined
-          ? {}
-          : { name: requiredString(input.name, "name", 80) }),
-        ...(input.instructions === undefined
-          ? {}
-          : {
-              instructions: requiredString(
-                input.instructions,
-                "instructions",
-                4_000,
-              ),
-            }),
-        ...(input.schedule === undefined
-          ? {}
-          : { schedule: habitSchedule(input.schedule) }),
-      };
-      if (input.enabled !== undefined && typeof input.enabled !== "boolean")
-        throw new Error("enabled must be true or false");
-      const habit = await habits.update(monoId, (list) => {
-        const current = find(list);
-        const next: Habit = {
-          ...current,
-          ...patch,
-          ...(input.enabled === undefined
-            ? {}
-            : { enabled: input.enabled as boolean }),
-        };
-        // A new schedule, or turning it back on, counts from now.
-        if (patch.schedule || (next.enabled && !current.enabled))
-          next.nextRunAt = nextHabitRunAt(next.schedule, now.getTime());
-        return {
-          habits: list.map((entry) => (entry.id === next.id ? next : entry)),
-          result: next,
-        };
-      });
-      return { habit: habitView(habit) };
-    }
-    case "habits.run": {
-      const running = habitRunningSince(requiredString(input.id, "id", 128));
-      if (running != null)
-        throw new Error(
-          `That habit is already running (started ${new Date(running).toLocaleTimeString()}); its result will be posted here when it ends`,
-        );
-      const habit = await habits.update(monoId, (list) => {
-        const next = { ...find(list), runRequested: true };
-        return {
-          habits: list.map((entry) => (entry.id === next.id ? next : entry)),
-          result: next,
-        };
-      });
-      checkHabitsNow();
-      return {
-        habit: habitView(habit),
-        note: "It starts now, on its own. Whatever it finds is posted to this chat, or nothing if there is nothing to say.",
-      };
-    }
-    case "habits.remove": {
-      const removed = await habits.update(monoId, (list) => {
-        const habit = find(list);
-        return {
-          habits: list.filter((entry) => entry.id !== habit.id),
-          result: habit,
-        };
-      });
-      return { removed: removed.name };
-    }
-  }
-  throw new Error(`Unknown app action: ${action}`);
-}
-
 function artifactKind(value: unknown): ArtifactKind {
   if (value === undefined) return "document";
   if (ARTIFACT_KINDS.includes(value as ArtifactKind))
@@ -841,7 +688,7 @@ async function handleArtifacts(
   input: Record<string, unknown>,
   host: AgentAppHost,
 ): Promise<unknown> {
-  if (!(host.isMono(source.id) || host.isHabitRun?.(source.id)))
+  if (!host.isMono(source.id))
     throw new Error("Only a Mono can create or read artifacts");
   if (!host.artifact) throw new Error("Artifacts are unavailable");
   if (action === "artifacts.list") {
@@ -957,21 +804,14 @@ export async function handleAgentApp(
     return handleSoul(source, action, input, host);
   if (action.startsWith("memory."))
     return handleMemory(source, action, input, host);
-  if (action.startsWith("habits."))
-    return handleHabits(source, action, input, host);
   if (action === "chat.card") {
-    if (
-      !host.postCard ||
-      !(host.isMono(source.id) || host.isHabitRun?.(source.id))
-    )
+    if (!host.postCard || !host.isMono(source.id))
       throw new Error("Only a Mono can put cards in its chat");
     const card = parseCard(input);
     host.postCard(source.id, card);
     return {
       posted: card.type,
-      note: host.isMono(source.id)
-        ? "It shows in the chat where you are in your reply."
-        : "It goes out with your report, after its text; if you stay quiet, it is dropped.",
+      note: "It shows in the chat where you are in your reply.",
     };
   }
   switch (action) {
@@ -1056,11 +896,7 @@ export async function handleAgentApp(
       if (!/^[A-Za-z0-9_-]{1,128}$/.test(requestId))
         throw new Error("Invalid request ID");
       const target = await projectSession(source, id, input, host);
-      if (
-        target.orchestrationLeadId ||
-        host.isMono(id) ||
-        host.isHabitRun?.(id)
-      )
+      if (target.orchestrationLeadId || host.isMono(id))
         throw new Error("Only regular project sessions can be managed here");
       if (action === "sessions.stop") {
         await host.stop(id);

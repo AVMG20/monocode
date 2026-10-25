@@ -28,27 +28,6 @@ import { Check, ChevronDown, Plus, Search } from "../../../shared/ui/icons";
 import { Popover, type PopoverAnchor } from "../../../shared/ui/Popover";
 import { ProjectLogoIcon } from "./ProjectLogoIcon";
 import { ProjectMascot } from "./ProjectMascot";
-import { PixelMascot } from "./PixelMascot";
-import { MonoRailMascot } from "../../monos/ui/MonoRailMascot";
-import { MONO_STATUS_LABEL, type MonoStatus } from "../../monos/model/mono";
-
-/** A Mono the picker offers beside the projects. */
-export type PickerMono = {
-  id: string;
-  name: string;
-  mascot: string;
-  color: string;
-  status?: MonoStatus;
-};
-
-/** Monos listed above the projects; picking one opens it. */
-export type PickerMonos = {
-  items: readonly PickerMono[];
-  /** The Mono open in the main area; then no project is the current one. */
-  activeId?: string;
-  onOpen: (monoId: string) => void;
-  onCreate?: () => void;
-};
 
 type Props = {
   cwd: string;
@@ -72,8 +51,6 @@ type Props = {
   ) => void;
   /** Keeps the dropdown open while the project's context menu or its dialogs show. */
   projectMenuActive?: boolean;
-  /** Lists Monos first, for the compact rail where they have no row of their own. */
-  monos?: PickerMonos;
 };
 
 export function SearchableProjectPicker({
@@ -90,7 +67,6 @@ export function SearchableProjectPicker({
   onOpenProject,
   onProjectContextMenu,
   projectMenuActive = false,
-  monos,
 }: Props) {
   const [open, setOpen] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
@@ -106,7 +82,6 @@ export function SearchableProjectPicker({
   const logoPath = resolveTabGroupLogo(key, groupLogos);
   const color = resolveTabGroupColor(key, groupColors, groupCustomColors, seed);
   const orderedProjects = pickerProjects(recents, cwd, railCwd);
-  const activeMono = monos?.items.find((mono) => mono.id === monos.activeId);
   const closePicker = () => setOpen(false);
   const openPicker = () => setOpen(true);
 
@@ -121,32 +96,13 @@ export function SearchableProjectPicker({
     >
       <button
         type="button"
-        title={
-          compact
-            ? undefined
-            : activeMono
-              ? `${activeMono.name}\n${MONO_STATUS_LABEL[activeMono.status ?? "idle"]}`
-              : inProject
-                ? cwd
-                : undefined
-        }
-        // The compact rail draws its own instant tooltip from these.
-        data-rail-tip={
-          compact
-            ? (activeMono?.name ?? (inProject ? label : action))
-            : undefined
-        }
-        data-rail-tip-detail={
-          compact && activeMono
-            ? MONO_STATUS_LABEL[activeMono.status ?? "idle"]
-            : undefined
-        }
+        title={compact ? undefined : inProject ? cwd : undefined}
+        // The compact rail draws its own instant tooltip from this.
+        data-rail-tip={compact ? (inProject ? label : action) : undefined}
         aria-label={
-          activeMono
-            ? `${action}, current mono ${activeMono.name}, ${MONO_STATUS_LABEL[activeMono.status ?? "idle"]}`
-            : inProject
-              ? `${action}, current project ${label}`
-              : "Choose project for note"
+          inProject
+            ? `${action}, current project ${label}`
+            : "Choose project for note"
         }
         aria-expanded={open}
         aria-haspopup="dialog"
@@ -168,14 +124,7 @@ export function SearchableProjectPicker({
               : "text-content/50 hover:bg-content/5 hover:text-content"
         }${buttonClassName ? ` ${buttonClassName}` : ""}`}
       >
-        {activeMono ? (
-          <MonoRailMascot
-            name={activeMono.mascot}
-            color={activeMono.color}
-            status={activeMono.status}
-            className={`${compact ? "size-4" : "size-3.5"} shrink-0`}
-          />
-        ) : !inProject ? null : logoPath ? (
+        {!inProject ? null : logoPath ? (
           <ProjectLogoIcon
             path={logoPath}
             className={`${compact ? "size-4" : "size-3.5"} shrink-0 rounded-sm`}
@@ -193,7 +142,7 @@ export function SearchableProjectPicker({
         {compact ? null : (
           <>
             <span className="min-w-0 truncate font-medium text-content/90">
-              {activeMono?.name ?? label}
+              {label}
             </span>
             <ChevronDown
               className={`size-3 shrink-0 text-content/45 transition-transform ${
@@ -214,7 +163,6 @@ export function SearchableProjectPicker({
           onOpenProject={onOpenProject}
           onProjectContextMenu={onProjectContextMenu}
           projectMenuActive={projectMenuActive}
-          monos={monos}
         />
       ) : null}
     </div>
@@ -222,7 +170,7 @@ export function SearchableProjectPicker({
 }
 
 /** The rail's projects with the current one first, even when it is unlisted. */
-export function pickerProjects(
+function pickerProjects(
   recents: RecentProject[],
   cwd: string,
   railCwd?: string,
@@ -245,7 +193,6 @@ type ProjectPickerPopoverProps = Pick<
   | "onOpenProject"
   | "onProjectContextMenu"
   | "projectMenuActive"
-  | "monos"
 > & {
   anchor: PopoverAnchor;
   projects: readonly RecentProject[];
@@ -253,13 +200,10 @@ type ProjectPickerPopoverProps = Pick<
   onDismiss: () => void;
   label?: string;
   emptyMessage?: string;
-  /** A flyout off another menu opens beside it, and that menu owns outside
-   * clicks for both. */
-  flyout?: { layer: number; attributes?: Record<`data-${string}`, boolean> };
 };
 
-/** Shared searchable project menu for switching projects or adding them to a Mono. */
-export function ProjectPickerPopover({
+/** The searchable project menu for switching projects. */
+function ProjectPickerPopover({
   anchor,
   projects,
   currentProject,
@@ -268,10 +212,8 @@ export function ProjectPickerPopover({
   onOpenProject,
   onProjectContextMenu,
   projectMenuActive = false,
-  monos,
   label = "Project picker",
   emptyMessage = "No projects found",
-  flyout,
 }: ProjectPickerPopoverProps) {
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
@@ -280,16 +222,9 @@ export function ProjectPickerPopover({
   const { groupLabels, groupColors, groupCustomColors, groupMascots } =
     useProjectAppearance();
   const groupLogos = useTabGroupLogos();
-  const activeMono = monos?.items.find((mono) => mono.id === monos.activeId);
-  // With a Mono open, no project is current: each one is a way back.
   const isCurrent = (path: string) =>
-    !activeMono &&
-    currentProject != null &&
-    sameProjectPath(path, currentProject);
+    currentProject != null && sameProjectPath(path, currentProject);
   const normalizedQuery = query.trim().toLocaleLowerCase();
-  const filteredMonos = (monos?.items ?? []).filter((mono) =>
-    mono.name.toLocaleLowerCase().includes(normalizedQuery),
-  );
   const filteredProjects = normalizedQuery
     ? projects.filter((item) => {
         const itemKey = projectKey(item.path);
@@ -317,19 +252,11 @@ export function ProjectPickerPopover({
     if (!isCurrent(path)) onSelectProject(path);
   };
 
-  const pickMono = (monoId: string) => {
-    onDismiss();
-    monos?.onOpen(monoId);
-  };
-
-  /** Keyboard rows: the Monos, then the projects. */
-  const rowCount = filteredMonos.length + filteredProjects.length;
+  /** Keyboard rows: the projects. */
+  const rowCount = filteredProjects.length;
   const pickRow = (index: number) => {
-    if (index < filteredMonos.length) pickMono(filteredMonos[index].id);
-    else {
-      const project = filteredProjects[index - filteredMonos.length];
-      if (project) pickProject(project.path);
-    }
+    const project = filteredProjects[index];
+    if (project) pickProject(project.path);
   };
 
   const onPickerKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
@@ -345,7 +272,7 @@ export function ProjectPickerPopover({
         target instanceof HTMLInputElement
           ? active
           : Array.prototype.indexOf.call(rows, target);
-      const project = filteredProjects[index - filteredMonos.length];
+      const project = filteredProjects[index];
       const row = rows[index];
       if (!project || !row) return;
       event.preventDefault();
@@ -380,16 +307,14 @@ export function ProjectPickerPopover({
   return (
     <Popover
       anchor={anchor}
-      side={flyout ? "right" : "bottom"}
+      side="bottom"
       align="start"
-      gap={flyout ? -4 : 4}
+      gap={4}
       width={286}
       maxHeight={380}
-      layer={flyout?.layer}
-      {...flyout?.attributes}
       role="dialog"
       aria-label={label}
-      onDismiss={projectMenuActive || flyout ? undefined : onDismiss}
+      onDismiss={projectMenuActive ? undefined : onDismiss}
       onKeyDown={onPickerKeyDown}
       className="flex flex-col overflow-hidden"
     >
@@ -403,11 +328,7 @@ export function ProjectPickerPopover({
             setQuery(event.target.value);
             setActive(0);
           }}
-          placeholder={
-            monos?.items.length
-              ? "Search monos and projects..."
-              : "Search projects..."
-          }
+          placeholder="Search projects..."
           className="min-w-0 flex-1 bg-transparent text-[13px] text-content outline-none placeholder:text-content/35"
         />
       </label>
@@ -415,41 +336,8 @@ export function ProjectPickerPopover({
         ref={listRef}
         className="min-h-0 flex-1 overflow-y-auto overscroll-none p-1.5"
       >
-        {filteredMonos.map((mono, index) => (
-          <button
-            key={`mono:${mono.id}`}
-            type="button"
-            title={mono.name}
-            data-picker-mono={mono.id}
-            onMouseEnter={() => setActive(index)}
-            onClick={() => pickMono(mono.id)}
-            className={`flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left ${
-              active === index
-                ? "bg-selection text-content"
-                : "text-content/75 hover:bg-content/5 hover:text-content"
-            }`}
-          >
-            <span className="grid size-4 shrink-0 place-items-center">
-              {mono.id === monos?.activeId ? (
-                <Check className="size-3.5" strokeWidth={2} />
-              ) : (
-                <PixelMascot
-                  name={mono.mascot}
-                  color={mono.color}
-                  still
-                  className="size-4"
-                />
-              )}
-            </span>
-            <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
-              {mono.name}
-            </span>
-            <span className="shrink-0 text-[11px] text-content/40">Mono</span>
-          </button>
-        ))}
         {filteredProjects.length > 0 ? (
-          filteredProjects.map((item, projectIndex) => {
-            const index = filteredMonos.length + projectIndex;
+          filteredProjects.map((item, index) => {
             const current = isCurrent(item.path);
             const itemKey = projectKey(item.path);
             const itemSeed = projectName(item.path);
@@ -519,40 +407,25 @@ export function ProjectPickerPopover({
               </button>
             );
           })
-        ) : filteredMonos.length ? null : (
+        ) : (
           <p className="px-2.5 py-5 text-center text-[12px] text-content/45">
             {emptyMessage}
           </p>
         )}
       </div>
-      {onOpenProject || monos?.onCreate ? (
+      {onOpenProject ? (
         <div className="shrink-0 border-t border-stroke p-1.5">
-          {monos?.onCreate ? (
-            <button
-              type="button"
-              onClick={() => {
-                onDismiss();
-                monos.onCreate?.();
-              }}
-              className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] text-content/75 hover:bg-content/8 hover:text-content"
-            >
-              <Plus className="size-4 shrink-0" strokeWidth={1.75} />
-              <span>New mono</span>
-            </button>
-          ) : null}
-          {onOpenProject ? (
-            <button
-              type="button"
-              onClick={() => {
-                onDismiss();
-                onOpenProject();
-              }}
-              className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] text-content/75 hover:bg-content/8 hover:text-content"
-            >
-              <Plus className="size-4 shrink-0" strokeWidth={1.75} />
-              <span>New project</span>
-            </button>
-          ) : null}
+          <button
+            type="button"
+            onClick={() => {
+              onDismiss();
+              onOpenProject();
+            }}
+            className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] text-content/75 hover:bg-content/8 hover:text-content"
+          >
+            <Plus className="size-4 shrink-0" strokeWidth={1.75} />
+            <span>New project</span>
+          </button>
         </div>
       ) : null}
     </Popover>

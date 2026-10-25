@@ -1,5 +1,3 @@
-import { habitSchedule, type HabitSchedule } from "./monoHabits";
-
 /**
  * Cards a Mono puts in its chat beside its words, with the app CLI's
  * `chat.card`. A card names what it is about and the app shows its current
@@ -20,13 +18,6 @@ export type MonoCard =
       /** Replies the user can send with a tap, after a question. */
       type: "choices";
       options: string[];
-    }
-  | {
-      /** A habit the Mono suggests; nothing runs until the user starts it. */
-      type: "habit";
-      name: string;
-      instructions: string;
-      schedule: HabitSchedule;
     };
 
 export const CARD_FIELDS = [
@@ -104,31 +95,9 @@ export function parseCard(input: Record<string, unknown>): MonoCard {
         options: options.map((option) => text(option, "each option", 80)),
       };
     }
-    case "habit": {
-      only(input, ["name", "instructions", "schedule"]);
-      return {
-        type: "habit",
-        name: text(input.name, "name", 80),
-        instructions: text(input.instructions, "instructions", 4_000),
-        schedule: habitSchedule(input.schedule),
-      };
-    }
     default:
-      throw new Error("type must be pr, session, choices or habit");
+      throw new Error("type must be pr, session or choices");
   }
-}
-
-/* Cards a habit's hidden run makes go out with its report, or not at all. */
-const runCards = new Map<string, MonoCard[]>();
-
-export function holdRunCard(runId: string, card: MonoCard): void {
-  runCards.set(runId, [...(runCards.get(runId) ?? []), card]);
-}
-
-export function takeRunCards(runId: string): MonoCard[] {
-  const cards = runCards.get(runId) ?? [];
-  runCards.delete(runId);
-  return cards;
 }
 
 /** What a session card shows about the session it points at. */
@@ -171,27 +140,4 @@ export function openCardSession(sessionId: string): void {
 export function subscribeCardSessions(onChange: () => void): () => void {
   window.addEventListener(INDEX_CHANGED, onChange);
   return () => window.removeEventListener(INDEX_CHANGED, onChange);
-}
-
-const DECLINED_KEY = "monocode:mono-declined-habits";
-
-/** Habit suggestions the user said no to, by the card's block id. */
-export function declinedHabitCards(): Set<string> {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(DECLINED_KEY) ?? "[]");
-    return new Set(Array.isArray(parsed) ? parsed : []);
-  } catch {
-    return new Set();
-  }
-}
-
-export function declineHabitCard(blockId: string): void {
-  const declined = declinedHabitCards();
-  declined.add(blockId);
-  try {
-    localStorage.setItem(DECLINED_KEY, JSON.stringify([...declined]));
-  } catch {
-    // It shows as undecided again after a restart; nothing else breaks.
-  }
-  window.dispatchEvent(new CustomEvent(INDEX_CHANGED));
 }
