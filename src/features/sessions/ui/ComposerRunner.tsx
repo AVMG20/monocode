@@ -514,15 +514,20 @@ export function ComposerRunner({
       frameNow = now;
 
       const box = boxRef.current;
+      // Nothing left to draw once the turn is over: hand back so the loop
+      // ends instead of running every frame for an empty stage.
+      const finishIfIdle = () => {
+        if (busyRef.current || finished) return false;
+        finished = true;
+        resetStage();
+        clearCoins();
+        onExitedRef.current();
+        return true;
+      };
       if (!enabledRef.current) {
         showLayer(false);
         endStun();
-        if (!busyRef.current && !finished) {
-          finished = true;
-          resetStage();
-          clearCoins();
-          onExitedRef.current();
-        }
+        finishIfIdle();
         // A pane in a background tab is disabled and stops re-rendering, so
         // `busy` can't change until the tab is shown. Draw no frames until
         // a prop does.
@@ -531,6 +536,7 @@ export function ComposerRunner({
       }
       if (!box || document.hidden) {
         showLayer(false);
+        if (finishIfIdle()) parked = true;
         return;
       }
 
@@ -572,6 +578,7 @@ export function ComposerRunner({
       if (!track) return;
       if (track.width <= 0) {
         showLayer(false);
+        if (finishIfIdle()) parked = true;
         return;
       }
       showLayer(true);
@@ -847,7 +854,9 @@ export function ComposerRunner({
       );
     };
 
-    apply(last);
+    // The layer starts hidden, so the first frame can wait for the next
+    // animation frame rather than forcing layout during the commit (on send,
+    // and when a busy session opens).
     const tick = (now: number) => {
       apply(now);
       if (!parked) raf = requestAnimationFrame(tick);

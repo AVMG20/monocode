@@ -20,6 +20,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
+import { useStableValue } from "../../../shared/hooks/useStableValue";
 import { Composer } from "./Composer";
 import {
   RunningSubagents,
@@ -474,12 +475,14 @@ const LocalSessionPane = memo(function LocalSessionPane({
     () => SESSION_STEPS_DEFAULT,
   );
   // The session's task list, pinned above the transcript like a thread's.
-  const steps = useMemo(
-    () =>
-      sessionStepsEnabled && !agent && !hideSteps
-        ? threadSteps(session.blocks)
-        : undefined,
-    [sessionStepsEnabled, agent, hideSteps, session.blocks],
+  const steps = useStableValue(
+    useMemo(
+      () =>
+        sessionStepsEnabled && !agent && !hideSteps
+          ? threadSteps(session.blocks)
+          : undefined,
+      [sessionStepsEnabled, agent, hideSteps, session.blocks],
+    ),
   );
   const coordinator = isCoordinatorProject(mono);
   // The threads it names in its replies link to them, with their status.
@@ -561,9 +564,13 @@ const LocalSessionPane = memo(function LocalSessionPane({
   // A delegated run swapped in for the transcript from the composer dock.
   const [viewedSubagentId, setViewedSubagentId] = useState<string | null>(null);
   useEffect(() => setViewedSubagentId(null), [session.id]);
-  const liveSubagents = useMemo(
-    () => (session.busy ? runningSubagents(session.blocks) : []),
-    [session.busy, session.blocks],
+  // Recomputed per streamed update, but the dock, the runner and the memos
+  // below only see a new list when the runs themselves change.
+  const liveSubagents = useSameItems(
+    useMemo(
+      () => (session.busy ? runningSubagents(session.blocks) : NO_BLOCKS),
+      [session.busy, session.blocks],
+    ),
   );
   const viewedSubagent = viewedSubagentId
     ? session.blocks.find((block) => block.id === viewedSubagentId)
@@ -593,7 +600,14 @@ const LocalSessionPane = memo(function LocalSessionPane({
     () => subagentBackgroundTasks(session.backgroundTasks ?? [], subagentRuns),
     [session.backgroundTasks, subagentRuns],
   );
-  const subagentTaskIds = new Set(subagentTasks.values());
+  const subagentTaskIds = useMemo(
+    () => new Set(subagentTasks.values()),
+    [subagentTasks],
+  );
+  const stoppableSubagents = useMemo(
+    () => new Set(subagentTasks.keys()),
+    [subagentTasks],
+  );
   const runnerCompanions = useMemo(
     () =>
       liveSubagents.map((block) => ({
@@ -602,12 +616,14 @@ const LocalSessionPane = memo(function LocalSessionPane({
       })),
     [liveSubagents],
   );
-  const runnerSignalsNow = useMemo(
-    () =>
-      session.busy
-        ? runnerSignals(session.blocks, session.pendingQuestion != null)
-        : NO_RUNNER_SIGNALS,
-    [session.busy, session.blocks, session.pendingQuestion],
+  const runnerSignalsNow = useStableValue(
+    useMemo(
+      () =>
+        session.busy
+          ? runnerSignals(session.blocks, session.pendingQuestion != null)
+          : NO_RUNNER_SIGNALS,
+      [session.busy, session.blocks, session.pendingQuestion],
+    ),
   );
   // Approvals and questions only show in Main, so a run waiting on one must
   // not leave the reader looking somewhere else.
@@ -932,6 +948,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       subagents={
         subagentRuns.length ? (
           <RunningSubagents
+            visible={visible}
             runs={subagentRuns}
             liveIds={liveSubagentIds}
             viewedId={viewedSubagent ? viewedSubagent.id : null}
@@ -941,7 +958,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
               if (blockId === null || !needsAnswer)
                 setViewedSubagentId(blockId);
             }}
-            stoppable={new Set(subagentTasks.keys())}
+            stoppable={stoppableSubagents}
             onStop={
               onStopBackgroundTask &&
               !remote &&
@@ -1567,4 +1584,19 @@ function monoUsageProviders(harness: HarnessId): RateLimitProvider[] {
     harness === "devin"
     ? [harness]
     : [];
+}
+
+const NO_BLOCKS: Block[] = [];
+
+/** The previous array while it holds the same items, so memos keyed on it hold. */
+function useSameItems<T>(items: T[]): T[] {
+  const previous = useRef(items);
+  const current = previous.current;
+  if (
+    current !== items &&
+    (current.length !== items.length ||
+      current.some((item, index) => item !== items[index]))
+  )
+    previous.current = items;
+  return previous.current;
 }
