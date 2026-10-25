@@ -160,7 +160,9 @@ export const ProjectSidebar = memo(function ProjectSidebar({
     return () => window.clearInterval(id);
   }, []);
 
-  const needle = query.trim().toLowerCase();
+  // The box only shows from SEARCH_FROM threads; below that a leftover
+  // query must not keep filtering a list with no way to clear it.
+  const needle = views.length >= SEARCH_FROM ? query.trim().toLowerCase() : "";
   const searching = !!needle;
   const groups = useMemo(
     () =>

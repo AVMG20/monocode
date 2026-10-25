@@ -355,6 +355,11 @@ type Props = {
    * the rail is hidden.
    */
   projectPanel?: (topBar: ReactNode) => ReactNode;
+  /**
+   * Leaves the view covering the workspace (an app view or a project) for
+   * the rail's workspace tabs. Back may stop on the way (a project's chat).
+   */
+  onLeaveView?: () => void;
   /** The Claude Projects on the rail; absent while they are off. */
   coordinators?: CoordinatorRailProps;
 };
@@ -450,6 +455,7 @@ function SidebarComponent({
   onDismissUpdate,
   monoViewActive = false,
   projectPanel,
+  onLeaveView,
   coordinators,
 }: Props) {
   const trafficLightsVisible = useTrafficLightsVisible();
@@ -1629,7 +1635,6 @@ function SidebarComponent({
     for (const session of listedSessions) motion.seen.add(session.id);
   });
 
-
   const renderSessionRow = (session: SessionSummary, compact = false) =>
     renamingSessionId === session.id && onRenameSession ? (
       <SessionRenameRow
@@ -2090,10 +2095,7 @@ function SidebarComponent({
                                 const collapsed = !entry.collapsed;
                                 if (isReminders) {
                                   setReminderSessionsCollapsed(collapsed);
-                                  saveReminderSessionsCollapsed(
-                                    cwd,
-                                    collapsed,
-                                  );
+                                  saveReminderSessionsCollapsed(cwd, collapsed);
                                   return;
                                 }
                                 setPinnedSessionsCollapsed(collapsed);
@@ -2417,7 +2419,7 @@ function SidebarComponent({
           automationsActive={automationsActive}
           onOpenSettings={onOpenSettings}
           onTogglePanel={onToggleProjectRail}
-          onLeaveActive={onGoBack}
+          onLeaveActive={onLeaveView ?? onGoBack}
           titleBarAbove={titleBarAbove}
           monoViewActive={monoViewActive}
           coordinators={railCoordinators}

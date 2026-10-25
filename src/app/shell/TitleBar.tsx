@@ -109,8 +109,6 @@ type Props = {
   /** Shows or hides the Mono's overview panel beside its chat. */
   onToggleMonoOverview?: () => void;
   monoOverviewOpen?: boolean;
-  /** A project's threads: how many wait for the user and how many run. */
-  monoThreads?: ThreadCounts;
   onOpenMonoSettings?: () => void;
   /** The full-height Mono panel owns these while it is open. */
   hideWindowControls?: boolean;
@@ -608,42 +606,29 @@ export function TabVisitNav({
   );
 }
 
-type ThreadCounts = { waiting: number; busy: number };
-
 /** A Mono's overview toggle and settings, beside its conversation. */
 function MonoViewActions({
   name,
   overviewOpen,
   onToggleOverview,
   onOpenSettings,
-  threads,
   className = "",
 }: {
   name: string;
   overviewOpen: boolean;
   onToggleOverview?: () => void;
   onOpenSettings?: () => void;
-  /** A project's threads, counted on the overview button. */
-  threads?: ThreadCounts;
   className?: string;
 }) {
   const label = overviewOpen ? "Hide overview" : "Show overview";
-  const detail = threads
-    ? [
-        threads.waiting ? `${threads.waiting} waiting for you` : "",
-        threads.busy ? `${threads.busy} busy` : "",
-      ]
-        .filter(Boolean)
-        .join(", ")
-    : "";
   return (
     <div className={`flex items-center gap-1 ${className}`}>
       {onToggleOverview ? (
         <button
           type="button"
           aria-pressed={overviewOpen}
-          title={detail ? `${label} (${detail})` : label}
-          aria-label={detail ? `${label}, ${detail}` : label}
+          title={label}
+          aria-label={label}
           data-tauri-drag-region="false"
           onClick={onToggleOverview}
           className={`flex h-6 items-center gap-1.5 rounded-md px-2 text-[12px] ${
@@ -654,17 +639,6 @@ function MonoViewActions({
         >
           <DashboardSquare className="size-3.5" strokeWidth={1.75} />
           Overview
-          {threads?.busy ? (
-            <span className="flex items-center gap-1 rounded-full bg-accent/12 px-1.5 text-[10.5px] tabular-nums text-accent">
-              <TerminalSpinner className="inline-block w-2.5 select-none text-center text-[10px] leading-none" />
-              {threads.busy}
-            </span>
-          ) : null}
-          {threads?.waiting ? (
-            <span className="grid min-w-4 place-items-center rounded-full bg-amber-400/90 px-1 text-[10.5px] font-semibold tabular-nums leading-4 text-black">
-              {threads.waiting}
-            </span>
-          ) : null}
         </button>
       ) : null}
       {onOpenSettings ? (
@@ -711,7 +685,6 @@ function TitleBarComponent({
   mono,
   onToggleMonoOverview,
   monoOverviewOpen = false,
-  monoThreads,
   onOpenMonoSettings,
   hideWindowControls = false,
   projectRailOpen = true,
@@ -1005,7 +978,6 @@ function TitleBarComponent({
             overviewOpen={monoOverviewOpen}
             onToggleOverview={onToggleMonoOverview}
             onOpenSettings={onOpenMonoSettings}
-            threads={monoThreads}
             className="px-3"
           />
         ) : null}
@@ -1060,7 +1032,11 @@ function TitleBarComponent({
       ) : null}
       {/* Both the rail and the sidebar step aside without a project, so the
           title bar takes over the traffic lights and the rail toggle. */}
-      {projectless && railClosed && !compactRail ? (
+      {/* An open project's sidebar carries them instead, when it shows. */}
+      {projectless &&
+      railClosed &&
+      !compactRail &&
+      !(mono && sessionSidebarOpen) ? (
         <>
           {trafficLightsVisible ? <div className="w-[78px] shrink-0" /> : null}
           <div className="flex shrink-0 items-center px-1.5">

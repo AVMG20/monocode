@@ -114,7 +114,6 @@ export function MonoOverview({
   return (
     <MonoSidebar
       open={open}
-      kind="details"
       label={`${agent.name} overview`}
       color={agent.color}
       windowControls={windowControls}
@@ -158,6 +157,8 @@ export function MonoOverview({
             data-mono-overview={tab === "changes" ? "changes" : undefined}
           >
             <MonoChangesView
+              // Another conversation's changes start their own review.
+              key={changes.sessionId}
               sessionId={changes.sessionId}
               cwd={changes.cwd}
               request={changes.request}
