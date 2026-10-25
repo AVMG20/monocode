@@ -2775,23 +2775,6 @@ html.theme-light .mono-pill {
   margin-top: 0;
 }
 
-.agent-chat-bubble-md.agent-markdown > :first-child,
-.agent-chat-bubble-md.agent-markdown > .agent-markdown-block:first-child > * {
-  margin-top: 0;
-}
-
-.agent-chat-bubble-md.agent-markdown > :last-child,
-.agent-chat-bubble-md.agent-markdown > .agent-markdown-block:last-child > * {
-  margin-bottom: 0;
-}
-
-/* Inline code must fit inside the dots' 24px line box. A 24px inline-flex
-   badge on the text baseline makes even a one-line reply a pixel taller. */
-.agent-chat-bubble-md.agent-markdown :not(pre) > code {
-  min-height: 0;
-  line-height: 1.4;
-}
-
 /* Shaded pixel mascots. Motion moves half a sprite cell at a time and stays
    unhurried; blinks swap in closed eyes instead of squashing open ones. */
 .pixel-bob {

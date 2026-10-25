@@ -185,6 +185,7 @@ import { SidebarUpdateFooter } from "./SidebarUpdate";
 import { SourceControl } from "../../features/source-control/ui/SourceControl";
 import { GithubStarPrompt } from "./GithubStarPrompt";
 import {
+  listAgentMonos,
   listMonos,
   monosSnapshot,
   subscribeMonos,
@@ -700,6 +701,17 @@ function SidebarComponent({
       ),
     [rosterSnap],
   );
+  // Standalone Monos are gone; the sessions they started were saved hidden
+  // and had no other place to be found, so they list like any other.
+  const formerMonoSessionIds = useMemo(
+    () =>
+      new Set(
+        listAgentMonos().flatMap((mono) =>
+          mono.sessionId ? [mono.sessionId] : [],
+        ),
+      ),
+    [rosterSnap],
+  );
   // A project's threads live in its threads list, not the workspace's.
   const threadsSnap = useSyncExternalStore(
     subscribeProjectThreads,
@@ -719,8 +731,9 @@ function SidebarComponent({
       inWorktreeFocus(session, focusedWorktree),
   );
   // Sessions saved hidden still show when a listed session started them:
-  // /operator launches were once hidden like a Mono's by mistake. A Mono's
-  // chat is never listed, so its hidden launches stay hidden.
+  // /operator launches were once hidden like a Mono's by mistake. So do the
+  // ones a former standalone Mono started. A project's threads are listed
+  // by the project instead.
   const shownSessionIds = new Set(
     listableSessions
       .filter((session) => !session.sidebarHidden)
@@ -729,7 +742,8 @@ function SidebarComponent({
   const listedSessions = listableSessions.filter(
     (session) =>
       !session.sidebarHidden ||
-      !!startedSessionCaller(session.id, shownSessionIds),
+      !!startedSessionCaller(session.id, shownSessionIds) ||
+      !!startedSessionCaller(session.id, formerMonoSessionIds),
   );
   const visibleSessions = [
     ...filterSessionsByQuery(

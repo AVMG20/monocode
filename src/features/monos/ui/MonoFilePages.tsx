@@ -253,7 +253,7 @@ function FactIcon({ dim = false }: { dim?: boolean }) {
   );
 }
 
-function HabitButton({
+function RowButton({
   label,
   disabled = false,
   onClick,
@@ -333,13 +333,13 @@ function FactRow({
       )}
       <span className="flex shrink-0 items-center pr-2 opacity-0 transition-opacity group-hover/fact:opacity-100 focus-within:opacity-100">
         {struck ? null : (
-          <HabitButton label="Edit" onClick={onEdit}>
+          <RowButton label="Edit" onClick={onEdit}>
             <Pencil className="size-3.5" strokeWidth={1.75} />
-          </HabitButton>
+          </RowButton>
         )}
-        <HabitButton label={`Forget: ${text}`} onClick={onForget}>
+        <RowButton label={`Forget: ${text}`} onClick={onForget}>
           <Trash2 className="size-3.5" strokeWidth={1.75} />
-        </HabitButton>
+        </RowButton>
       </span>
     </li>
   );

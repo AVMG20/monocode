@@ -499,7 +499,7 @@ function TabButton({
   );
 }
 
-/** A document it wrote, laid out like a habit; opens in the reader. */
+/** A document it wrote; opens in the reader. */
 function DocumentRow({
   card,
   onOpen,

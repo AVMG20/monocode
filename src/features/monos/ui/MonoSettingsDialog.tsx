@@ -264,7 +264,7 @@ function GeneralSection({
           <ConfirmReset
             label="Reset conversation"
             title={`Reset ${agent.name}'s conversation?`}
-            body="All messages in this Mono's conversation will be deleted and any active reply will be stopped. This can't be undone."
+            body="All messages in this project's coordinator conversation will be deleted and any active reply will be stopped. This can't be undone."
             kept="Its instructions and memory will be kept."
             failure="Could not reset the conversation."
             onConfirm={onReset}

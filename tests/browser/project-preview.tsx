@@ -130,7 +130,6 @@ const coordinator = thread("project-chat", "Shop", [
 const all = [coordinator, ...threads];
 
 localStorage.setItem("monocode.pacedReveal", "0");
-localStorage.removeItem("monocode.insetLayout");
 localStorage.setItem(
   "monocode:mono-roster",
   JSON.stringify([
