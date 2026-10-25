@@ -18,7 +18,6 @@ import ArrowTurnBackwardIcon from "@hugeicons/core-free-icons/ArrowTurnBackwardI
 import ArrowTurnForwardIcon from "@hugeicons/core-free-icons/ArrowTurnForwardIcon";
 import ArrowUp01Icon from "@hugeicons/core-free-icons/ArrowUp01Icon";
 import BotIcon from "@hugeicons/core-free-icons/BotIcon";
-import GhostIcon from "@hugeicons/core-free-icons/GhostIcon";
 import AiIdeaIcon from "@hugeicons/core-free-icons/AiIdeaIcon";
 import Cancel01Icon from "@hugeicons/core-free-icons/Cancel01Icon";
 import CaseSensitiveIcon from "@hugeicons/core-free-icons/CaseSensitiveIcon";
@@ -167,7 +166,6 @@ export const ArrowDownCircle = wrap(CircleArrowDown01Icon, "ArrowDownCircle");
 export const ArrowLeft = wrap(ArrowLeft01Icon, "ArrowLeft");
 export const ArrowUp = wrap(ArrowUp01Icon, "ArrowUp");
 export const Bot = wrap(BotIcon, "Bot");
-export const Ghost = wrap(GhostIcon, "Ghost");
 export const AiIdea = wrap(AiIdeaIcon, "AiIdea");
 export const CaseSensitive = wrap(CaseSensitiveIcon, "CaseSensitive");
 export const Chatting = wrap(Chatting01Icon, "Chatting");

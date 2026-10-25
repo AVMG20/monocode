@@ -5,10 +5,6 @@ import {
   MonoFileConflict,
   type AgentFilePath,
 } from "../../monos/model/monoFiles";
-import {
-  setHabitRunning,
-  type Habit,
-} from "../../monos/model/monoHabits";
 import { handleAgentApp, type AgentAppHost } from "./agentApp";
 
 /** The agent's folder as a map, with a hash that changes on every write. */
@@ -116,82 +112,6 @@ it("searches MEMORY.md, topics and the archive", async () => {
   expect(await run("memory.search", { query: "fly" })).toMatchObject({
     hits: [{ file: "MEMORY.md" }, { file: "memory/infra.md" }],
   });
-});
-
-function habitsFixture(mono = true) {
-  const source = newSession("codex", "/tmp/project", "codex:test");
-  source.id = "agent";
-  let stored: Habit[] = [];
-  const host = {
-    isMono: (id: string) => mono && id === "agent",
-    monoOf: (id: string) =>
-      mono && id === "agent" ? { id: "mono-1", projects: [] } : undefined,
-    habits: {
-      load: async () => stored,
-      update: async <T,>(
-        _monoId: string,
-        change: (list: Habit[]) => { habits: Habit[]; result: T },
-      ) => {
-        const next = change(stored);
-        stored = next.habits;
-        return next.result;
-      },
-    },
-    now: () => new Date(2026, 9, 5, 8),
-  } as unknown as AgentAppHost;
-  const run = (action: string, input: Record<string, unknown> = {}) =>
-    handleAgentApp(source, `req-${Math.random()}`, action, input, host);
-  return { run, habits: () => stored };
-}
-
-it("lets the Mono add, pause, try and remove its habits", async () => {
-  const { run, habits } = habitsFixture();
-  const added = (await run("habits.add", {
-    name: "Morning CI check",
-    instructions: "Tell me if CI on main is red.",
-    schedule: { kind: "weekdays", time: "09:00" },
-  })) as { habit: { id: string; schedule: string } };
-  expect(added.habit.schedule).toBe("Weekdays at 9:00 AM");
-  expect(habits()[0].nextRunAt).toBe(new Date(2026, 9, 5, 9).getTime());
-  const id = added.habit.id;
-  await run("habits.update", { id, enabled: false });
-  expect(habits()[0].enabled).toBe(false);
-  await run("habits.run", { id });
-  // Runs once now, paused or not, and leaves the schedule alone.
-  expect(habits()[0]).toMatchObject({
-    runRequested: true,
-    enabled: false,
-    nextRunAt: new Date(2026, 9, 5, 9).getTime(),
-  });
-  expect(await run("habits.list")).toMatchObject({
-    habits: [{ id, name: "Morning CI check", enabled: false }],
-  });
-  await run("habits.remove", { id });
-  expect(habits()).toEqual([]);
-  await expect(run("habits.remove", { id })).rejects.toThrow("No habit");
-});
-
-it("keeps habits to the Mono's own conversation", async () => {
-  await expect(habitsFixture(false).run("habits.list")).rejects.toThrow(
-    "Only a Mono",
-  );
-});
-
-it("refuses to start a habit that is already running", async () => {
-  const { run } = habitsFixture();
-  const added = (await run("habits.add", {
-    name: "PR check",
-    instructions: "Look at open PRs.",
-    schedule: { kind: "daily", time: "08:30" },
-  })) as { habit: { id: string } };
-  setHabitRunning(added.habit.id, Date.now());
-  await expect(run("habits.run", { id: added.habit.id })).rejects.toThrow(
-    "already running",
-  );
-  expect(await run("habits.list")).toMatchObject({
-    habits: [{ id: added.habit.id, running: true }],
-  });
-  setHabitRunning(added.habit.id);
 });
 
 function projectFixture(projects: string[], cwd = "/Users/me") {

@@ -94,7 +94,6 @@ import {
 } from "../../features/connections/model/connections";
 import { remoteProjectFor } from "../../features/connections/model/remoteProjects";
 import { useProjectMenu } from "./useProjectMenu";
-import { MonoRailSection, type MonoRailProps } from "./MonoRailSection";
 import {
   CoordinatorRailSection,
   type CoordinatorRailProps,
@@ -135,9 +134,7 @@ type Props = {
   updateNotice?: InstalledUpdate | null;
   onOpenWhatsNew?: (version: string) => void;
   onDismissUpdate?: () => void;
-  /** The Monos section above the projects; absent while Monos are off. */
-  monos?: MonoRailProps;
-  /** The Claude Projects section below the Monos; absent while it is off. */
+  /** The Claude Projects section above the projects; absent while it is off. */
   coordinators?: CoordinatorRailProps;
 };
 
@@ -176,7 +173,6 @@ export function ProjectRail({
   updateNotice = null,
   onOpenWhatsNew,
   onDismissUpdate,
-  monos,
   coordinators,
 }: Props) {
   const trafficLightsVisible = useTrafficLightsVisible();
@@ -348,7 +344,6 @@ export function ProjectRail({
     inboxActive ||
     notesActive ||
     automationsActive ||
-    !!monos?.activeId ||
     !!coordinators?.activeId;
   const pinnedIds = sections.pinned.map((item) => item.path);
   const projectIds = groupedProjectSections.ungrouped.map((item) => item.path);
@@ -441,7 +436,6 @@ export function ProjectRail({
             }}
             className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-none pb-2"
           >
-            {monos ? <MonoRailSection {...monos} /> : null}
             {coordinators ? <CoordinatorRailSection {...coordinators} /> : null}
 
             {sections.pinned.length > 0 ? (

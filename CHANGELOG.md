@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - The optional **New layout** is gone, along with its invitation and the Layout and Transparent window switches in Settings > Appearance. Its redesigned sidebar, project switcher and spaces, workspace tabs for Search, Inbox, Notes and Automations, right panel with the Git **History** tab, workspace themes and slide animations for the terminal panel and right panel went with it. Anyone who had it on gets the classic layout.
+- Standalone **Monos** are gone: the Mono rail and its picker entries, creating a Mono and its introduction, the floating Mono chat window, habits (with their `habits.*` actions and habit cards in `monocode app`), and the Monos page in Settings with its **Show monos** and **Pin monos to the icon rail** switches. **Claude Projects** work as before. The macOS **Menu bar icon** switch for the quick composer moved to Settings > General.
 
 ## [0.15.0] - 2026-10-18
 

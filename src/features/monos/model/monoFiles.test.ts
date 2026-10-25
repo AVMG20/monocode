@@ -6,17 +6,20 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => invoke(...args),
 }));
 
-import { createMono, findMono, HANDED_KEY, updateMono } from "./mono";
+import {
+  createCoordinatorProject,
+  findMono,
+  HANDED_KEY,
+  updateMono,
+} from "./mono";
 import {
   defaultSoul,
   loadMonoFiles,
   MEMORY_MAX_LINES,
   memoryWithinBudget,
   planAgentContext,
-  monoContext,
   monoTurn,
   recordAgentContext,
-  resetMonoDefaults,
 } from "./monoFiles";
 
 beforeEach(() => {
@@ -105,70 +108,8 @@ it("loads only whole lines within the memory budget", () => {
   expect(memoryWithinBudget("").lines).toBe(0);
 });
 
-it("says how to keep memory and update the soul only at the user's request", () => {
-  const look = {
-    name: "Skull",
-    mascot: "skull",
-    color: "#fff",
-    projects: [
-      { path: "/code/monocode", name: "monocode" },
-      { path: "/code/site", name: "site" },
-    ],
-  };
-  const full = monoContext(look, files(), { soul: true, memory: true });
-  expect(full).toContain("You are Skull, a Mono in MonoCode");
-  expect(full).toContain("these 2 projects (monocode and site)");
-  expect(full).toContain("- site: /code/site");
-  expect(full).toContain("Be brief.");
-  expect(full).toContain(
-    "Only when the user asks you to change your soul or standing instructions",
-  );
-  expect(full).toContain("app soul.read {}");
-  expect(full).toContain(
-    'app soul.update {"text":"<complete updated Markdown>","expectedHash":"<hash from soul.read>"}',
-  );
-  expect(full).toContain("preserving the other instructions");
-  expect(full).toContain(
-    "Never change your soul on your own or edit its files directly",
-  );
-  expect(full).not.toContain("never edit that file yourself");
-  expect(full).toContain("app memory.add");
-  expect(full).toContain('app artifacts.write {"kind":"document"');
-  expect(full).toContain("Artifacts are separate from the user's Notes");
-  expect(full).toContain("without repeating its contents");
-  expect(full).not.toContain("app documents.write");
-  expect(full).toContain('"notifyOnComplete":true');
-  expect(full).toContain(
-    "Submitted sessions notify you on completion by default",
-  );
-  expect(full).toContain('set "notifyOnComplete":false on sessions.start');
-  expect(full).toContain("waits for every session in that group to stop");
-  expect(full).toContain("give one consolidated report");
-  expect(full).toContain("acknowledge the action in your current reply");
-  expect(full).toContain("dismisses your pending report for that session");
-  expect(full).toContain("do not generate a later completion notification");
-  expect(full).toContain(
-    "Sessions launched during later turns form separate groups",
-  );
-  expect(full).toContain(
-    "Topic notes, read on demand with memory.read: releases",
-  );
-  expect(full).toContain("releases are tag-triggered");
-  const memoryOnly = monoContext(look, files(), {
-    soul: false,
-    memory: true,
-  });
-  expect(memoryOnly).not.toContain("<soul>");
-  expect(memoryOnly).toContain("<memory>");
-  const alone = monoContext({ ...look, projects: [] }, files(), {
-    soul: true,
-    memory: false,
-  });
-  expect(alone).toContain("has not given you any projects yet");
-});
-
 it("seeds SOUL.md once, moving the old instructions into it", async () => {
-  const { id } = createMono(["/code/app"]);
+  const { id } = createCoordinatorProject({ name: "App", path: "/code/app" });
   updateMono(id, (mono) => ({ ...mono, instructions: "Ship on Fridays" }));
   invoke.mockImplementation(async (command: string) =>
     command === "mono_load" ? { ...files("empty"), soul: null } : "seeded",
@@ -192,29 +133,8 @@ it("seeds SOUL.md once, moving the old instructions into it", async () => {
   expect(findMono(id)?.instructions).toBeUndefined();
 });
 
-it("resets a Mono to the default soul and name, over the soul it loaded", async () => {
-  const { id } = createMono();
-  updateMono(id, (mono) => ({ ...mono, name: "Broski" }));
-  invoke.mockImplementation(async (command: string) =>
-    command === "mono_load"
-      ? { ...files("mine"), soul: "# Soul\n\nBe a pirate." }
-      : "reset",
-  );
-  await resetMonoDefaults(id);
-  const saves = invoke.mock.calls.filter(
-    ([command]) => command === "mono_save",
-  );
-  expect(saves).toHaveLength(1);
-  expect(saves[0][1]).toMatchObject({
-    path: "SOUL.md",
-    text: defaultSoul(),
-    expectedHash: "mine",
-  });
-  expect(findMono(id)?.name).toBeUndefined();
-});
-
 it("reads a migrated Mono's old project folder once, then its own", async () => {
-  const { id } = createMono(["/code/app"]);
+  const { id } = createCoordinatorProject({ name: "App", path: "/code/app" });
   updateMono(id, (mono) => ({ ...mono, legacyProject: "/code/app" }));
   invoke.mockImplementation(async () => ({ ...files(), soul: "# Soul" }));
   await loadMonoFiles(id);

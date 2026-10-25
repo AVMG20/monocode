@@ -2893,64 +2893,6 @@ html.theme-light .mono-pill {
   }
 }
 
-/* Mono intro: the mascots march in and line up, then the user's mono drops
-   into the spotlight. Every step holds its end state, so reduced motion just
-   skips to the final scene. */
-.mono-intro-march {
-  animation: mono-intro-march 700ms var(--delay) cubic-bezier(0.2, 0.8, 0.3, 1)
-    both;
-}
-
-.mono-intro-march .mono-intro-hop {
-  animation: mono-intro-hop 175ms var(--delay) ease-out 4 alternate;
-}
-
-.mono-intro-drop {
-  transform-origin: bottom center;
-  animation: mono-intro-drop 650ms 1350ms ease-in both;
-}
-
-@keyframes mono-intro-march {
-  from {
-    transform: translateX(var(--from));
-  }
-}
-
-@keyframes mono-intro-hop {
-  to {
-    transform: translateY(-5px);
-  }
-}
-
-@keyframes mono-intro-drop {
-  0% {
-    transform: translateY(-240px);
-  }
-  55% {
-    transform: translateY(0);
-  }
-  68% {
-    transform: scale(1.16, 0.82);
-    animation-timing-function: ease-out;
-  }
-  84% {
-    transform: translateY(-10px) scale(0.95, 1.06);
-  }
-  100% {
-    transform: none;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .mono-intro * {
-    animation-duration: 1ms !important;
-    animation-delay: 0s !important;
-  }
-  .mono-intro .mono-intro-hop {
-    animation: none !important;
-  }
-}
-
 @keyframes shimmer-text {
   from {
     background-position: 100% center;

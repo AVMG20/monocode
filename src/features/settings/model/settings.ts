@@ -26,7 +26,6 @@ export type SettingsSectionId =
   | "providers"
   | "mcp"
   | "skills"
-  | "monos"
   | "inbox"
   | "worktrees"
   | "archive";
@@ -118,14 +117,6 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     keywords: "skill instructions prompt",
   },
   {
-    id: "monos",
-    group: "agents",
-    label: "Monos",
-    description:
-      "The resident agent beside your tabs, and which projects have one.",
-    keywords: "mono resident agent mascot claim project title bar",
-  },
-  {
     id: "inbox",
     group: "workspace",
     label: "Inbox",
@@ -184,25 +175,6 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     section: "mcp",
     label: "MCP servers",
     keywords: "claude tools connections oauth authenticate login add remove",
-  },
-  {
-    id: "monos-enabled",
-    section: "monos",
-    label: "Show monos",
-    keywords: "mono agent rail hide",
-  },
-  {
-    id: "rail-monos-pinned",
-    section: "monos",
-    label: "Pin monos to the icon rail",
-    keywords: "mono rail compact collapsed icons top divider project picker",
-  },
-  {
-    id: "mono-list",
-    section: "monos",
-    label: "Your monos",
-    keywords:
-      "mono reset soul name projects sessions sidebar visibility hidden show",
   },
   {
     id: "project-worktrees",
@@ -851,33 +823,6 @@ export function subscribeNotesEnabled(onStoreChange: () => void) {
   window.addEventListener(NOTES_ENABLED_CHANGE_EVENT, onStoreChange);
   return () =>
     window.removeEventListener(NOTES_ENABLED_CHANGE_EVENT, onStoreChange);
-}
-
-const MONOS_ENABLED_KEY = "monocode.monosEnabled";
-
-export const MONOS_ENABLED_DEFAULT = true;
-
-/** Fired on `window` when monos are shown or hidden. */
-export const MONOS_ENABLED_CHANGE_EVENT = "monocode:monos-enabled-change";
-
-/** Whether monos show in the title bar at all, across every project. */
-export function loadMonosEnabled(): boolean {
-  return readFlag(MONOS_ENABLED_KEY) ?? MONOS_ENABLED_DEFAULT;
-}
-
-export function saveMonosEnabled(value: boolean) {
-  writeFlag(MONOS_ENABLED_KEY, value);
-  if (typeof window === "undefined") return;
-  window.dispatchEvent(
-    new CustomEvent<boolean>(MONOS_ENABLED_CHANGE_EVENT, { detail: value }),
-  );
-}
-
-export function subscribeMonosEnabled(onStoreChange: () => void) {
-  if (typeof window === "undefined") return () => {};
-  window.addEventListener(MONOS_ENABLED_CHANGE_EVENT, onStoreChange);
-  return () =>
-    window.removeEventListener(MONOS_ENABLED_CHANGE_EVENT, onStoreChange);
 }
 
 const MONO_MENU_BAR_KEY = "monocode.monoMenuBarIcon";
