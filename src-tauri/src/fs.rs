@@ -6258,8 +6258,16 @@ fn is_chat_video(path: &Path) -> bool {
 /// Let the asset protocol stream one video file, so the chat can play it
 /// without reading it into memory. Only that file is added to the scope.
 #[tauri::command]
-pub fn allow_video_file(app: AppHandle, path: String) -> Result<StreamableVideo, String> {
-    let path = expand_home(&path);
+pub async fn allow_video_file(app: AppHandle, path: String) -> Result<StreamableVideo, String> {
+    // A sync command runs on the main thread, and stat can stall on iCloud,
+    // network or external volumes while the chat opens.
+    tauri::async_runtime::spawn_blocking(move || allow_video_file_sync(&app, &path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn allow_video_file_sync(app: &AppHandle, path: &str) -> Result<StreamableVideo, String> {
+    let path = expand_home(path);
     if !is_chat_video(&path) {
         return Err(format!("{}: not a playable video", path.display()));
     }
