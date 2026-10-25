@@ -274,8 +274,11 @@ pub fn session_list_by_project(
     if cwd.trim().is_empty() {
         return Err("cwd is required".into());
     }
+    // Git can take a while to answer; ask it before taking the lock that
+    // session loads and saves wait on.
+    let git = crate::fs::git_info_for(&crate::fs::expand_home(&cwd));
     let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-    list_by_project(&conn, &cwd).map_err(|e| e.to_string())
+    list_by_project_with_git(&conn, &cwd, &git).map_err(|e| e.to_string())
 }
 
 #[tauri::command(async)]
@@ -1659,8 +1662,17 @@ fn ceil_char_boundary(text: &str, mut index: usize) -> usize {
     index
 }
 
+#[cfg(test)]
 fn list_by_project(conn: &Connection, cwd: &str) -> rusqlite::Result<Vec<SessionSummary>> {
     let git = crate::fs::git_info_for(&crate::fs::expand_home(cwd));
+    list_by_project_with_git(conn, cwd, &git)
+}
+
+fn list_by_project_with_git(
+    conn: &Connection,
+    cwd: &str,
+    git: &crate::fs::GitInfo,
+) -> rusqlite::Result<Vec<SessionSummary>> {
     let mut statement = conn.prepare(
         "SELECT id, cwd, harness, model, runtime_mode, title, provider_session_id,
                 created_at, updated_at, branch, archived, pinned,
