@@ -382,3 +382,32 @@ it.each([
     expect(content.style.transform).toBe("");
   },
 );
+
+it("lends the pool the transcript itself, so closing the pane parks it", () => {
+  const pool = new TranscriptPool();
+  act(() =>
+    root.render(
+      createElement(
+        "div",
+        null,
+        createElement(SessionPane, props(pool)),
+        createElement(TranscriptPoolOutlet, { pool }),
+      ),
+    ),
+  );
+  const shown = pool.getSnapshot()[0];
+  expect(shown.element.props.blocks).toHaveLength(2);
+  act(() =>
+    root.render(
+      createElement(
+        "div",
+        null,
+        createElement(TranscriptPoolOutlet, { pool }),
+      ),
+    ),
+  );
+  const parked = pool.getSnapshot()[0];
+  expect(parked.host).toBeNull();
+  expect(parked.retainedBytes).toBeGreaterThan(0);
+  expect(parked.element.props).toMatchObject({ visible: false, parked: true });
+});

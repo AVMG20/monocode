@@ -183,8 +183,12 @@ const RemoteMediaContext = createContext(false);
  * Shows an in-app link (such as a coordinator's `#thread-<id>`) as something
  * of its own. Returning undefined leaves the link as it is.
  */
+export type MarkdownLinkRenderer = (
+  href: string,
+  children: ReactNode,
+) => ReactNode | undefined;
 export const MarkdownLinkContext = createContext<
-  ((href: string, children: ReactNode) => ReactNode | undefined) | undefined
+  MarkdownLinkRenderer | undefined
 >(undefined);
 /** Show local images and videos a reply links to, rather than the links. */
 const LocalMediaContext = createContext(false);
