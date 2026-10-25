@@ -73,31 +73,17 @@ export function MonoRailSection({
   onOpen,
   onCreate,
   onDelete,
-  project,
-}: MonoRailProps & {
-  /**
-   * Lists only the Monos working on this project, as the inset sidebar does;
-   * a Mono on several projects shows in each of them.
-   */
-  project?: string;
-}) {
+}: MonoRailProps) {
   const snapshot = useSyncExternalStore(subscribeMonos, monosSnapshot);
-  const monos = useMemo(
-    () =>
-      listAgentMonos().filter(
-        (mono) => !project || monoWorksOn(mono, project),
-      ),
-    [snapshot, project],
-  );
+  const monos = useMemo(() => listAgentMonos(), [snapshot]);
   const ids = monos.map((mono) => mono.id);
   const sortable = useAnimatedReorder(ids, reorderMonos, "y");
   const [menu, setMenu] = useState<{ id: string; anchor: PopoverAnchor }>();
   const [background, setBackground] = useState<string>();
   const backgroundMono = background ? findMono(background) : undefined;
 
-  // With no Mono yet, the card stands in for the rail's section. A project
-  // with none of its own offers one under the label instead.
-  if (monos.length === 0 && !project)
+  // With no Mono yet, the card stands in for the rail's section.
+  if (monos.length === 0)
     return (
       <div className="mb-2 shrink-0" data-mono-rail>
         <MonoIntroCard
@@ -109,48 +95,22 @@ export function MonoRailSection({
     );
 
   return (
-    <div
-      className={`shrink-0 ${project ? "px-2 pb-3" : "mb-2"}`}
-      data-mono-rail
-      data-mono-project={project}
-    >
-      <div
-        className={
-          // The inset sidebar's section labels.
-          project
-            ? "flex h-7 items-center gap-1 px-2 text-[12px] font-medium text-content/50"
-            : "flex items-center gap-1 px-3 pb-1.5 pt-1"
-        }
-      >
-        <span
-          className={`min-w-0 flex-1 truncate${
-            project ? "" : " px-1 text-xs leading-5 text-content/50"
-          }`}
-        >
+    <div className="shrink-0 mb-2" data-mono-rail>
+      <div className="flex items-center gap-1 px-3 pb-1.5 pt-1">
+        <span className="min-w-0 flex-1 truncate px-1 text-xs leading-5 text-content/50">
           Monos
         </span>
-        {monos.length ? (
-          <button
-            type="button"
-            title="New mono"
-            aria-label="New mono"
-            onClick={() => onCreate(project ? [project] : undefined)}
-            className={`grid size-5 shrink-0 place-items-center rounded-md text-content/50 hover:bg-content/8 hover:text-content${
-              project ? " -mr-0.5" : ""
-            }`}
-          >
-            <Plus className="size-3.5" strokeWidth={1.75} />
-          </button>
-        ) : null}
+        <button
+          type="button"
+          title="New mono"
+          aria-label="New mono"
+          onClick={() => onCreate()}
+          className="grid size-5 shrink-0 place-items-center rounded-md text-content/50 hover:bg-content/8 hover:text-content"
+        >
+          <Plus className="size-3.5" strokeWidth={1.75} />
+        </button>
       </div>
-      <div className={`flex flex-col gap-px${project ? "" : " px-2"}`}>
-        {monos.length === 0 ? (
-          <RailAction
-            label="New mono"
-            icon={Plus}
-            onClick={() => onCreate(project ? [project] : undefined)}
-          />
-        ) : null}
+      <div className="flex flex-col gap-px px-2">
         {monos.map((mono) => {
           const look = monoLook(mono);
           const state = states.get(mono.id) ?? IDLE;

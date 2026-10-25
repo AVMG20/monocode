@@ -222,7 +222,7 @@ export function SearchableProjectPicker({
 }
 
 /** The rail's projects with the current one first, even when it is unlisted. */
-export function pickerProjects(
+function pickerProjects(
   recents: RecentProject[],
   cwd: string,
   railCwd?: string,
@@ -253,9 +253,6 @@ type ProjectPickerPopoverProps = Pick<
   onDismiss: () => void;
   label?: string;
   emptyMessage?: string;
-  /** A flyout off another menu opens beside it, and that menu owns outside
-   * clicks for both. */
-  flyout?: { layer: number; attributes?: Record<`data-${string}`, boolean> };
 };
 
 /** Shared searchable project menu for switching projects or adding them to a Mono. */
@@ -271,7 +268,6 @@ export function ProjectPickerPopover({
   monos,
   label = "Project picker",
   emptyMessage = "No projects found",
-  flyout,
 }: ProjectPickerPopoverProps) {
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
@@ -380,16 +376,14 @@ export function ProjectPickerPopover({
   return (
     <Popover
       anchor={anchor}
-      side={flyout ? "right" : "bottom"}
+      side="bottom"
       align="start"
-      gap={flyout ? -4 : 4}
+      gap={4}
       width={286}
       maxHeight={380}
-      layer={flyout?.layer}
-      {...flyout?.attributes}
       role="dialog"
       aria-label={label}
-      onDismiss={projectMenuActive || flyout ? undefined : onDismiss}
+      onDismiss={projectMenuActive ? undefined : onDismiss}
       onKeyDown={onPickerKeyDown}
       className="flex flex-col overflow-hidden"
     >
