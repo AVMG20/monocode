@@ -50,6 +50,8 @@ export type ProjectThread = {
 export type ThreadView = {
   sessionId: string;
   title: string;
+  /** When the project took it on. */
+  addedAt: number;
   status: ThreadStatus;
   /** Short line under the title: what it is doing or last said. */
   activity?: string;
@@ -358,6 +360,7 @@ export function threadView(input: {
   const base = {
     sessionId: thread.sessionId,
     title: threadTitle(session?.title?.trim() ? session : summary),
+    addedAt: thread.addedAt,
     updatedAt,
     harness: session?.harness ?? summary?.harness,
     model: session?.model ?? summary?.model,

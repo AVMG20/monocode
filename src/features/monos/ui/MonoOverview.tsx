@@ -1,48 +1,26 @@
 import { useRef, useState, type ReactNode } from "react";
-import {
-  Clock,
-  File,
-  FileDiff,
-  ListBullet,
-  ListFilter,
-  MessageMultiple,
-  Search,
-} from "../../../shared/ui/icons";
+import { Clock, File, FileDiff, ListBullet } from "../../../shared/ui/icons";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { artifactLabel, type ArtifactCard } from "../../artifacts/artifacts";
-import type { SessionSummary } from "../../sessions/data/sessionStore";
-import type { MonoSpawnedSession, Session } from "../../sessions/model/session";
 import type { MonoLook } from "../model/mono";
 import { ArtifactReader } from "../../artifacts/ui/ArtifactPanel";
 import { ArtifactIcon } from "../../artifacts/ui/ArtifactCard";
-import {
-  LaunchedSessionPage,
-  MonoSessionList,
-  type ShownMonoSession,
-} from "./MonoSessionList";
 import { EmptyState } from "./monoPanelParts";
 import { PanelStack, type StackPage } from "./PanelStack";
-import { SessionFiltersMenu } from "../../sessions/ui/SessionFiltersMenu";
-import {
-  DEFAULT_SESSION_SIDEBAR_FILTERS,
-  hasActiveSessionFilters,
-  type SessionSidebarFilters,
-} from "../../sessions/model/sessionFilters";
-import { HARNESSES, type HarnessId } from "../../sessions/model/session";
+import type { HarnessId } from "../../sessions/model/session";
 import { MonoSidebar, MonoSidebarHeader } from "./MonoSidebar";
 import type { SessionChangeTotals } from "../../sessions/ui/SessionReview";
 import { MonoChangesView, type MonoChangesRequest } from "./MonoChangesView";
 
-export type MonoOverviewTab = "activity" | "sessions" | "documents" | "changes";
+export type MonoOverviewTab = "activity" | "documents" | "changes";
 
 // Activity sits apart, beside the panel toggle, since it follows the chat.
-// A project's overview speaks of threads.
+// Threads have the project sidebar.
 const TABS: {
   id: Exclude<MonoOverviewTab, "activity">;
   label: string;
   icon: typeof Clock;
 }[] = [
-  { id: "sessions", label: "Threads", icon: MessageMultiple },
   { id: "documents", label: "Documents", icon: File },
   { id: "changes", label: "Changes", icon: FileDiff },
 ];
@@ -62,10 +40,6 @@ export type MonoOverviewChanges = {
 type Props = {
   open: boolean;
   agent: MonoLook;
-  /** Every session it has started, oldest first. */
-  launches: readonly MonoSpawnedSession[];
-  sessions: readonly Session[];
-  history?: readonly SessionSummary[];
   /** Documents it has written, oldest first. */
   documents: readonly ArtifactCard[];
   changes?: MonoOverviewChanges;
@@ -73,14 +47,6 @@ type Props = {
   activity?: ReactNode;
   tab: MonoOverviewTab;
   onTabChange: (tab: MonoOverviewTab) => void;
-  onOpenSession: (sessionId: string) => void | Promise<void>;
-  /** A session it started, open over the list until Back. */
-  shownSession?: ShownMonoSession;
-  onBackFromSession?: () => void;
-  onOpenSessionInWorkspace?: (sessionId: string) => void | Promise<void>;
-  /** The shown thread fills the project view. */
-  expanded?: boolean;
-  onToggleExpanded?: () => void;
   /** A document it wrote, open over the list until Back. */
   shownDocumentId?: string;
   onBackFromDocument?: () => void;
@@ -91,26 +57,18 @@ type Props = {
 };
 
 /**
- * A project's work at a glance: the threads it started and the documents it
- * wrote. Who it is and how it works live in its settings.
+ * What a project's chat has produced: the documents it wrote, its changes,
+ * and the steps of a turn picked from the chat. Its threads have the project
+ * sidebar; who it is and how it works live in its settings.
  */
 export function MonoOverview({
   open,
   agent,
-  launches,
-  sessions,
-  history,
   documents,
   changes,
   activity,
   tab: requestedTab,
   onTabChange,
-  onOpenSession,
-  shownSession,
-  onBackFromSession = () => {},
-  onOpenSessionInWorkspace = () => {},
-  expanded = false,
-  onToggleExpanded,
   shownDocumentId,
   onBackFromDocument = () => {},
   onOpenFile,
@@ -120,44 +78,17 @@ export function MonoOverview({
 }: Props) {
   const lock = useLockOverscroll<HTMLDivElement>();
   const tab = requestedTab;
-  const [query, setQuery] = useState("");
-  const [filters, setFilters] = useState<SessionSidebarFilters>(
-    DEFAULT_SESSION_SIDEBAR_FILTERS,
-  );
   // Once opened, the changes stay mounted so a commit draft survives a look
   // at another tab.
   const [changesVisited, setChangesVisited] = useState(tab === "changes");
   if (tab === "changes" && !changesVisited) setChangesVisited(true);
   // The activity button toggles back to the tab it was opened from.
   const lastTab = useRef<MonoOverviewTab>(
-    tab === "activity" ? "sessions" : tab,
+    tab === "activity" ? "documents" : tab,
   );
   if (tab !== "activity") lastTab.current = tab;
 
   const pages: StackPage[] = [];
-  // What the overview opened goes on top of everything, the way it would
-  // from the list beneath. One page for whichever session it shows: going
-  // from one thread to another swaps it in place rather than sliding a
-  // second full transcript over the first.
-  if (shownSession)
-    pages.push({
-      key: "session",
-      node: (
-        <LaunchedSessionPage
-          key={shownSession.sessionId}
-          title={shownSession.title}
-          onBack={onBackFromSession}
-          onOpenInWorkspace={() =>
-            onOpenSessionInWorkspace(shownSession.sessionId)
-          }
-          expanded={expanded}
-          onToggleExpanded={onToggleExpanded}
-          onClose={onClose}
-        >
-          {shownSession.pane}
-        </LaunchedSessionPage>
-      ),
-    });
   if (shownDocumentId)
     pages.push({
       key: `document:${shownDocumentId}`,
@@ -176,7 +107,6 @@ export function MonoOverview({
 
   const tabs = TABS;
   const counts: Record<(typeof TABS)[number]["id"], number | undefined> = {
-    sessions: launches.length,
     documents: documents.length,
     changes: changes?.totals?.files,
   };
@@ -188,8 +118,6 @@ export function MonoOverview({
       label={`${agent.name} overview`}
       color={agent.color}
       windowControls={windowControls}
-      expanded={expanded && !!shownSession}
-      wide
     >
       <PanelStack pages={pages}>
         {/* Pages replace this header too, keeping their back button at the top. */}
@@ -221,17 +149,6 @@ export function MonoOverview({
             </>
           }
         />
-        {tab === "sessions" && launches.length ? (
-          <SessionSearchBar
-            query={query}
-            onQueryChange={setQuery}
-            filters={filters}
-            onFiltersChange={setFilters}
-            harnesses={HARNESSES.filter((harness) =>
-              launches.some((launch) => launch.harness === harness),
-            )}
-          />
-        ) : null}
         {changes && changesVisited ? (
           <div
             role="tabpanel"
@@ -269,28 +186,6 @@ export function MonoOverview({
                 see each step it took.
               </EmptyState>
             ))
-          ) : tab === "sessions" ? (
-            launches.length ? (
-              // Cards carry their own inset; this lines their icons up with
-              // the tabs above, as the document rows do.
-              <div className="-mx-0.5">
-                <MonoSessionList
-                  agent={agent}
-                  launches={[...launches].reverse()}
-                  sessions={sessions}
-                  history={history}
-                  query={query}
-                  filters={filters}
-                  onOpenSession={onOpenSession}
-                  covered={pages.length > 0}
-                />
-              </div>
-            ) : (
-              <EmptyState icon={MessageMultiple}>
-                Ask {agent.name} to start a session on one of your projects,
-                like a bug fix or a review, and it shows up here.
-              </EmptyState>
-            )
           ) : documents.length ? (
             <ul className="flex flex-col gap-px">
               {[...documents].reverse().map((card) => (
@@ -308,79 +203,6 @@ export function MonoOverview({
         </div>
       </PanelStack>
     </MonoSidebar>
-  );
-}
-
-/** The sidebar's session search and filters, over the Mono's sessions. */
-function SessionSearchBar({
-  query,
-  onQueryChange,
-  filters,
-  onFiltersChange,
-  harnesses,
-}: {
-  query: string;
-  onQueryChange: (query: string) => void;
-  filters: SessionSidebarFilters;
-  onFiltersChange: (filters: SessionSidebarFilters) => void;
-  harnesses: HarnessId[];
-}) {
-  const filterButton = useRef<HTMLButtonElement>(null);
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
-  const active = hasActiveSessionFilters(filters);
-  return (
-    <div className="flex h-9 shrink-0 items-center gap-1 border-b border-stroke px-2">
-      <div className="relative flex h-7 min-w-0 flex-1 items-center">
-        <Search className="pointer-events-none absolute left-2 size-3 shrink-0 opacity-50" />
-        <input
-          type="text"
-          value={query}
-          placeholder="Search sessions..."
-          aria-label="Search sessions"
-          spellCheck={false}
-          autoComplete="off"
-          autoCorrect="off"
-          autoCapitalize="off"
-          onChange={(event) => onQueryChange(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key !== "Escape" || !query) return;
-            event.preventDefault();
-            event.stopPropagation();
-            onQueryChange("");
-          }}
-          className="h-full w-full min-w-0 rounded-md bg-transparent py-0 pl-7 pr-2 text-[12px] text-content outline-none placeholder:text-content/35"
-        />
-      </div>
-      <button
-        ref={filterButton}
-        type="button"
-        title="Filter sessions"
-        aria-label="Filter sessions"
-        aria-expanded={!!menu}
-        aria-haspopup="menu"
-        onClick={() => {
-          if (menu) return setMenu(null);
-          const rect = filterButton.current?.getBoundingClientRect();
-          if (rect) setMenu({ x: rect.right - 228, y: rect.bottom + 2 });
-        }}
-        className={`grid size-6 place-items-center rounded-md text-content/50 hover:bg-content/10 hover:text-content ${
-          menu || active ? "bg-selection text-content" : ""
-        }`}
-      >
-        <ListFilter className="size-3" strokeWidth={1.75} />
-      </button>
-      {menu ? (
-        <SessionFiltersMenu
-          x={menu.x}
-          y={menu.y}
-          harnesses={harnesses}
-          unavailableOption
-          filters={filters}
-          onChange={onFiltersChange}
-          onClose={() => setMenu(null)}
-        />
-      ) : null}
-    </div>
   );
 }
 

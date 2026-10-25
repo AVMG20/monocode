@@ -39,6 +39,7 @@ import { TerminalSpinner } from "../../features/sessions/ui/TerminalSpinner";
 import { TabLabel } from "../../shared/ui/TabLabel";
 import { WindowControls } from "./WindowControls";
 import { PixelMascot } from "../../features/projects/ui/PixelMascot";
+import type { ThreadStatus } from "../../features/coordinator/model/coordinator";
 import {
   MONO_STATUS_LABEL,
   type MonoLook,
@@ -99,7 +100,12 @@ type Props = {
    * The Mono filling the main area. It takes the tabs' place, and nothing
    * project-scoped belongs beside it.
    */
-  mono?: { look: MonoLook; state: MonoState };
+  mono?: {
+    look: MonoLook;
+    state: MonoState;
+    /** The project's thread shown in its chat's place. */
+    thread?: { title: string; status: ThreadStatus };
+  };
   /** Shows or hides the Mono's overview panel beside its chat. */
   onToggleMonoOverview?: () => void;
   monoOverviewOpen?: boolean;
@@ -1099,7 +1105,7 @@ function TitleBarComponent({
         }`}
       >
         {mono ? (
-          <MonoTitle look={mono.look} state={mono.state} />
+          <MonoTitle look={mono.look} state={mono.state} thread={mono.thread} />
         ) : (
           <div
             className="relative h-full min-w-0 flex-1 overflow-hidden"
@@ -1222,8 +1228,26 @@ function TitleBarComponent({
 
 export const TitleBar = memo(TitleBarComponent);
 
-/** In a Mono's view the title bar names it and shows its status. */
-function MonoTitle({ look, state }: { look: MonoLook; state: MonoState }) {
+const THREAD_STATUS_TEXT: Record<ThreadStatus, string> = {
+  waiting: "Waiting for you",
+  busy: "Working",
+  inactive: "Idle",
+  solved: "Solved",
+};
+
+/**
+ * In a project's view the title bar names it and shows its status, or the
+ * thread shown in its chat's place and that thread's.
+ */
+function MonoTitle({
+  look,
+  state,
+  thread,
+}: {
+  look: MonoLook;
+  state: MonoState;
+  thread?: { title: string; status: ThreadStatus };
+}) {
   return (
     <div
       data-mono-title
@@ -1236,17 +1260,44 @@ function MonoTitle({ look, state }: { look: MonoLook; state: MonoState }) {
         still={state.status === "idle"}
         className="size-4 shrink-0"
       />
-      <span className="min-w-0 truncate text-[13px] font-medium text-content">
-        {look.name}
-      </span>
       <span
-        data-mono-status={state.status}
-        className={`shrink-0 text-[12px] ${
-          state.status === "needs-you" ? "text-accent" : "text-content/45"
+        className={`min-w-0 truncate text-[13px] font-medium ${
+          thread ? "shrink-[2] text-content/55" : "text-content"
         }`}
       >
-        {MONO_STATUS_LABEL[state.status]}
+        {look.name}
       </span>
+      {thread ? (
+        <>
+          <ChevronRight
+            aria-hidden
+            className="size-3 shrink-0 text-content/35"
+          />
+          <span
+            data-thread-title
+            className="min-w-0 truncate text-[13px] font-medium text-content"
+          >
+            {thread.title}
+          </span>
+          <span
+            data-thread-status={thread.status}
+            className={`shrink-0 text-[12px] ${
+              thread.status === "waiting" ? "text-amber-400" : "text-content/45"
+            }`}
+          >
+            {THREAD_STATUS_TEXT[thread.status]}
+          </span>
+        </>
+      ) : (
+        <span
+          data-mono-status={state.status}
+          className={`shrink-0 text-[12px] ${
+            state.status === "needs-you" ? "text-accent" : "text-content/45"
+          }`}
+        >
+          {MONO_STATUS_LABEL[state.status]}
+        </span>
+      )}
     </div>
   );
 }

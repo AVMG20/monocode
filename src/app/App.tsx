@@ -89,6 +89,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type ReactNode,
 } from "react";
 import { useStableValue } from "../shared/hooks/useStableValue";
 import { Sidebar } from "./shell/Sidebar";
@@ -618,6 +619,7 @@ import {
 import { useCoordinatorThreads } from "./hooks/useCoordinatorThreads";
 import {
   addProjectThread,
+  resolveProjectThread,
   coordinatorContext,
   coordinatorCompactAt,
   coordinatorOverBudget,
@@ -632,8 +634,13 @@ import {
   threadRules,
   threadsBrief,
   UNTITLED_THREAD,
+  type ThreadView,
 } from "../features/coordinator/model/coordinator";
 import { publishThreadViews } from "../features/coordinator/ui/ThreadLink";
+import {
+  projectItemOrder,
+  ProjectSidebar,
+} from "../features/coordinator/ui/ProjectSidebar";
 import {
   loadMonoRotation,
   planRotation,
@@ -1061,7 +1068,7 @@ function filesInWorkspaceTabs(tabs: readonly WorkspaceTab[]): FilePaneTab[] {
 const NO_TITLE_TABS: [] = [];
 /** Threads shown recently that stay loaded after the overview moves on. */
 const RECENT_THREADS_KEPT = 3;
-const NO_THREAD_COUNTS = { waiting: 0, busy: 0 };
+const NO_THREAD_VIEWS: ThreadView[] = [];
 
 /** Native sheet. `window.confirm` is swallowed when a macOS menu accelerator fires. */
 function confirmDiscardUnsaved(message: string): Promise<boolean> {
@@ -1173,10 +1180,11 @@ function Workspace({
     () => windowTransfer?.activeTabId ?? resumed?.activeTabId ?? seed.tab.id,
   );
   const [monoViewId, setMonoViewId] = useState<string | null>(null);
-  // A Mono opens with its overview beside the chat until it is hidden.
-  const [monoOverviewOpen, setMonoOverviewOpen] = useState(true);
+  // A project's overview (its documents, changes and a turn's activity)
+  // opens beside the chat when asked for; its threads have the sidebar.
+  const [monoOverviewOpen, setMonoOverviewOpen] = useState(false);
   const [monoOverviewTab, setMonoOverviewTab] =
-    useState<MonoOverviewTab>("sessions");
+    useState<MonoOverviewTab>("documents");
   const monoOverviewOpenRef = useRef(monoOverviewOpen);
   monoOverviewOpenRef.current = monoOverviewOpen;
   const monoOverviewTabRef = useRef(monoOverviewTab);
@@ -1240,26 +1248,18 @@ function Workspace({
   >(null);
   useEffect(() => {
     if (monoOverviewOpen) return;
-    setMonoShownSession(null);
     setMonoOverviewDocument(null);
   }, [monoOverviewOpen]);
-  // Whether the shown session, rather than the Mono's chat, holds focus.
-  const [monoShownSessionFocused, setMonoShownSessionFocused] = useState(false);
-  /** A project's thread the user put in full view, over its chat. */
-  const [expandedThreadId, setExpandedThreadId] = useState<string | null>(
-    null,
-  );
+  // The thread a project shows in its main area, in the chat's place.
   const shownMonoSessionId =
-    monoViewId && monoOverviewOpen && monoShownSession
-      ? monoShownSession
-      : undefined;
-  // Remember the thread each Mono shows, so it opens on it next time.
-  // Hiding the overview or going back to its list forgets it.
+    monoViewId && monoShownSession ? monoShownSession : undefined;
+  // Remember the thread each project shows, so it opens on it next time.
+  // Going back to its chat forgets it.
   useEffect(() => {
     const monoId = monoViewId ? monoForSession(monoViewId)?.id : undefined;
     if (!monoId) return;
-    saveShownThread(monoId, monoOverviewOpen ? monoShownSession : null);
-  }, [monoViewId, monoOverviewOpen, monoShownSession]);
+    saveShownThread(monoId, monoShownSession);
+  }, [monoViewId, monoShownSession]);
   const shownMonoSessionIdRef = useRef(shownMonoSessionId);
   shownMonoSessionIdRef.current = shownMonoSessionId;
   // A turn's activity shows on the overview's Activity tab; picking the shown
@@ -2192,9 +2192,9 @@ function Workspace({
     [],
   );
   // The footer's usage follows what is in view. In a project the footer
-  // follows the coordinator, or the thread in focus.
+  // follows the coordinator, or the thread shown in its place.
   const focusedThreadSession =
-    viewedProject && shownMonoSessionId && monoShownSessionFocused
+    viewedProject && shownMonoSessionId
       ? sessions.find((session) => session.id === shownMonoSessionId)
       : undefined;
   const footerSession = viewedProject
@@ -2334,9 +2334,7 @@ function Workspace({
 
   const activeSessionId = inboxViewOpen
     ? inboxAskPortal?.sessionId
-    : shownMonoSessionId && monoShownSessionFocused
-        ? shownMonoSessionId
-        : (monoViewSession?.id ?? active?.id);
+    : (shownMonoSessionId ?? monoViewSession?.id ?? active?.id);
   const activeSessionIdRef = useRef(activeSessionId);
   activeSessionIdRef.current = activeSessionId;
 
@@ -2346,12 +2344,8 @@ function Workspace({
     () => sessions.filter((session) => !session.ephemeral),
     [sessions],
   );
-  // A Mono's chat and the session its overview shows are both on screen.
-  const besideSessionId = shownMonoSessionId
-    ? activeSessionId === shownMonoSessionId
-      ? monoViewSession?.id
-      : shownMonoSessionId
-    : undefined;
+  // A project shows one conversation at a time: nothing sits beside it.
+  const besideSessionId: string | undefined = undefined;
   const besideSessionIdRef = useRef(besideSessionId);
   besideSessionIdRef.current = besideSessionId;
   useInputNotifications(promptableSessions, activeSessionId, besideSessionId);
@@ -4412,13 +4406,11 @@ function Workspace({
     (paneId: string) => {
       projectTerminalFocusedRef.current = false;
       if (paneId === monoViewIdRef.current) {
-        setMonoShownSessionFocused(false);
         setProjectTerminalFocused(false);
         setComposerFocused(true);
         return;
       }
       if (paneId === shownMonoSessionIdRef.current) {
-        setMonoShownSessionFocused(true);
         setProjectTerminalFocused(false);
         setComposerFocused(true);
         return;
@@ -5124,15 +5116,11 @@ function Workspace({
         return;
       }
       if (switching) {
+        // A thread asked for that is gone leaves the project on its chat,
+        // with its sidebar listing the threads it does have.
         revealedThread.current = remembered ? remembered.id : null;
         setMonoShownSession(remembered ? remembered.id : null);
-        setMonoShownSessionFocused(!!remembered);
         setMonoOverviewDocument(null);
-        // A thread asked for that is gone leaves the list open, which says so.
-        if (remembered || options?.thread) {
-          setMonoOverviewTab("sessions");
-          setMonoOverviewOpen(true);
-        }
       }
       monoViewIdRef.current = session.id;
       saveOpenMono(monoId);
@@ -5366,9 +5354,13 @@ function Workspace({
   // the Mono started; opening the one already shown hides it again.
   const revealMonoLaunchedSession = useCallback(
     async (monoSessionId: string, launchedId: string) => {
-      // Load it first, then switch in one step: the overview goes straight
-      // from what it shows to this session, never through the list.
+      // The pick shows at once: a loaded thread swaps in straight away, and
+      // one still on disk holds its place in the main area until it loads.
       const request = ++threadRevealRequest.current;
+      revealedThread.current = launchedId;
+      setMonoShownSession(launchedId);
+      setProjectTerminalFocused(false);
+      setComposerFocused(true);
       const session = await ensureOpenSession(launchedId).catch(() => null);
       // A newer pick, or going back, wins over a slow load finishing late.
       if (
@@ -5379,19 +5371,12 @@ function Workspace({
           openingSessionIds.current.delete(launchedId);
         return;
       }
-      setMonoOverviewTab("sessions");
-      setMonoOverviewDocument(null);
-      setMonoOverviewOpen(true);
-      // One that is gone leaves the sessions list open, which says so.
+      // One that is gone leaves the project on its chat.
       if (!session) {
+        revealedThread.current = null;
         setMonoShownSession(null);
         return;
       }
-      revealedThread.current = launchedId;
-      setMonoShownSession(launchedId);
-      setMonoShownSessionFocused(true);
-      setProjectTerminalFocused(false);
-      setComposerFocused(true);
       setComposerFocusToken((token) => token + 1);
     },
     [ensureOpenSession],
@@ -12574,6 +12559,14 @@ function Workspace({
       setAutomationsViewOpen(false);
       return;
     }
+    // From a project's thread, Back is its chat; from the chat, it leaves.
+    if (monoViewIdRef.current && shownMonoSessionIdRef.current) {
+      threadRevealRequest.current += 1;
+      revealedThread.current = null;
+      setMonoShownSession(null);
+      setComposerFocused(true);
+      return;
+    }
     if (monoViewIdRef.current) {
       closeMonoView();
       setComposerFocused(true);
@@ -12778,6 +12771,11 @@ function Workspace({
     },
     [onCloseEveryTab],
   );
+  // In a Claude Project the tab keys step through its chat and threads.
+  // Set below, once the project's handlers exist.
+  const projectStepRef = useRef<
+    (move: { delta: number } | { index: number }) => boolean
+  >(() => false);
   const actions = useRef({
     onNewFocused,
     onArchiveFocusedSession,
@@ -12977,6 +12975,20 @@ function Workspace({
         e.preventDefault();
         e.stopPropagation();
         const a = actions.current;
+        const projectMove =
+          cmd === "next" || cmd === "cycle-next" || cmd === "next-session"
+            ? { delta: 1 }
+            : cmd === "prev" || cmd === "cycle-prev" || cmd === "prev-session"
+              ? { delta: -1 }
+              : typeof cmd === "object" && "activate" in cmd
+                ? { index: cmd.activate }
+                : null;
+        if (projectMove && monoViewIdRef.current) {
+          run(`project-step-${JSON.stringify(projectMove)}`, () =>
+            projectStepRef.current(projectMove),
+          );
+          return;
+        }
         if (cmd === "new") run("new", a.onNewFocused);
         else if (cmd === "close-others")
           run("close-others", a.onCloseOtherTabs);
@@ -13511,54 +13523,50 @@ function Workspace({
   const monoShownSessionPane = shownMonoSessionId
     ? sessions.find((session) => session.id === shownMonoSessionId)
     : undefined;
-  const monoShownSessionActive =
-    !!monoShownSessionPane && monoShownSessionFocused;
-  const monoShownSessionView = monoShownSessionPane
-    ? {
-        sessionId: monoShownSessionPane.id,
-        title: sessionDisplayTitle(
-          monoShownSessionPane.title,
-          monoShownSessionPane.harness,
-        ),
-        pane: (
-          <SessionPane
-            {...sessionPaneProps}
-            session={monoShownSessionPane}
-            // The Mono view covers the workspace, so a review opens
-            // beside the chat rather than in a hidden tab.
-            onOpenDiff={onOpenMonoDiff}
-            // The Mono runs this session; handing it off or asking for a
-            // second opinion belongs in its own tab.
-            onSecondOpinion={undefined}
-            onHandoff={undefined}
-            visible={monoCovers}
-            focused={monoShownSessionActive && !projectTerminalFocused}
-            inSplit={false}
-            addToChatTarget={false}
-            composerFocused={
-              monoShownSessionActive &&
-              composerFocused &&
-              !projectTerminalFocused
-            }
-            composerFocusToken={composerFocusToken}
-          />
-        ),
-      }
-    : undefined;
-  // A project's thread in full view takes the chat's place.
-  const overviewExpanded =
-    !!viewedProject &&
-    !!shownMonoSessionId &&
-    expandedThreadId === shownMonoSessionId;
+  // A project's thread fills the main area in its chat's place, as a
+  // normal session pane: the transcript pool keeps it warm between picks.
+  const projectThreadPane =
+    viewedProject && shownMonoSessionId ? (
+      monoShownSessionPane ? (
+        <SessionPane
+          key={monoShownSessionPane.id}
+          {...sessionPaneProps}
+          session={monoShownSessionPane}
+          // The project covers the workspace, so a review opens beside the
+          // thread rather than in a hidden tab.
+          onOpenDiff={onOpenMonoDiff}
+          // The project runs this thread; handing it off or asking for a
+          // second opinion belongs in its own tab.
+          onSecondOpinion={undefined}
+          onHandoff={undefined}
+          visible={monoCovers}
+          focused={monoCovers && !projectTerminalFocused}
+          inSplit={false}
+          addToChatTarget={monoCovers}
+          composerFocused={
+            monoCovers && composerFocused && !projectTerminalFocused
+          }
+          composerFocusToken={composerFocusToken}
+        />
+      ) : (
+        // Still loading from disk: hold its place rather than show the chat.
+        <div
+          role="status"
+          aria-label="Loading thread"
+          className="flex h-full min-h-0 flex-1 animate-pulse flex-col gap-3 px-8 pt-16"
+        >
+          <div className="h-3 w-2/5 rounded bg-content/8" />
+          <div className="h-3 w-3/5 rounded bg-content/6" />
+          <div className="h-3 w-1/2 rounded bg-content/6" />
+        </div>
+      )
+    ) : null;
   const monoOverviewPanel =
     monoViewMono && monoViewSession ? (
       <MonoOverview
         key={monoViewMono.id}
         open={monoOverviewOpen}
         agent={monoLook(monoViewMono)}
-        launches={monoLaunches}
-        sessions={sessions}
-        history={history}
         documents={monoDocuments}
         activity={monoActivityView}
         changes={{
@@ -13571,37 +13579,13 @@ function Workspace({
         }}
         tab={monoOverviewTab}
         onTabChange={setMonoOverviewTab}
-        onOpenSession={(sessionId) =>
-          showMonoLaunchedSession(monoViewSession.id, sessionId)
-        }
-        shownSession={monoShownSessionView}
-        // Back lands on every session it started.
-        onBackFromSession={() => {
-          setMonoShownSession(null);
-          setMonoShownSessionFocused(false);
-        }}
-        onOpenSessionInWorkspace={onOpenMonoLaunchedSession}
-        expanded={overviewExpanded}
-        onToggleExpanded={
-          viewedProject && shownMonoSessionId
-            ? () =>
-                setExpandedThreadId(
-                  overviewExpanded ? null : shownMonoSessionId,
-                )
-            : undefined
-        }
-        onOpenDocument={(id) => {
-          setMonoShownSession(null);
-          setMonoOverviewDocument(id);
-        }}
+        onOpenDocument={(id) => setMonoOverviewDocument(id)}
         shownDocumentId={monoOverviewDocument ?? undefined}
         onBackFromDocument={() => setMonoOverviewDocument(null)}
         onOpenFile={onOpenFile}
         onClose={() => setMonoOverviewOpen(false)}
         windowControls={
-          monoCovers && !IS_MAC && !overviewExpanded ? (
-            <WindowControls />
-          ) : undefined
+          monoCovers && !IS_MAC ? <WindowControls /> : undefined
         }
       />
     ) : null;
@@ -13682,6 +13666,98 @@ function Workspace({
     },
     [revealMonoLaunchedSession],
   );
+  // The project sidebar: its chat, its threads, and starting one directly.
+  const showProjectChat = useCallback(() => {
+    threadRevealRequest.current += 1;
+    revealedThread.current = null;
+    setMonoShownSession(null);
+    setProjectTerminalFocused(false);
+    setComposerFocused(true);
+    setComposerFocusToken((token) => token + 1);
+  }, []);
+  const resolveViewedProjectThread = useCallback(
+    (sessionId: string, resolved: boolean) => {
+      if (viewedProjectId)
+        resolveProjectThread(viewedProjectId, sessionId, resolved);
+    },
+    [viewedProjectId],
+  );
+  const openProjectThreadInTab = useCallback(
+    (sessionId: string) => void onOpenMonoLaunchedSession(sessionId),
+    [onOpenMonoLaunchedSession],
+  );
+  const newViewedProjectThread = useCallback(() => {
+    const project = viewedProjectId ? findMono(viewedProjectId) : undefined;
+    const cwd = project?.projects[0];
+    if (!project || !cwd) return;
+    // A thread of the project's own, without going through its chat: the
+    // registry makes it one, so its turns get the thread rules.
+    const created = newDefaultSession(cwd, sessionDefaults?.runtimeMode);
+    sessionsRef.current = [...sessionsRef.current, created];
+    setSessions(sessionsRef.current);
+    addProjectThread(project.id, created.id);
+    threadRevealRequest.current += 1;
+    revealedThread.current = created.id;
+    setMonoShownSession(created.id);
+    setProjectTerminalFocused(false);
+    setComposerFocused(true);
+    setComposerFocusToken((token) => token + 1);
+  }, [viewedProjectId, sessionDefaults?.runtimeMode]);
+  projectStepRef.current = (move) => {
+    if (!viewedProjectId || !monoViewIdRef.current) return false;
+    const order = projectItemOrder(viewedProjectThreadViews ?? NO_THREAD_VIEWS);
+    let target: string | null | undefined;
+    if ("index" in move)
+      target = move.index < 0 ? order[order.length - 1] : order[move.index];
+    else {
+      const at = Math.max(0, order.indexOf(shownMonoSessionIdRef.current ?? null));
+      target = order[(at + move.delta + order.length) % order.length];
+    }
+    // Past the last thread: nothing to go to, but the key stays the project's.
+    if (target === undefined) return true;
+    if (target === null) showProjectChat();
+    else openViewedProjectThread(target);
+    return true;
+  };
+  const openViewedProjectSettings = useCallback(() => {
+    if (viewedProjectId) setMonoSettingsFor(viewedProjectId);
+  }, [viewedProjectId]);
+  const projectSidebar = useMemo(() => {
+    if (!viewedProject || !monoViewSession) return undefined;
+    const look = monoLook(viewedProject);
+    const chatStatus = monoState(monoViewSession).status;
+    const chatUnseen = unseenFinishedIds.has(monoViewSession.id);
+    const views = viewedProjectThreadViews ?? NO_THREAD_VIEWS;
+    return (topBar: ReactNode) => (
+      <ProjectSidebar
+        name={look.name}
+        look={look}
+        chatStatus={chatStatus}
+        chatUnseen={chatUnseen}
+        views={views}
+        activeThreadId={shownMonoSessionId ?? null}
+        topBar={topBar}
+        onSelectChat={showProjectChat}
+        onSelectThread={openViewedProjectThread}
+        onResolve={resolveViewedProjectThread}
+        onOpenInTab={openProjectThreadInTab}
+        onNewThread={newViewedProjectThread}
+        onOpenSettings={openViewedProjectSettings}
+      />
+    );
+  }, [
+    viewedProject,
+    monoViewSession,
+    unseenFinishedIds,
+    viewedProjectThreadViews,
+    shownMonoSessionId,
+    showProjectChat,
+    openViewedProjectThread,
+    resolveViewedProjectThread,
+    openProjectThreadInTab,
+    newViewedProjectThread,
+    openViewedProjectSettings,
+  ]);
   const coordinatorsRail = useMemo(
     () => ({
       activeId: chromeSurfaceOpenNow ? undefined : viewedProjectId,
@@ -13717,10 +13793,19 @@ function Workspace({
     IS_MAC && compactRailActive && !chromeSurfaceOpen;
   const compactTitleBar = compactTitleNavigation && !monoCovers;
   const onToggleMonoOverview = () => setMonoOverviewOpen(!monoOverviewOpen);
-  // A project's overview button carries what its threads are doing.
-  const projectThreadCounts = viewedProject
-    ? (coordinatorRail.counts.get(viewedProject.id) ?? NO_THREAD_COUNTS)
+  // The title bar names the thread a project shows in its chat's place.
+  const shownThreadView = shownMonoSessionId
+    ? viewedProjectThreadViews?.find(
+        (view) => view.sessionId === shownMonoSessionId,
+      )
     : undefined;
+  const shownThreadTitle = useMemo(
+    () =>
+      shownThreadView
+        ? { title: shownThreadView.title, status: shownThreadView.status }
+        : undefined,
+    [shownThreadView?.title, shownThreadView?.status],
+  );
   const onOpenMonoViewSettings = monoViewMono
     ? () => setMonoSettingsFor(monoViewMono.id)
     : undefined;
@@ -13730,18 +13815,18 @@ function Workspace({
       tabs={monoCovers ? NO_TITLE_TABS : titleTabs}
       mono={
         monoCovers && monoViewMono && monoViewSession
-          ? { look: monoLook(monoViewMono), state: monoState(monoViewSession) }
+          ? {
+              look: monoLook(monoViewMono),
+              state: monoState(monoViewSession),
+              thread: shownThreadTitle,
+            }
           : undefined
       }
       onToggleMonoOverview={monoCovers ? onToggleMonoOverview : undefined}
       monoOverviewOpen={monoOverviewOpen}
-      monoThreads={projectThreadCounts}
       onOpenMonoSettings={monoCovers ? onOpenMonoViewSettings : undefined}
       hideWindowControls={
-        monoCovers &&
-        monoOverviewOpen &&
-        !!monoOverviewPanel &&
-        !overviewExpanded
+        monoCovers && monoOverviewOpen && !!monoOverviewPanel
       }
       activeId={monoViewSession ? "" : activeTabId}
       cwd={sidebarCwd}
@@ -13850,6 +13935,7 @@ function Workspace({
       onOpenProject={pickProject}
       onRemoveProject={onRemoveProject}
       monoViewActive={monoCovers}
+      projectPanel={projectSidebar}
       coordinators={coordinatorsRail}
       onNew={onNew}
       openSessions={openProjectSessions}
@@ -14007,29 +14093,13 @@ function Workspace({
                       className="grid min-h-0 min-w-0 flex-1"
                     >
                     <div
-                      // A thread in full view sits under the title bar, in
-                      // the chat's place.
-                      className={`flex min-h-0 min-w-0${
-                        monoCovers && overviewExpanded ? " flex-col" : ""
-                      }`}
+                      className="flex min-h-0 min-w-0"
                       style={{ gridArea: "main" }}
                     >
-                      <div
-                        className={
-                          monoCovers && overviewExpanded
-                            ? "flex min-w-0 shrink-0 flex-col"
-                            : "flex min-h-0 min-w-0 flex-1 flex-col"
-                        }
-                      >
+                      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                         {compactTitleBar ? null : workspaceTitleBar}
 
-                        <main
-                          className={
-                            monoCovers && overviewExpanded
-                              ? "hidden"
-                              : "relative flex min-h-0 min-w-0 flex-1"
-                          }
-                        >
+                        <main className="relative flex min-h-0 min-w-0 flex-1">
                           <div
                             ref={dockGridRef}
                             className="grid h-full min-h-0 min-w-0 flex-1"
@@ -14172,8 +14242,11 @@ function Workspace({
                                     isMonoSession(session.id),
                                   )
                                   .map((session) => {
-                                    const visible = monoViewId === session.id;
-                                    const besideFocused = monoShownSessionActive;
+                                    // A project's thread takes its chat's
+                                    // place; the chat stays mounted beneath.
+                                    const visible =
+                                      monoViewId === session.id &&
+                                      !projectThreadPane;
                                     return (
                                       <div
                                         key={session.id}
@@ -14191,17 +14264,14 @@ function Workspace({
                                           session={session}
                                           visible={visible}
                                           focused={
-                                            visible &&
-                                            !projectTerminalFocused &&
-                                            !besideFocused
+                                            visible && !projectTerminalFocused
                                           }
                                           inSplit={false}
                                           addToChatTarget={visible}
                                           composerFocused={
                                             visible &&
                                             composerFocused &&
-                                            !projectTerminalFocused &&
-                                            !besideFocused
+                                            !projectTerminalFocused
                                           }
                                           composerFocusToken={
                                             composerFocusToken
@@ -14233,6 +14303,14 @@ function Workspace({
                                       </div>
                                     );
                                   })}
+                                {projectThreadPane ? (
+                                  <div
+                                    data-project-thread={shownMonoSessionId}
+                                    className="absolute inset-0 flex h-full min-h-0 flex-col"
+                                  >
+                                    {projectThreadPane}
+                                  </div>
+                                ) : null}
                               </div>
                             </div>
                           </div>
