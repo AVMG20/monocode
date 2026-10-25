@@ -14,7 +14,8 @@ type Layer = StackPage & { leaving: boolean };
  * see-through, so the panel's glass shows behind them), and slides back out
  * on the way back. Pages nest (settings, then one of its pages), and a page
  * stays mounted until it has finished sliding away. A page whose key stays
- * the same just updates in place.
+ * the same just updates in place. Pages open when the stack mounts (another
+ * Mono reopening on the page it showed) are just there, without a slide.
  */
 export function PanelStack({
   pages,
@@ -24,8 +25,17 @@ export function PanelStack({
   pages: StackPage[];
   children: ReactNode;
 }) {
-  const [layers, setLayers] = useState<Layer[]>([]);
+  const [layers, setLayers] = useState<Layer[]>(() =>
+    pages.map((page) => ({ ...page, leaving: false })),
+  );
   const timers = useRef(new Map<string, number>());
+  // Read only as the first layers mount; later pages slide in as usual.
+  const initialKeys = useRef<ReadonlySet<string> | null>(
+    new Set(pages.map((page) => page.key)),
+  );
+  useLayoutEffect(() => {
+    initialKeys.current = null;
+  }, []);
 
   // Keep the layers in step with the pages, letting removed ones slide out.
   const keys = pages.map((page) => page.key).join("\u0000");
@@ -89,6 +99,7 @@ export function PanelStack({
         return (
           <PageLayer
             key={layer.key}
+            entered={!!initialKeys.current?.has(layer.key)}
             leaving={layer.leaving}
             covered={index >= 0 && index < open.length - 1}
           >
@@ -125,19 +136,24 @@ function Covered({
 }
 
 function PageLayer({
+  entered: alreadyEntered,
   leaving,
   covered,
   children,
 }: {
+  /** Shown in place from the start, with nothing to slide in from. */
+  entered: boolean;
   leaving: boolean;
   covered: boolean;
   children: ReactNode;
 }) {
   // Mount offscreen first, so the slide has somewhere to come from.
-  const [entered, setEntered] = useState(false);
+  const [entered, setEntered] = useState(alreadyEntered);
   useLayoutEffect(() => {
+    if (entered) return;
     const frame = requestAnimationFrame(() => setEntered(true));
     return () => cancelAnimationFrame(frame);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const shown = entered && !leaving;
   return (

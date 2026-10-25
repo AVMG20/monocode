@@ -2,10 +2,8 @@
 import { act, createElement, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
-import {
-  AgentMarkdown,
-  MarkdownLinkContext,
-} from "../../sessions/ui/AgentMarkdown";
+import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
+import { MarkdownLinkContext } from "../../sessions/ui/markdownLinks";
 import type { ThreadView } from "../model/coordinator";
 import { ThreadLink, threadLinkId } from "./ThreadLink";
 

@@ -1109,6 +1109,8 @@ function filesInWorkspaceTabs(tabs: readonly WorkspaceTab[]): FilePaneTab[] {
 
 /** Stable empty tab list for the title bar while a Mono is in full view. */
 const NO_TITLE_TABS: [] = [];
+/** Threads shown recently that stay loaded after the overview moves on. */
+const RECENT_THREADS_KEPT = 3;
 const NO_THREAD_COUNTS = { waiting: 0, busy: 0 };
 
 /** Native sheet. `window.confirm` is swallowed when a macOS menu accelerator fires. */
@@ -1270,6 +1272,12 @@ function Workspace({
   // A launched session or a document open over the overview's list. Hiding
   // the overview leaves them, so it opens on its list again.
   const [monoShownSession, setMonoShownSession] = useState<string | null>(null);
+  // Bumped by anything that changes what the overview shows, so a thread
+  // still loading never replaces what was picked after it.
+  const threadRevealRequest = useRef(0);
+  useEffect(() => {
+    threadRevealRequest.current += 1;
+  }, [monoShownSession]);
   const [monoOverviewDocument, setMonoOverviewDocument] = useState<
     string | null
   >(null);
@@ -2543,11 +2551,24 @@ function Workspace({
   );
   const coordinatorThreadsRef = useRef(coordinatorThreads);
   coordinatorThreadsRef.current = coordinatorThreads;
-  // The session the overview shows stays loaded while it is on screen.
-  const keptThreadIds = useMemo(
-    () => new Set(shownMonoSessionId ? [shownMonoSessionId] : []),
-    [shownMonoSessionId],
-  );
+  // The thread the overview shows stays loaded while it is on screen, and so
+  // do the last few shown and each project's remembered one, so switching
+  // back to them is instant rather than a reload from disk.
+  const recentThreadIds = useRef<string[]>([]);
+  const keptThreadIds = useMemo(() => {
+    if (shownMonoSessionId)
+      recentThreadIds.current = [
+        shownMonoSessionId,
+        ...recentThreadIds.current.filter((id) => id !== shownMonoSessionId),
+      ].slice(0, RECENT_THREADS_KEPT);
+    return new Set([
+      ...recentThreadIds.current,
+      ...listCoordinatorProjects().flatMap(
+        (project) => loadShownThread(project.id) ?? [],
+      ),
+    ]);
+    // The roster is read through its snapshot.
+  }, [shownMonoSessionId, monosSnap]);
 
   // Monos and Claude Projects show their own work: a coordinator and its
   // threads stay off the folder's rail row. Running threads still list with
@@ -5302,11 +5323,23 @@ function Workspace({
 
   /** A Mono's conversation is a view over the existing workspace tabs. */
   const onOpenMono = useCallback(
-    async (monoId: string) => {
+    async (monoId: string, options?: { thread?: string }) => {
       setMonoActivity(null);
       workspaceNavigation.cancel();
       const request = ++monoViewRequest.current;
+      threadRevealRequest.current += 1;
       lastMonoIdRef.current = monoId;
+      // A thread asked for (or the one it showed last) loads alongside the
+      // coordinator, not after it.
+      const threadId =
+        options?.thread ??
+        (monoViewIdRef.current &&
+        monoForSession(monoViewIdRef.current)?.id === monoId
+          ? null
+          : loadShownThread(monoId));
+      const threadLoad = threadId
+        ? ensureOpenSession(threadId).catch(() => null)
+        : Promise.resolve(null);
       const session = await ensureMonoSession(monoId, {
         home: homeDir,
         load: ensureOpenSession,
@@ -5319,11 +5352,9 @@ function Workspace({
       if (!session || request !== monoViewRequest.current) return;
       // What the last Mono had open over its overview is its own; another
       // Mono opens on the thread it showed last time, or on its list.
-      const switching = monoViewIdRef.current !== session.id;
-      const rememberedId = switching ? loadShownThread(monoId) : null;
-      const remembered = rememberedId
-        ? await ensureOpenSession(rememberedId).catch(() => null)
-        : null;
+      const switching =
+        monoViewIdRef.current !== session.id || !!options?.thread;
+      const remembered = switching ? await threadLoad : null;
       if (request !== monoViewRequest.current) return;
       if (switching) {
         setMonoShownSession(remembered ? remembered.id : null);
@@ -5582,8 +5613,17 @@ function Workspace({
     async (monoSessionId: string, launchedId: string) => {
       // Load it first, then switch in one step: the overview goes straight
       // from what it shows to this session, never through the list.
+      const request = ++threadRevealRequest.current;
       const session = await ensureOpenSession(launchedId).catch(() => null);
-      if (monoViewIdRef.current !== monoSessionId) return;
+      // A newer pick, or going back, wins over a slow load finishing late.
+      if (
+        request !== threadRevealRequest.current ||
+        monoViewIdRef.current !== monoSessionId
+      ) {
+        if (shownMonoSessionIdRef.current !== launchedId)
+          openingSessionIds.current.delete(launchedId);
+        return;
+      }
       setMonoOverviewTab("sessions");
       setMonoOverviewDocument(null);
       setMonoOverviewOpen(true);
@@ -5617,8 +5657,10 @@ function Workspace({
     setNotesViewOpen(false);
     setAutomationsViewOpen(false);
     setSettingsOpen(false);
-    if (monoForSession(monoViewIdRef.current ?? "")?.id !== projectId)
-      await onOpenMono(projectId);
+    if (monoForSession(monoViewIdRef.current ?? "")?.id !== projectId) {
+      await onOpenMono(projectId, { thread: sessionId });
+      return;
+    }
     const monoSessionId = monoViewIdRef.current;
     if (monoForSession(monoSessionId ?? "")?.id !== projectId) return;
     await revealMonoLaunchedSession(monoSessionId!, sessionId);
@@ -14123,11 +14165,15 @@ function Workspace({
   const monoLaunches = useMemo(() => {
     const launched = monoViewBlocks ? monoSpawnedSessions(monoViewBlocks) : [];
     if (!viewedProjectThreadViews || !monoViewSession) return launched;
-    const known = new Set(launched.map((launch) => launch.sessionId));
-    const kept = [...viewedProjectThreadViews]
-      .filter((view) => !known.has(view.sessionId))
-      .sort((a, b) => a.updatedAt - b.updatedAt)
-      .map((view): MonoSpawnedSession => {
+    // Registry order (oldest first) keeps rows still while threads stream;
+    // sorting by activity moved them on every new block.
+    const launchedById = new Map(
+      launched.map((launch) => [launch.sessionId, launch]),
+    );
+    const kept = viewedProjectThreadViews.map(
+      (view): MonoSpawnedSession => {
+        const launch = launchedById.get(view.sessionId);
+        if (launch) return launch;
         const session = sessionsRef.current.find(
           (entry) => entry.id === view.sessionId,
         );
@@ -14138,8 +14184,13 @@ function Workspace({
           harness: view.harness ?? session?.harness ?? monoViewSession.harness,
           model: view.model ?? session?.model ?? "",
         };
-      });
-    return [...kept, ...launched];
+      },
+    );
+    const known = new Set(kept.map((launch) => launch.sessionId));
+    return [
+      ...kept,
+      ...launched.filter((launch) => !known.has(launch.sessionId)),
+    ];
   }, [monoViewBlocks, viewedProjectThreadViews, monoViewSession]);
   const monoDocuments = useMemo(
     () => (monoViewBlocks ? artifactCards(monoViewBlocks) : []),
@@ -14171,9 +14222,22 @@ function Workspace({
   const [storedLaunchTitles, setStoredLaunchTitles] = useState<
     ReadonlyMap<string, string>
   >(() => new Map());
+  // A project's threads already carry their saved titles; reading each one
+  // in full just for its title stalled opening a project with many threads.
+  const threadTitles = useMemo(
+    () =>
+      new Map(
+        (viewedProjectThreadViews ?? []).map((view) => [
+          view.sessionId,
+          view.title,
+        ]),
+      ),
+    [viewedProjectThreadViews],
+  );
   const unopenedLaunchesKey = JSON.stringify(
     monoLaunches.flatMap((launch) =>
       storedLaunchTitles.has(launch.sessionId) ||
+      threadTitles.has(launch.sessionId) ||
       sessions.some((entry) => entry.id === launch.sessionId)
         ? []
         : [launch.sessionId],
@@ -14207,7 +14271,9 @@ function Workspace({
         : [
             launch.sessionId,
             "done",
-            storedLaunchTitles.get(launch.sessionId) || launch.title,
+            storedLaunchTitles.get(launch.sessionId) ||
+              threadTitles.get(launch.sessionId) ||
+              launch.title,
           ];
     }),
   );

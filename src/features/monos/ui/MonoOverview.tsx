@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { IconButton } from "../../../app/shell/TitleBar";
 import {
   Clock,
@@ -163,12 +163,6 @@ export function MonoOverview({
     tab === "activity" ? "sessions" : tab,
   );
   if (tab !== "activity") lastTab.current = tab;
-  // Another Mono starts at its own front page, with all its sessions.
-  useEffect(() => {
-    setRoutes([]);
-    setQuery("");
-    setFilters(DEFAULT_SESSION_SIDEBAR_FILTERS);
-  }, [monoId]);
   const push = (route: Route) => setRoutes((current) => [...current, route]);
   const back = () => setRoutes((current) => current.slice(0, -1));
 
@@ -205,12 +199,15 @@ export function MonoOverview({
   });
 
   // What the overview opened goes on top of everything, the way it would
-  // from the list beneath.
+  // from the list beneath. One page for whichever session it shows: going
+  // from one thread to another swaps it in place rather than sliding a
+  // second full transcript over the first.
   if (shownSession)
     pages.push({
-      key: `session:${shownSession.sessionId}`,
+      key: "session",
       node: (
         <LaunchedSessionPage
+          key={shownSession.sessionId}
           title={shownSession.title}
           onBack={onBackFromSession}
           onOpenInWorkspace={() =>

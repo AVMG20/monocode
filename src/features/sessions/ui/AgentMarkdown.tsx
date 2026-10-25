@@ -1,3 +1,4 @@
+import { MarkdownLinkContext } from "./markdownLinks";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
@@ -179,17 +180,6 @@ const FileOpenContext = createContext<{
 
 const RemoteMediaContext = createContext(false);
 
-/**
- * Shows an in-app link (such as a coordinator's `#thread-<id>`) as something
- * of its own. Returning undefined leaves the link as it is.
- */
-export type MarkdownLinkRenderer = (
-  href: string,
-  children: ReactNode,
-) => ReactNode | undefined;
-export const MarkdownLinkContext = createContext<
-  MarkdownLinkRenderer | undefined
->(undefined);
 /** Show local images and videos a reply links to, rather than the links. */
 const LocalMediaContext = createContext(false);
 

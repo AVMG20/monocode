@@ -129,11 +129,11 @@ import { useTranscriptAnchor } from "../hooks/useTranscriptAnchor";
 import { useBottomChatMotion } from "../hooks/useBottomChatMotion";
 import { useTranscriptSelection } from "../hooks/useTranscriptSelection";
 import type { TranscriptLayout } from "../../settings/model/appearance";
+import { AgentMarkdown } from "./AgentMarkdown";
 import {
-  AgentMarkdown,
   MarkdownLinkContext,
   type MarkdownLinkRenderer,
-} from "./AgentMarkdown";
+} from "./markdownLinks";
 import { MonoWorkTicker } from "./MonoWorkTicker";
 import { monoWorkStatus } from "../model/monoWorkStatus";
 import { isEmojiOnlyMessage } from "../model/emojiMessage";
