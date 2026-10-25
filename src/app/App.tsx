@@ -2543,6 +2543,9 @@ function Workspace({
     sessions,
     busySessionIds,
     activeSessionId,
+    // A thread open beside its project is in view while its project's chat
+    // holds focus; finishing there needs no "Ready for review".
+    shownMonoSessionId,
   );
   const coordinatorThreads = useCoordinatorThreads(
     sessions,

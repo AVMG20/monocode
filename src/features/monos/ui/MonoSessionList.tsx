@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import { LIST_PAGE_SIZE, listWindowSize } from "../../../shared/lib/listWindow";
 import { projectName } from "../../../shared/lib/paths";
 import { IconButton } from "../../../app/shell/TitleBar";
@@ -53,15 +53,7 @@ export type ShownMonoSession = {
 const storedSessions = new Map<string, SessionSummary>();
 
 /** Cards for launched sessions, with where each stands, open or saved. */
-export function MonoSessionList({
-  agent,
-  launches,
-  sessions,
-  history = [],
-  query = "",
-  filters = DEFAULT_SESSION_SIDEBAR_FILTERS,
-  onOpenSession,
-}: {
+type MonoSessionListProps = {
   agent: MonoLook;
   launches: readonly MonoSpawnedSession[];
   sessions: readonly Session[];
@@ -70,7 +62,28 @@ export function MonoSessionList({
   query?: string;
   filters?: SessionSidebarFilters;
   onOpenSession: (sessionId: string) => void | Promise<void>;
-}) {
+  /** A page (an open thread) covers the list: it holds still until shown. */
+  covered?: boolean;
+};
+
+/**
+ * Every card reads the live sessions, so the list re-rendered on each
+ * streamed token, even under the thread page that hides it.
+ */
+export const MonoSessionList = memo(
+  MonoSessionListContent,
+  (previous, next) => !!previous.covered && !!next.covered,
+);
+
+function MonoSessionListContent({
+  agent,
+  launches,
+  sessions,
+  history = [],
+  query = "",
+  filters = DEFAULT_SESSION_SIDEBAR_FILTERS,
+  onOpenSession,
+}: MonoSessionListProps) {
   const launchesKey = JSON.stringify(
     launches.map((entry) => [entry.sessionId, entry.cwd]),
   );

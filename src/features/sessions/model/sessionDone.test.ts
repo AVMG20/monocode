@@ -27,6 +27,18 @@ describe("nextUnseenFinishedSessions", () => {
     ).toEqual(new Set());
   });
 
+  it("does not mark a thread done that finishes beside its project", () => {
+    expect(
+      nextUnseenFinishedSessions({
+        previousBusyIds: new Set(["thread"]),
+        busyIds: new Set(),
+        previousUnseenIds: new Set(),
+        focusedSessionId: "coordinator",
+        shownSessionId: "thread",
+      }),
+    ).toEqual(new Set());
+  });
+
   it("clears done when the session is focused", () => {
     expect(
       nextUnseenFinishedSessions({

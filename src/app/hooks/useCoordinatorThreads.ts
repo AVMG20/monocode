@@ -81,9 +81,9 @@ export function useCoordinatorThreads(
 
   useEffect(() => {
     let cancelled = false;
-    const folders = new Set(
-      projects.flatMap((project) => project.projects.slice(0, 1)),
-    );
+    // Every folder a project works in: a thread started in its second folder
+    // vanished from the project once it unloaded.
+    const folders = new Set(projects.flatMap((project) => project.projects));
     if (!threadIds.size) {
       setSummaries((current) => (current.size ? new Map() : current));
       return;

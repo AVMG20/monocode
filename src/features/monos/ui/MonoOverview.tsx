@@ -360,6 +360,7 @@ export function MonoOverview({
                   query={query}
                   filters={filters}
                   onOpenSession={onOpenSession}
+                  covered={pages.length > 0}
                 />
               </div>
             ) : (
