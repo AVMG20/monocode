@@ -1206,9 +1206,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                           : undefined
                       }
                       busy={!!session.busy && !monoTranscript.viewingOlderPage}
-                      // A viewed subagent covers Main: it holds still and
-                      // catches up when Main comes back.
-                      visible={visible && !viewedSubagent}
+                      visible={visible}
                       renderLink={renderThreadLink}
                       cwd={workCwd}
                       agentName={agent?.name}
@@ -1386,12 +1384,14 @@ const LocalSessionPane = memo(function LocalSessionPane({
                   />
                 ) : null}
                 {/* One mark per message would crowd a Mono's endless chat. */}
-                {agent ? null : (
+                {/* Main's prompts mean nothing over a subagent's transcript,
+                    and would scroll that one instead. */}
+                {agent || viewedSubagent ? null : (
                   <PromptOutline
                     blocks={session.blocks}
                     scope={transcriptScope}
                     scroller={transcriptScroller}
-                    visible={visible && !viewedSubagent}
+                    visible={visible}
                     revealBlock={revealBlock}
                   />
                 )}
