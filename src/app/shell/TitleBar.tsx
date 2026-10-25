@@ -1238,7 +1238,7 @@ function MonoTitle({
       />
       <span
         className={`min-w-0 truncate text-[13px] font-medium ${
-          thread ? "shrink-[2] text-content/55" : "text-content"
+          thread ? "max-w-[40%] shrink-0 text-content/55" : "text-content"
         }`}
       >
         {look.name}
