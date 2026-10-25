@@ -9224,15 +9224,16 @@ function Workspace({
     setSessions(sessionsRef.current);
     persistSession(sessionsRef.current.find((s) => s.id === sessionId));
 
-    const settle = (bash: BashRun) => {
-      updateSessionBlock(sessionId, blockId, (current) => ({
-        ...current,
-        bash,
-      }));
-      deliverBashRuns(sessionId);
-    };
-    // Live output only repaints; the settled run is what gets saved.
-    const append = (chunk: BashModeChunk) => {
+    // Live output only repaints, at most once a frame: each chunk used to
+    // re-render the whole app. The settled run is what gets saved.
+    const unflushed = { stdout: "", stderr: "" };
+    let flushFrame: number | null = null;
+    const flush = () => {
+      flushFrame = null;
+      const { stdout, stderr } = unflushed;
+      if (!stdout && !stderr) return;
+      unflushed.stdout = "";
+      unflushed.stderr = "";
       sessionsRef.current = sessionsRef.current.map((s) =>
         s.id === sessionId
           ? {
@@ -9243,7 +9244,8 @@ function Workspace({
                       ...b,
                       bash: {
                         ...b.bash,
-                        [chunk.stream]: b.bash[chunk.stream] + chunk.data,
+                        stdout: b.bash.stdout + stdout,
+                        stderr: b.bash.stderr + stderr,
                       },
                     }
                   : b,
@@ -9252,6 +9254,20 @@ function Workspace({
           : s,
       );
       setSessions(sessionsRef.current);
+    };
+    const append = (chunk: BashModeChunk) => {
+      unflushed[chunk.stream] += chunk.data;
+      flushFrame ??= requestAnimationFrame(flush);
+    };
+    const settle = (bash: BashRun) => {
+      // The settled run carries all of its output.
+      if (flushFrame !== null) cancelAnimationFrame(flushFrame);
+      flushFrame = null;
+      updateSessionBlock(sessionId, blockId, (current) => ({
+        ...current,
+        bash,
+      }));
+      deliverBashRuns(sessionId);
     };
     void runBashModeCommand(command, sessionWorkCwd(session), append)
       .then((result) =>
