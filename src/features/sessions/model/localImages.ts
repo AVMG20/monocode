@@ -1,8 +1,5 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
-import {
-  allowVideoFile,
-  readBinaryFile,
-} from "../../../platform/tauri/fs";
+import { allowVideoFile, readBinaryFile } from "../../../platform/tauri/fs";
 import { isChatVideoPath, sniffImageMime } from "../../files/model/filePreview";
 
 export type LocalImageState =
@@ -18,6 +15,7 @@ type Entry = {
 };
 
 export const LOADING_IMAGE: LocalImageState = { status: "loading" };
+const FAILED_IMAGE: LocalImageState = { status: "error" };
 
 /**
  * A thumbnail, its lightbox, and the lightbox's strip all show the same file.
@@ -110,7 +108,13 @@ export function subscribeLocalImage(
 ): () => void {
   let entry = entries.get(path);
   if (!entry) {
-    entry = { state: LOADING_IMAGE, refs: 0, listeners: new Set() };
+    // One that failed before reads as failed while it is checked again (it
+    // may exist by now), rather than as loading for every revisit.
+    entry = {
+      state: failed.has(path) ? FAILED_IMAGE : LOADING_IMAGE,
+      refs: 0,
+      listeners: new Set(),
+    };
     entries.set(path, entry);
     load(path, entry);
   }
@@ -134,7 +138,10 @@ export function subscribeLocalImage(
 }
 
 export function localImageSnapshot(path: string): LocalImageState {
-  return entries.get(path)?.state ?? LOADING_IMAGE;
+  return (
+    entries.get(path)?.state ??
+    (failed.has(path) ? FAILED_IMAGE : LOADING_IMAGE)
+  );
 }
 
 /** True once a file has failed to load as an image (missing, unreadable, not an image). */

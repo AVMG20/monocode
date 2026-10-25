@@ -10,7 +10,10 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { ExplorerMenu, type ExplorerMenuItem } from "../../files/ui/ExplorerMenu";
+import {
+  ExplorerMenu,
+  type ExplorerMenuItem,
+} from "../../files/ui/ExplorerMenu";
 import { FileActionError } from "../../files/ui/FileActionError";
 import { formatFileSize } from "../../files/model/filePreview";
 import {
@@ -87,16 +90,19 @@ function useAvailableImages(images: TranscriptImage[]): TranscriptImage[] {
   );
 }
 
+const NO_IMAGES: TranscriptImage[] = [];
+
 /**
  * Makes every image in a chat one gallery: opening any of them pages through
  * the rest, and each offers the same actions in the chat and full screen.
  */
 export function TranscriptImagesProvider({
-  images,
+  images: source,
   onReference,
   children,
 }: {
-  images: TranscriptImage[];
+  /** The chat's images, or how to list them; listed only while one is open. */
+  images: TranscriptImage[] | (() => TranscriptImage[]);
   onReference?: (path: string) => void;
   children: ReactNode;
 }) {
@@ -104,6 +110,11 @@ export function TranscriptImagesProvider({
   const value = useMemo(
     () => ({ open: setViewing, onReference }),
     [onReference],
+  );
+  const open = viewing !== null;
+  const images = useMemo(
+    () => (typeof source !== "function" ? source : open ? source() : NO_IMAGES),
+    [source, open],
   );
   const available = useAvailableImages(images);
   const gallery = useMemo(() => {
@@ -185,7 +196,9 @@ function ImageReferenceThumbnail({ image }: { image: TranscriptImage }) {
   const { open, onReference, lightbox } = useOpenTranscriptImage(image);
   const [menuOpen, setMenuOpen] = useState(false);
 
-  if (state.status === "error") return null;
+  // Nothing until the file has loaded: replies often name paths that don't
+  // exist, and a placeholder that then collapsed shifted the transcript.
+  if (state.status !== "ready") return null;
 
   return (
     <div className="group/image relative min-w-0 max-w-56" title={image.path}>
@@ -195,24 +208,19 @@ function ImageReferenceThumbnail({ image }: { image: TranscriptImage }) {
         onClick={open}
         className="block cursor-zoom-in overflow-hidden rounded-lg border border-content/10 bg-content/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
-        {state.status === "ready" && image.kind === "video" ? (
+        {image.kind === "video" ? (
           <VideoPoster
             url={state.url}
             name={image.name}
             className="h-28 w-48"
           />
-        ) : state.status === "ready" ? (
+        ) : (
           <img
             src={state.url}
             alt={image.alt || image.name}
             draggable={false}
+            decoding="async"
             className="block h-28 w-auto min-w-16 max-w-56 object-cover"
-          />
-        ) : (
-          <div
-            role="status"
-            aria-label={`Loading ${image.name}`}
-            className="h-28 w-36 animate-pulse bg-content/8"
           />
         )}
       </button>
@@ -516,7 +524,11 @@ export function ImageGalleryLightbox({
         }}
       >
         {state.status === "ready" && video ? (
-          <LightboxVideo key={current.path} url={state.url} path={current.path} />
+          <LightboxVideo
+            key={current.path}
+            url={state.url}
+            path={current.path}
+          />
         ) : state.status === "ready" ? (
           <img
             key={current.path}
@@ -605,7 +617,12 @@ function GalleryThumbnail({
       }`}
     >
       {state.status === "ready" && image.kind === "video" ? (
-        <VideoPoster url={state.url} name={image.name} className="size-full" compact />
+        <VideoPoster
+          url={state.url}
+          name={image.name}
+          className="size-full"
+          compact
+        />
       ) : state.status === "ready" ? (
         <img
           src={state.url}
@@ -691,7 +708,10 @@ function LightboxVideo({ url, path }: { url: string; path: string }) {
   const [failed, setFailed] = useState(false);
   if (failed) {
     return (
-      <div role="alert" className="flex flex-col items-center gap-3 text-sm text-white/60">
+      <div
+        role="alert"
+        className="flex flex-col items-center gap-3 text-sm text-white/60"
+      >
         This video's format cannot be played here.
         <button
           type="button"

@@ -399,7 +399,8 @@ function AgentTranscriptComponent({
     () => lastUserTurnBlock(blocks)?.id,
     [blocks],
   );
-  const transcriptImages = useMemo(
+  // Walking every reply for images only pays off once the lightbox opens.
+  const transcriptImages = useCallback(
     () => collectTranscriptImages(blocks, cwd),
     [blocks, cwd],
   );

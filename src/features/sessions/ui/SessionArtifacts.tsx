@@ -69,30 +69,40 @@ export function SessionArtifacts({ blocks, onOpen }: Props) {
  * calls the artifact. Read again when a new version goes out.
  */
 function usePageTitles(artifacts: SessionArtifact[]): Map<string, string> {
-  const [titles, setTitles] = useState(() => new Map<string, string>());
   const sources = artifacts.flatMap((artifact) =>
     artifact.source ? [{ id: artifact.id, ...artifact.source }] : [],
   );
   const key = sources
     .map((source) => `${source.id}\0${source.path}\0${source.version ?? ""}`)
     .join("\n");
+  // Known titles show from the first render: the composer remounts on every
+  // session switch, and reading each page again relabelled its pills (and
+  // shifted the layout) after every switch.
+  const [titles, setTitles] = useState(() => cachedTitles(sources));
 
   useEffect(() => {
     if (sources.length === 0) return;
+    const missing = sources.filter(
+      (source) => !pageTitleCache.has(pageTitleKey(source)),
+    );
+    if (missing.length === 0) {
+      setTitles((current) => sameTitles(current, cachedTitles(sources)));
+      return;
+    }
     let cancelled = false;
     void Promise.all(
-      sources.map(async (source) => {
+      missing.map(async (source) => {
+        let title: string | null = null;
         try {
-          const title = titleFromPage(await readTextFile(source.path));
-          return title ? ([source.id, title] as const) : null;
+          title = titleFromPage(await readTextFile(source.path)) || null;
         } catch {
           // Scratchpads are cleaned up; the file name still names the page.
-          return null;
         }
+        rememberPageTitle(pageTitleKey(source), title);
       }),
-    ).then((entries) => {
+    ).then(() => {
       if (cancelled) return;
-      setTitles(new Map(entries.filter((entry) => entry !== null)));
+      setTitles((current) => sameTitles(current, cachedTitles(sources)));
     });
     return () => {
       cancelled = true;
@@ -102,6 +112,41 @@ function usePageTitles(artifacts: SessionArtifact[]): Map<string, string> {
   }, [key]);
 
   return titles;
+}
+
+type PageSource = { id: string; path: string; version?: unknown };
+
+/** Titles read per file and version, kept across composer remounts. */
+const pageTitleCache = new Map<string, string | null>();
+const PAGE_TITLE_CACHE_LIMIT = 500;
+
+function pageTitleKey(source: PageSource): string {
+  return `${source.path}\0${source.version ?? ""}`;
+}
+
+function rememberPageTitle(key: string, title: string | null) {
+  pageTitleCache.delete(key);
+  pageTitleCache.set(key, title);
+  if (pageTitleCache.size > PAGE_TITLE_CACHE_LIMIT)
+    pageTitleCache.delete(pageTitleCache.keys().next().value!);
+}
+
+function cachedTitles(sources: PageSource[]): Map<string, string> {
+  const titles = new Map<string, string>();
+  for (const source of sources) {
+    const title = pageTitleCache.get(pageTitleKey(source));
+    if (title) titles.set(source.id, title);
+  }
+  return titles;
+}
+
+function sameTitles(
+  current: Map<string, string>,
+  next: Map<string, string>,
+): Map<string, string> {
+  if (current.size !== next.size) return next;
+  for (const [id, title] of next) if (current.get(id) !== title) return next;
+  return current;
 }
 
 /**
