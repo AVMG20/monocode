@@ -191,10 +191,33 @@ function parseMono(value: unknown): Mono | undefined {
 /** Every Mono, in the order the rail shows them. */
 export function listMonos(): Mono[] {
   migrateLegacyMonoStorage();
-  const parsed = readJson(ROSTER_KEY);
-  if (!Array.isArray(parsed)) return [];
-  return parsed.flatMap((entry) => parseMono(entry) ?? []);
+  let raw: string | null = null;
+  try {
+    raw = localStorage.getItem(ROSTER_KEY);
+  } catch {
+    raw = null;
+  }
+  // Looked up several times per render (and per session in the sidebar):
+  // parse the roster once per saved version. The same objects come back
+  // until it changes, so memos keyed on a Mono hold; callers never mutate.
+  if (!rosterCache || rosterCache.raw !== raw) {
+    let parsed: unknown;
+    try {
+      parsed = raw ? (JSON.parse(raw) as unknown) : undefined;
+    } catch {
+      parsed = undefined;
+    }
+    rosterCache = {
+      raw,
+      monos: Array.isArray(parsed)
+        ? parsed.flatMap((entry) => parseMono(entry) ?? [])
+        : [],
+    };
+  }
+  return [...rosterCache.monos];
 }
+
+let rosterCache: { raw: string | null; monos: Mono[] } | null = null;
 
 /** Monos of their own, without the project coordinators. */
 export function listAgentMonos(): Mono[] {

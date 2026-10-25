@@ -219,7 +219,7 @@ import { SourceControl } from "../../features/source-control/ui/SourceControl";
 import { GitHistoryGraph } from "../../features/source-control/ui/GitHistoryGraph";
 import { GithubStarPrompt } from "./GithubStarPrompt";
 import {
-  isMonoSession,
+  listMonos,
   listAgentMonos,
   MONO_STATUS_LABEL,
   monoLook,
@@ -786,7 +786,15 @@ function SidebarComponent({
     : pending && sessions.length === 0;
   const worktreeFocus = useWorktreeFocus(cwd);
   const focusedWorktree = remoteProject ? undefined : worktreeFocus;
-  useSyncExternalStore(subscribeMonos, monosSnapshot);
+  const rosterSnap = useSyncExternalStore(subscribeMonos, monosSnapshot);
+  // One lookup per roster change, not one storage read per listed session.
+  const monoSessionIds = useMemo(
+    () =>
+      new Set(
+        listMonos().flatMap((mono) => (mono.sessionId ? [mono.sessionId] : [])),
+      ),
+    [rosterSnap],
+  );
   // A project's threads live in its threads list, not the workspace's.
   const threadsSnap = useSyncExternalStore(
     subscribeProjectThreads,
@@ -799,7 +807,7 @@ function SidebarComponent({
     sessionFolders,
   ).filter(
     (session) =>
-      !isMonoSession(session.id) &&
+      !monoSessionIds.has(session.id) &&
       !projectThreadIds.has(session.id) &&
       !("ephemeral" in session && session.ephemeral) &&
       !isHabitRun(session.id) &&

@@ -4541,7 +4541,9 @@ function Workspace({
 
   /** Open tabs per workspace in the sidebar's project, keyed by worktree
    * path, so the switcher can show what each worktree still has open. */
-  const worktreeTabStats = useMemo(() => {
+  // Rebuilt per streamed event (it reads `sessions`); kept stable while the
+  // counts hold, so the memoized sidebar doesn't re-render with every token.
+  const worktreeTabStatsNow = useMemo(() => {
     const stats = new Map<string, { tabs: number; busy: boolean }>();
     if (!sidebarCwd || sidebarCwd === "~" || isRemoteProjectPath(sidebarCwd))
       return stats;
@@ -4558,6 +4560,7 @@ function Workspace({
     }
     return stats;
   }, [tabs, sessions, sidebarCwd, tabWorkspace, workspaceNavigation.revision]);
+  const worktreeTabStats = useStableValue(worktreeTabStatsNow);
   const deckProjectTabs = useMemo(() => {
     // A projectless session belongs to no project, so it stands on its own
     // rather than trailing the last project's tabs.
