@@ -115,7 +115,7 @@ it("opens on General and moves between its sections", async () => {
   await render();
   const nav = dialog().querySelector('nav[aria-label="Settings sections"]')!;
   expect([...nav.querySelectorAll("button")].map((b) => b.textContent)).toEqual(
-    ["General", "Soul", "Memory"],
+    ["General", "Instructions", "Memory"],
   );
   expect(button("General", nav).getAttribute("aria-current")).toBe("page");
   expect(dialog().querySelector("input[aria-label=\"Name\"]")).not.toBeNull();
@@ -123,7 +123,7 @@ it("opens on General and moves between its sections", async () => {
   await act(async () => button("Memory", nav).click());
   expect(button("Memory", nav).getAttribute("aria-current")).toBe("page");
   expect(dialog().querySelector("[data-mono-memory]")).not.toBeNull();
-  await act(async () => button("Soul", nav).click());
+  await act(async () => button("Instructions", nav).click());
   expect(dialog().querySelector("[data-mono-soul]")).not.toBeNull();
 });
 
@@ -159,7 +159,7 @@ it("requires confirmation for reset and cancels without deleting anything", asyn
   act(() => button("Reset", dialog()).click());
   const confirm = confirmButton("Cancel").closest('[role="dialog"]')!;
   expect(confirm.textContent).toContain("Reset Broski's conversation?");
-  expect(confirm.textContent).toContain("soul, memory and habits will be kept");
+  expect(confirm.textContent).toContain("instructions and memory will be kept");
   act(() => confirmButton("Cancel").click());
   expect(confirmButton("Cancel")).toBeUndefined();
   expect(reset).not.toHaveBeenCalled();

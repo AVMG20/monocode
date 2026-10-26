@@ -191,10 +191,33 @@ function parseMono(value: unknown): Mono | undefined {
 /** Every Mono, in the order the rail shows them. */
 export function listMonos(): Mono[] {
   migrateLegacyMonoStorage();
-  const parsed = readJson(ROSTER_KEY);
-  if (!Array.isArray(parsed)) return [];
-  return parsed.flatMap((entry) => parseMono(entry) ?? []);
+  let raw: string | null = null;
+  try {
+    raw = localStorage.getItem(ROSTER_KEY);
+  } catch {
+    raw = null;
+  }
+  // Looked up several times per render (and per session in the sidebar):
+  // parse the roster once per saved version. The same objects come back
+  // until it changes, so memos keyed on a Mono hold; callers never mutate.
+  if (!rosterCache || rosterCache.raw !== raw) {
+    let parsed: unknown;
+    try {
+      parsed = raw ? (JSON.parse(raw) as unknown) : undefined;
+    } catch {
+      parsed = undefined;
+    }
+    rosterCache = {
+      raw,
+      monos: Array.isArray(parsed)
+        ? parsed.flatMap((entry) => parseMono(entry) ?? [])
+        : [],
+    };
+  }
+  return [...rosterCache.monos];
 }
+
+let rosterCache: { raw: string | null; monos: Mono[] } | null = null;
 
 /** Monos of their own, without the project coordinators. */
 export function listAgentMonos(): Mono[] {
@@ -282,18 +305,6 @@ export function nextMonoLook(
       palette.find((color) => !colors.has(color)) ??
       palette[roster.length % palette.length],
   };
-}
-
-/** A new Mono with the next look, starting with the projects given, if any. */
-export function createMono(projects: readonly string[] = []): Mono {
-  const roster = listMonos();
-  const mono: Mono = {
-    id: newMonoId(),
-    ...nextMonoLook(roster),
-    projects: uniqueProjects(projects),
-  };
-  saveRoster([...roster, mono]);
-  return mono;
 }
 
 const OPEN_MONO_KEY = "monocode:open-mono";
@@ -406,27 +417,6 @@ export function saveMonoName(monoId: string, name: string): void {
 
 export function saveMonoMascot(monoId: string, mascot: string): void {
   updateMono(monoId, (mono) => ({ ...mono, mascot }));
-}
-
-export function addMonoProject(monoId: string, path: string): void {
-  updateMono(monoId, (mono) => ({
-    ...mono,
-    projects: [...mono.projects, path],
-  }));
-}
-
-export function removeMonoProject(monoId: string, path: string): void {
-  const key = projectKey(path);
-  updateMono(monoId, (mono) => ({
-    ...mono,
-    projects: mono.projects.filter((project) => projectKey(project) !== key),
-  }));
-}
-
-/** Whether the Mono has been given this project. */
-export function monoWorksOn(mono: Pick<Mono, "projects">, path: string) {
-  const key = projectKey(path);
-  return mono.projects.some((project) => projectKey(project) === key);
 }
 
 export function subscribeMonos(onChange: () => void): () => void {

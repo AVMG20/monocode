@@ -64,45 +64,6 @@ export function PageHeader({
   );
 }
 
-export function Section({
-  title,
-  action,
-  children,
-}: {
-  title: string;
-  action?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <section className="border-t border-stroke px-2 pb-4 pt-3">
-      <div className="flex items-center justify-between px-2 pb-2">
-        <h4 className="text-[11px] font-medium uppercase tracking-wide text-content/40">
-          {title}
-        </h4>
-        {action}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-export function Property({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-start text-[12px]">
-      <dt className="flex h-7 items-center text-content/45">{label}</dt>
-      <dd className="flex min-h-7 min-w-0 items-center text-content/85">
-        {children}
-      </dd>
-    </div>
-  );
-}
-
 /** A setting that is on or off: its name and what it does, then a switch. */
 export function SwitchRow({
   label,

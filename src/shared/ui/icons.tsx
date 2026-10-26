@@ -18,7 +18,6 @@ import ArrowTurnBackwardIcon from "@hugeicons/core-free-icons/ArrowTurnBackwardI
 import ArrowTurnForwardIcon from "@hugeicons/core-free-icons/ArrowTurnForwardIcon";
 import ArrowUp01Icon from "@hugeicons/core-free-icons/ArrowUp01Icon";
 import BotIcon from "@hugeicons/core-free-icons/BotIcon";
-import GhostIcon from "@hugeicons/core-free-icons/GhostIcon";
 import AiIdeaIcon from "@hugeicons/core-free-icons/AiIdeaIcon";
 import Cancel01Icon from "@hugeicons/core-free-icons/Cancel01Icon";
 import CaseSensitiveIcon from "@hugeicons/core-free-icons/CaseSensitiveIcon";
@@ -96,7 +95,6 @@ import Settings01Icon from "@hugeicons/core-free-icons/Settings01Icon";
 import Share02Icon from "@hugeicons/core-free-icons/Share02Icon";
 import ShieldAlertIcon from "@hugeicons/core-free-icons/ShieldAlertIcon";
 import SidebarRight01Icon from "@hugeicons/core-free-icons/SidebarRight01Icon";
-import SourceCodeIcon from "@hugeicons/core-free-icons/SourceCodeIcon";
 import SparklesIcon from "@hugeicons/core-free-icons/SparklesIcon";
 import SquareIcon from "@hugeicons/core-free-icons/SquareIcon";
 import SquareLock02Icon from "@hugeicons/core-free-icons/SquareLock02Icon";
@@ -168,7 +166,6 @@ export const ArrowDownCircle = wrap(CircleArrowDown01Icon, "ArrowDownCircle");
 export const ArrowLeft = wrap(ArrowLeft01Icon, "ArrowLeft");
 export const ArrowUp = wrap(ArrowUp01Icon, "ArrowUp");
 export const Bot = wrap(BotIcon, "Bot");
-export const Ghost = wrap(GhostIcon, "Ghost");
 export const AiIdea = wrap(AiIdeaIcon, "AiIdea");
 export const CaseSensitive = wrap(CaseSensitiveIcon, "CaseSensitive");
 export const Chatting = wrap(Chatting01Icon, "Chatting");
@@ -189,7 +186,6 @@ export const CircleHelp = wrap(HelpCircleIcon, "CircleHelp");
 export const CircleX = wrap(CancelCircleIcon, "CircleX");
 export const CloudUpload = wrap(CloudUploadIcon, "CloudUpload");
 export const Clock = wrap(Clock01Icon, "Clock");
-export const Code = wrap(SourceCodeIcon, "Code");
 export const Copy = wrap(Copy01Icon, "Copy");
 export const CursorMagicSelection = wrap(
   CursorMagicSelection04Icon,

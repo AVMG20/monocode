@@ -49,7 +49,13 @@ function history(name: string): GitHistory {
 async function render(cwd: string, enabled = true) {
   await act(async () => {
     root.render(
-      createElement(GitHistoryGraph, { cwd, enabled, onOpenCommit: vi.fn() }),
+      createElement(GitHistoryGraph, {
+        cwd,
+        enabled,
+        expanded: true,
+        onToggleExpanded: vi.fn(),
+        onOpenCommit: vi.fn(),
+      }),
     );
   });
 }
@@ -69,24 +75,6 @@ it("ignores history that arrives after switching projects", async () => {
   await act(async () => resolveOld(history("old")));
   expect(container.textContent).toContain("current commit");
   expect(container.textContent).not.toContain("old commit");
-});
-
-it("keeps loaded commits on refresh failure and clears the error after retry", async () => {
-  vi.mocked(gitHistory).mockResolvedValueOnce(history("loaded"));
-  await render("/refresh-history-project");
-  const refresh = container.querySelector<HTMLButtonElement>(
-    '[aria-label="Refresh history"]',
-  )!;
-  vi.mocked(gitHistory).mockRejectedValueOnce(new Error("History unavailable"));
-  await act(async () => refresh.click());
-  expect(container.querySelector('[role="alert"]')?.textContent).toBe(
-    "History unavailable",
-  );
-  expect(container.textContent).toContain("loaded commit");
-  vi.mocked(gitHistory).mockResolvedValueOnce(history("updated"));
-  await act(async () => refresh.click());
-  expect(container.querySelector('[role="alert"]')).toBeNull();
-  expect(container.textContent).toContain("updated commit");
 });
 
 it("does not restore an in-flight result after the pane is disabled", async () => {

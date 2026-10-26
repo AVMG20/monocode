@@ -1,12 +1,10 @@
 import { GripVertical, X } from "../../../shared/ui/icons";
-import { ThreadLink, threadLinkId } from "../../coordinator/ui/ThreadLink";
+import { LiveThreadLink, threadLinkId } from "../../coordinator/ui/ThreadLink";
 import { ThreadStepsBar } from "../../coordinator/ui/ThreadStepsBar";
-import { MarkdownLinkContext } from "./AgentMarkdown";
 import {
   coordinatorCompactAt,
   coordinatorContextUsage,
   threadSteps,
-  type ThreadView,
 } from "../../coordinator/model/coordinator";
 import { useSessionSnapshot } from "../model/sessionStateStore";
 import {
@@ -21,6 +19,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
+import { useStableValue } from "../../../shared/hooks/useStableValue";
 import { Composer } from "./Composer";
 import {
   RunningSubagents,
@@ -178,8 +177,7 @@ export type SessionPaneProps = {
     blocks: Block[],
     launchedId: string,
   ) => void;
-  /** A project coordinator's threads, for the handoff cards in its chat. */
-  projectThreads?: readonly ThreadView[];
+  /** Opens a thread a project coordinator's chat links to. */
   onOpenProjectThread?: (sessionId: string) => void;
   /** Live status of the sessions this Mono launched, by id. */
   monoLaunchedSessions?: ReadonlyMap<string, LaunchedSessionView>;
@@ -403,7 +401,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
   monoLaunchedSessions,
   openMonoSessionId,
   monoComposerUsage = true,
-  projectThreads,
   onOpenProjectThread,
   onOpenPlan,
   onBuildPlan,
@@ -475,12 +472,14 @@ const LocalSessionPane = memo(function LocalSessionPane({
     () => SESSION_STEPS_DEFAULT,
   );
   // The session's task list, pinned above the transcript like a thread's.
-  const steps = useMemo(
-    () =>
-      sessionStepsEnabled && !agent && !hideSteps
-        ? threadSteps(session.blocks)
-        : undefined,
-    [sessionStepsEnabled, agent, hideSteps, session.blocks],
+  const steps = useStableValue(
+    useMemo(
+      () =>
+        sessionStepsEnabled && !agent && !hideSteps
+          ? threadSteps(session.blocks)
+          : undefined,
+      [sessionStepsEnabled, agent, hideSteps, session.blocks],
+    ),
   );
   const coordinator = isCoordinatorProject(mono);
   // The threads it names in its replies link to them, with their status.
@@ -491,18 +490,16 @@ const LocalSessionPane = memo(function LocalSessionPane({
             const sessionId = threadLinkId(href);
             if (!sessionId) return undefined;
             return (
-              <ThreadLink
-                view={projectThreads?.find(
-                  (view) => view.sessionId === sessionId,
-                )}
+              <LiveThreadLink
+                sessionId={sessionId}
                 onOpenThread={onOpenProjectThread}
               >
                 {children}
-              </ThreadLink>
+              </LiveThreadLink>
             );
           }
         : undefined,
-    [coordinator, projectThreads, onOpenProjectThread],
+    [coordinator, onOpenProjectThread],
   );
   // A Mono shows only its own background, never the project's or the app's.
   const projectBackground = mono
@@ -562,9 +559,13 @@ const LocalSessionPane = memo(function LocalSessionPane({
   // A delegated run swapped in for the transcript from the composer dock.
   const [viewedSubagentId, setViewedSubagentId] = useState<string | null>(null);
   useEffect(() => setViewedSubagentId(null), [session.id]);
-  const liveSubagents = useMemo(
-    () => (session.busy ? runningSubagents(session.blocks) : []),
-    [session.busy, session.blocks],
+  // Recomputed per streamed update, but the dock, the runner and the memos
+  // below only see a new list when the runs themselves change.
+  const liveSubagents = useSameItems(
+    useMemo(
+      () => (session.busy ? runningSubagents(session.blocks) : NO_BLOCKS),
+      [session.busy, session.blocks],
+    ),
   );
   const viewedSubagent = viewedSubagentId
     ? session.blocks.find((block) => block.id === viewedSubagentId)
@@ -594,7 +595,14 @@ const LocalSessionPane = memo(function LocalSessionPane({
     () => subagentBackgroundTasks(session.backgroundTasks ?? [], subagentRuns),
     [session.backgroundTasks, subagentRuns],
   );
-  const subagentTaskIds = new Set(subagentTasks.values());
+  const subagentTaskIds = useMemo(
+    () => new Set(subagentTasks.values()),
+    [subagentTasks],
+  );
+  const stoppableSubagents = useMemo(
+    () => new Set(subagentTasks.keys()),
+    [subagentTasks],
+  );
   const runnerCompanions = useMemo(
     () =>
       liveSubagents.map((block) => ({
@@ -603,12 +611,14 @@ const LocalSessionPane = memo(function LocalSessionPane({
       })),
     [liveSubagents],
   );
-  const runnerSignalsNow = useMemo(
-    () =>
-      session.busy
-        ? runnerSignals(session.blocks, session.pendingQuestion != null)
-        : NO_RUNNER_SIGNALS,
-    [session.busy, session.blocks, session.pendingQuestion],
+  const runnerSignalsNow = useStableValue(
+    useMemo(
+      () =>
+        session.busy
+          ? runnerSignals(session.blocks, session.pendingQuestion != null)
+          : NO_RUNNER_SIGNALS,
+      [session.busy, session.blocks, session.pendingQuestion],
+    ),
   );
   // Approvals and questions only show in Main, so a run waiting on one must
   // not leave the reader looking somewhere else.
@@ -933,6 +943,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       subagents={
         subagentRuns.length ? (
           <RunningSubagents
+            visible={visible}
             runs={subagentRuns}
             liveIds={liveSubagentIds}
             viewedId={viewedSubagent ? viewedSubagent.id : null}
@@ -942,7 +953,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
               if (blockId === null || !needsAnswer)
                 setViewedSubagentId(blockId);
             }}
-            stoppable={new Set(subagentTasks.keys())}
+            stoppable={stoppableSubagents}
             onStop={
               onStopBackgroundTask &&
               !remote &&
@@ -1166,184 +1177,177 @@ const LocalSessionPane = memo(function LocalSessionPane({
                     sessionId={session.id}
                     onMouseDown={focusPane}
                   >
-                    <MarkdownLinkContext.Provider value={renderThreadLink}>
-                      <AgentTranscript
-                        blocks={
-                          agent && !monoTranscript.viewingOlderPage
-                            ? monoPendingTranscriptBlocks(
-                                session,
-                                monoTranscript.blocks,
+                    <AgentTranscript
+                      blocks={
+                        agent && !monoTranscript.viewingOlderPage
+                          ? monoPendingTranscriptBlocks(
+                              session,
+                              monoTranscript.blocks,
+                            )
+                          : monoTranscript.blocks
+                      }
+                      sessionId={remoteSession ? undefined : session.id}
+                      historicalBlockIds={monoTranscript.historicalBlockIds}
+                      initialTurns={agent ? MONO_PAGE_TURNS : undefined}
+                      pageSize={agent ? MONO_PAGE_TURNS : undefined}
+                      hasEarlier={monoTranscript.hasEarlier}
+                      loadEarlierOnScroll={!!agent}
+                      onLoadEarlier={
+                        agent ? monoTranscript.loadEarlier : undefined
+                      }
+                      onReturnToLatest={
+                        monoTranscript.viewingOlderPage
+                          ? monoTranscript.latest
+                          : undefined
+                      }
+                      busy={!!session.busy && !monoTranscript.viewingOlderPage}
+                      visible={visible}
+                      renderLink={renderThreadLink}
+                      cwd={workCwd}
+                      agentName={agent?.name}
+                      onOpenArtifact={
+                        onOpenArtifact
+                          ? (id) => onOpenArtifact(session.id, id)
+                          : undefined
+                      }
+                      agentMascot={agent}
+                      // A project's coordinator reads like a session: each
+                      // message starts at the top, the reply scrolls under it.
+                      bottomAligned={!!agent && !coordinator}
+                      inlineWork={!!agent}
+                      // Its threads report back often: each reply to a
+                      // report reads as a message of its own.
+                      separateReplies={coordinator}
+                      messageDeliveries={agent ? messageDeliveries : undefined}
+                      onRetryMessage={
+                        agent ? () => onResumeQueue(session.id) : undefined
+                      }
+                      onShowWork={
+                        agent && onShowMonoActivity
+                          ? (turnId, blocks) =>
+                              onShowMonoActivity(session.id, turnId, blocks)
+                          : undefined
+                      }
+                      activeWorkTurnId={monoActivityTurnId}
+                      onOpenSession={
+                        agent && onOpenMonoSession
+                          ? (turnId, blocks, launchedId) =>
+                              onOpenMonoSession(
+                                session.id,
+                                turnId,
+                                blocks,
+                                launchedId,
                               )
-                            : monoTranscript.blocks
-                        }
-                        sessionId={remoteSession ? undefined : session.id}
-                        historicalBlockIds={monoTranscript.historicalBlockIds}
-                        initialTurns={agent ? MONO_PAGE_TURNS : undefined}
-                        pageSize={agent ? MONO_PAGE_TURNS : undefined}
-                        hasEarlier={monoTranscript.hasEarlier}
-                        loadEarlierOnScroll={!!agent}
-                        onLoadEarlier={
-                          agent ? monoTranscript.loadEarlier : undefined
-                        }
-                        onReturnToLatest={
-                          monoTranscript.viewingOlderPage
-                            ? monoTranscript.latest
-                            : undefined
-                        }
-                        busy={
-                          !!session.busy && !monoTranscript.viewingOlderPage
-                        }
-                        visible={visible}
-                        cwd={workCwd}
-                        agentName={agent?.name}
-                        onOpenArtifact={
-                          onOpenArtifact
-                            ? (id) => onOpenArtifact(session.id, id)
-                            : undefined
-                        }
-                        agentMascot={agent}
-                        // A project's coordinator reads like a session: each
-                        // message starts at the top, the reply scrolls under it.
-                        bottomAligned={!!agent && !coordinator}
-                        inlineWork={!!agent}
-                        // Its threads report back often: each reply to a
-                        // report reads as a message of its own.
-                        separateReplies={coordinator}
-                        messageDeliveries={
-                          agent ? messageDeliveries : undefined
-                        }
-                        onRetryMessage={
-                          agent ? () => onResumeQueue(session.id) : undefined
-                        }
-                        onShowWork={
-                          agent && onShowMonoActivity
-                            ? (turnId, blocks) =>
-                                onShowMonoActivity(session.id, turnId, blocks)
-                            : undefined
-                        }
-                        activeWorkTurnId={monoActivityTurnId}
-                        onOpenSession={
-                          agent && onOpenMonoSession
-                            ? (turnId, blocks, launchedId) =>
-                                onOpenMonoSession(
-                                  session.id,
-                                  turnId,
-                                  blocks,
-                                  launchedId,
-                                )
-                            : undefined
-                        }
-                        launchedSessions={monoLaunchedSessions}
-                        openSessionId={openMonoSessionId}
-                        // A Mono's turn keeps copy, save as note and the time.
-                        daySeparators={!!agent}
-                        hideTurnMetrics={!!agent}
-                        harness={session.harness}
-                        model={session.model}
-                        modelSettings={session.modelSettings}
-                        pendingQuestion={!!session.pendingQuestion}
-                        backgroundTasks={session.backgroundTasks}
-                        onApproval={
-                          session.worktreeRemoved ? undefined : approve
-                        }
-                        onAddToChat={addSelectionToChat}
-                        onReferenceImage={
-                          imageReferencesSupported ? referenceImage : undefined
-                        }
-                        onSaveNote={notesEnabled ? saveNote : undefined}
-                        onSendDraft={
-                          draftBlock
-                            ? (block) =>
-                                onSubmit(
-                                  session.id,
-                                  block.text,
-                                  block.attachments ?? [],
-                                  {
-                                    draftBlockId: block.id,
-                                    ...(block.appRequestId
-                                      ? { appRequestId: block.appRequestId }
-                                      : {}),
-                                  },
-                                )
-                            : undefined
-                        }
-                        onRemoveDraft={
-                          draftBlock
-                            ? (block) => onRemoveDraft(session.id, block.id)
-                            : undefined
-                        }
-                        onSaveSelectionNote={
-                          notesEnabled ? saveSelectionNote : undefined
-                        }
-                        onOpenFile={onOpenFile}
-                        onOpenDiff={onOpenDiff}
-                        onOpenPlan={openPlan}
-                        onBuildPlan={
-                          session.worktreeRemoved ? undefined : buildPlan
-                        }
-                        planBuildTargets={!remote}
-                        onSecondOpinion={
-                          !agent &&
-                          !session.inboxAsk &&
-                          !session.worktreeRemoved &&
-                          onSecondOpinion
-                            ? (target, turn) =>
-                                onSecondOpinion(session.id, target, turn)
-                            : undefined
-                        }
-                        onHandoff={
-                          !agent &&
-                          !session.inboxAsk &&
-                          !session.worktreeRemoved &&
-                          onHandoff
-                            ? (target, turn) =>
-                                onHandoff(session.id, target, turn)
-                            : undefined
-                        }
-                        onJumpToBottomChange={jumpVisibility.setVisible}
-                        onJumpToBottomReady={onJumpToBottomReady}
-                        onRevealReady={onRevealReady}
-                        onNavigateReady={onNavigateReady}
-                        onScrollerChange={setTranscriptScroller}
-                        editingLastTurn={editingLastTurn}
-                        onEditLastTurn={
-                          editLastTurnSupported &&
-                          !monoTranscript.viewingOlderPage
-                            ? () => {
-                                onFocus(session.id);
-                                recallLastTurnRef.current?.();
-                              }
-                            : undefined
-                        }
-                        latestTurnAccessory={
-                          !showChangedFilesCard ||
-                          reviewHidden ||
-                          agent ? undefined : (
-                            <SessionReview
-                              sessionId={session.id}
-                              editedPaths={editedPaths}
-                              cwd={workCwd}
-                              enabled={visible}
-                              busy={!!session.busy}
-                              undoLocked={
-                                reviewUndoLocked ||
-                                orchestrationRuns.some(
-                                  (run) =>
-                                    (run.status === "active" ||
-                                      run.status === "paused") &&
-                                    (run.leadId === session.id ||
-                                      run.tasks.some(
-                                        (task) => task.sessionId === session.id,
-                                      )),
-                                )
-                              }
-                              onOpenDiff={onOpenDiff}
-                              onCommit={onCommitChanges}
-                            />
-                          )
-                        }
-                      />
-                    </MarkdownLinkContext.Provider>
+                          : undefined
+                      }
+                      launchedSessions={monoLaunchedSessions}
+                      openSessionId={openMonoSessionId}
+                      // A Mono's turn keeps copy, save as note and the time.
+                      daySeparators={!!agent}
+                      hideTurnMetrics={!!agent}
+                      harness={session.harness}
+                      model={session.model}
+                      modelSettings={session.modelSettings}
+                      pendingQuestion={!!session.pendingQuestion}
+                      backgroundTasks={session.backgroundTasks}
+                      onApproval={session.worktreeRemoved ? undefined : approve}
+                      onAddToChat={addSelectionToChat}
+                      onReferenceImage={
+                        imageReferencesSupported ? referenceImage : undefined
+                      }
+                      onSaveNote={notesEnabled ? saveNote : undefined}
+                      onSendDraft={
+                        draftBlock
+                          ? (block) =>
+                              onSubmit(
+                                session.id,
+                                block.text,
+                                block.attachments ?? [],
+                                {
+                                  draftBlockId: block.id,
+                                  ...(block.appRequestId
+                                    ? { appRequestId: block.appRequestId }
+                                    : {}),
+                                },
+                              )
+                          : undefined
+                      }
+                      onRemoveDraft={
+                        draftBlock
+                          ? (block) => onRemoveDraft(session.id, block.id)
+                          : undefined
+                      }
+                      onSaveSelectionNote={
+                        notesEnabled ? saveSelectionNote : undefined
+                      }
+                      onOpenFile={onOpenFile}
+                      onOpenDiff={onOpenDiff}
+                      onOpenPlan={openPlan}
+                      onBuildPlan={
+                        session.worktreeRemoved ? undefined : buildPlan
+                      }
+                      planBuildTargets={!remote}
+                      onSecondOpinion={
+                        !agent &&
+                        !session.inboxAsk &&
+                        !session.worktreeRemoved &&
+                        onSecondOpinion
+                          ? (target, turn) =>
+                              onSecondOpinion(session.id, target, turn)
+                          : undefined
+                      }
+                      onHandoff={
+                        !agent &&
+                        !session.inboxAsk &&
+                        !session.worktreeRemoved &&
+                        onHandoff
+                          ? (target, turn) =>
+                              onHandoff(session.id, target, turn)
+                          : undefined
+                      }
+                      onJumpToBottomChange={jumpVisibility.setVisible}
+                      onJumpToBottomReady={onJumpToBottomReady}
+                      onRevealReady={onRevealReady}
+                      onNavigateReady={onNavigateReady}
+                      onScrollerChange={setTranscriptScroller}
+                      editingLastTurn={editingLastTurn}
+                      onEditLastTurn={
+                        editLastTurnSupported &&
+                        !monoTranscript.viewingOlderPage
+                          ? () => {
+                              onFocus(session.id);
+                              recallLastTurnRef.current?.();
+                            }
+                          : undefined
+                      }
+                      latestTurnAccessory={
+                        !showChangedFilesCard ||
+                        reviewHidden ||
+                        agent ? undefined : (
+                          <SessionReview
+                            sessionId={session.id}
+                            editedPaths={editedPaths}
+                            cwd={workCwd}
+                            enabled={visible}
+                            busy={!!session.busy}
+                            undoLocked={
+                              reviewUndoLocked ||
+                              orchestrationRuns.some(
+                                (run) =>
+                                  (run.status === "active" ||
+                                    run.status === "paused") &&
+                                  (run.leadId === session.id ||
+                                    run.tasks.some(
+                                      (task) => task.sessionId === session.id,
+                                    )),
+                              )
+                            }
+                            onOpenDiff={onOpenDiff}
+                            onCommit={onCommitChanges}
+                          />
+                        )
+                      }
+                    />
                   </PooledTranscript>
                 </div>
                 {viewedSubagent ? (
@@ -1375,12 +1379,14 @@ const LocalSessionPane = memo(function LocalSessionPane({
                   />
                 ) : null}
                 {/* One mark per message would crowd a Mono's endless chat. */}
-                {agent ? null : (
+                {/* Main's prompts mean nothing over a subagent's transcript,
+                    and would scroll that one instead. */}
+                {agent || viewedSubagent ? null : (
                   <PromptOutline
                     blocks={session.blocks}
                     scope={transcriptScope}
                     scroller={transcriptScroller}
-                    visible={visible && !viewedSubagent}
+                    visible={visible}
                     revealBlock={revealBlock}
                   />
                 )}
@@ -1573,4 +1579,19 @@ function monoUsageProviders(harness: HarnessId): RateLimitProvider[] {
     harness === "devin"
     ? [harness]
     : [];
+}
+
+const NO_BLOCKS: Block[] = [];
+
+/** The previous array while it holds the same items, so memos keyed on it hold. */
+function useSameItems<T>(items: T[]): T[] {
+  const previous = useRef(items);
+  const current = previous.current;
+  if (
+    current !== items &&
+    (current.length !== items.length ||
+      current.some((item, index) => item !== items[index]))
+  )
+    previous.current = items;
+  return previous.current;
 }

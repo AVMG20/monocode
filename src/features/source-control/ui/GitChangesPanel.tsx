@@ -107,8 +107,6 @@ type AmendTarget = { branch: string | null; head: string | null };
 type Props = {
   cwd: string;
   enabled: boolean;
-  showGraph?: boolean;
-  compactHeader?: boolean;
   textHarness?: HarnessId;
   selectedPath?: string;
   selectedKind?: GitFileDiffKind;
@@ -121,8 +119,6 @@ type Props = {
 export function GitChangesPanel({
   cwd,
   enabled,
-  showGraph = true,
-  compactHeader = false,
   textHarness,
   selectedPath,
   selectedKind,
@@ -176,7 +172,6 @@ export function GitChangesPanel({
   };
 
   useLayoutEffect(() => {
-    if (!showGraph) return;
     const pane = paneRef.current;
     if (!pane || pane.clientHeight < GRAPH_PANEL_MIN + 160) return;
     const max = pane.clientHeight - 160;
@@ -184,7 +179,7 @@ export function GitChangesPanel({
       setGraphHeight(max);
       saveGraphPanelHeight(max);
     }
-  }, [graphHeight, showGraph]);
+  }, [graphHeight]);
 
   if (!cwd || cwd === "~") {
     return (
@@ -197,7 +192,7 @@ export function GitChangesPanel({
       ref={paneRef}
       className="flex h-full min-h-0 flex-1 flex-col overflow-hidden"
     >
-      <PaneHeader compact={compactHeader} role="toolbar" aria-label="Changes">
+      <PaneHeader role="toolbar" aria-label="Changes">
         <span className="shrink-0">Changes</span>
         {status ? (
           <span
@@ -297,43 +292,39 @@ export function GitChangesPanel({
           window.setTimeout(() => invalidateWatchedFiles(paths), 150);
         }}
       />
-      {showGraph ? (
-        <>
-          {graphExpanded ? (
-            <GraphResizeSash
-              height={graphHeight}
-              onHeightPaint={setGraphHeight}
-              onHeightCommit={(next) => {
-                setGraphHeight(next);
-                saveGraphPanelHeight(next);
-              }}
-              maxHeight={() => {
-                const pane = paneRef.current;
-                if (!pane) return GRAPH_PANEL_DEFAULT * 2;
-                return Math.max(GRAPH_PANEL_MIN, pane.clientHeight - 160);
-              }}
-            />
-          ) : null}
-          <div
-            className={`shrink-0 overflow-hidden border-t border-stroke ${
-              graphExpanded ? "min-h-0" : "h-7"
-            }`}
-            style={graphExpanded ? { height: graphHeight } : undefined}
-          >
-            <GitHistoryGraph
-              cwd={cwd}
-              enabled={enabled}
-              expanded={graphExpanded}
-              selectedSha={selectedSha}
-              onToggleExpanded={() => {
-                graphOpen = !graphExpanded;
-                setGraphExpanded(graphOpen);
-              }}
-              onOpenCommit={onOpenCommit}
-            />
-          </div>
-        </>
+      {graphExpanded ? (
+        <GraphResizeSash
+          height={graphHeight}
+          onHeightPaint={setGraphHeight}
+          onHeightCommit={(next) => {
+            setGraphHeight(next);
+            saveGraphPanelHeight(next);
+          }}
+          maxHeight={() => {
+            const pane = paneRef.current;
+            if (!pane) return GRAPH_PANEL_DEFAULT * 2;
+            return Math.max(GRAPH_PANEL_MIN, pane.clientHeight - 160);
+          }}
+        />
       ) : null}
+      <div
+        className={`shrink-0 overflow-hidden border-t border-stroke ${
+          graphExpanded ? "min-h-0" : "h-7"
+        }`}
+        style={graphExpanded ? { height: graphHeight } : undefined}
+      >
+        <GitHistoryGraph
+          cwd={cwd}
+          enabled={enabled}
+          expanded={graphExpanded}
+          selectedSha={selectedSha}
+          onToggleExpanded={() => {
+            graphOpen = !graphExpanded;
+            setGraphExpanded(graphOpen);
+          }}
+          onOpenCommit={onOpenCommit}
+        />
+      </div>
     </div>
   );
 }
@@ -1675,6 +1666,7 @@ function useDiffIndex(
             notifyGitChanged({
               invalidatePending: false,
               workingTreeOnly: true,
+              publishedIndexCwd: cwd,
             });
           } finally {
             publishing = false;

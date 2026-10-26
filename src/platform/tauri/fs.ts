@@ -224,16 +224,37 @@ export type GitDiffIndex = {
 
 const pendingGitReads = new Map<string, Promise<unknown>>();
 let gitReadEpoch = 0;
+// The last result of each read, handed to listeners reacting to its own
+// publication (see notifyGitChanged), which would otherwise read it again.
+const settledGitReads = new Map<
+  string,
+  { epoch: number; at: number; result: unknown }
+>();
+/** The one read being published, while its listeners run. */
+let sharedRead: string | null = null;
+const SHARED_READ_MAX_AGE_MS = 1000;
 
 /** Share concurrent reads, and never resolve with a pre-mutation snapshot. */
 function readGit<T>(command: string, cwd: string): Promise<T> {
   const key = `${command}\0${cwd}`;
   const pending = pendingGitReads.get(key);
   if (pending) return pending as Promise<T>;
+  if (sharedRead === key) {
+    const settled = settledGitReads.get(key);
+    if (
+      settled?.epoch === gitReadEpoch &&
+      Date.now() - settled.at < SHARED_READ_MAX_AGE_MS
+    )
+      return Promise.resolve(settled.result as T);
+  }
   const epoch = gitReadEpoch;
   const request = invoke<T>(command, { cwd })
     .then(
-      (result) => (epoch === gitReadEpoch ? result : readGit<T>(command, cwd)),
+      (result) => {
+        if (epoch !== gitReadEpoch) return readGit<T>(command, cwd);
+        settledGitReads.set(key, { epoch, at: Date.now(), result });
+        return result;
+      },
       (error) => {
         if (epoch !== gitReadEpoch) return readGit<T>(command, cwd);
         throw error;
@@ -485,16 +506,35 @@ const GIT_CHANGED = "monocode-git-changed";
 export function notifyGitChanged({
   invalidatePending = true,
   workingTreeOnly = false,
+  publishedIndexCwd,
+}: {
+  invalidatePending?: boolean;
+  workingTreeOnly?: boolean;
+  /** The checkout whose git_diff_index this notification publishes. */
+  publishedIndexCwd?: string;
 } = {}) {
   // Publishing an already-read index is not a mutation. All actual mutations
   // invalidate both new readers and original callers still awaiting old data.
   if (invalidatePending) {
     gitReadEpoch++;
     pendingGitReads.clear();
+    settledGitReads.clear();
   }
-  window.dispatchEvent(
-    new CustomEvent(GIT_CHANGED, { detail: { workingTreeOnly } }),
-  );
+  // Publishing a read just made: listeners that read it again in response
+  // get that result rather than spawning git for the same answer.
+  // Only that read, just made, is shared; any other read still goes to git,
+  // since changes made outside the app never advance the epoch.
+  sharedRead =
+    !invalidatePending && publishedIndexCwd
+      ? `git_diff_index\0${publishedIndexCwd}`
+      : null;
+  try {
+    window.dispatchEvent(
+      new CustomEvent(GIT_CHANGED, { detail: { workingTreeOnly } }),
+    );
+  } finally {
+    sharedRead = null;
+  }
 }
 
 /**

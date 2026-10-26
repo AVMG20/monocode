@@ -130,6 +130,10 @@ import { useBottomChatMotion } from "../hooks/useBottomChatMotion";
 import { useTranscriptSelection } from "../hooks/useTranscriptSelection";
 import type { TranscriptLayout } from "../../settings/model/appearance";
 import { AgentMarkdown } from "./AgentMarkdown";
+import {
+  MarkdownLinkContext,
+  type MarkdownLinkRenderer,
+} from "./markdownLinks";
 import { MonoWorkTicker } from "./MonoWorkTicker";
 import { monoWorkStatus } from "../model/monoWorkStatus";
 import { isEmojiOnlyMessage } from "../model/emojiMessage";
@@ -305,6 +309,12 @@ type Props = {
   managed?: boolean;
   /** Saved session that omitted tool output is fetched from. */
   sessionId?: string;
+  /**
+   * Shows an in-app link (a coordinator's `#thread-<id>`) as something of its
+   * own. A prop rather than an outer provider: the transcript pool parks and
+   * measures this element, so a wrapper would hide it from the pool.
+   */
+  renderLink?: MarkdownLinkRenderer;
 };
 
 function AgentTranscriptComponent({
@@ -389,7 +399,8 @@ function AgentTranscriptComponent({
     () => lastUserTurnBlock(blocks)?.id,
     [blocks],
   );
-  const transcriptImages = useMemo(
+  // Walking every reply for images only pays off once the lightbox opens.
+  const transcriptImages = useCallback(
     () => collectTranscriptImages(blocks, cwd),
     [blocks, cwd],
   );
@@ -1911,7 +1922,9 @@ export const AgentTranscript = memo(
       <TranscriptVisibility.Provider value={props.visible ?? true}>
         <TranscriptPacing.Provider value={!props.bottomAligned}>
           <ToolDetailSession.Provider value={props.sessionId}>
-            <AgentTranscriptComponent {...props} />
+            <MarkdownLinkContext.Provider value={props.renderLink}>
+              <AgentTranscriptComponent {...props} />
+            </MarkdownLinkContext.Provider>
           </ToolDetailSession.Provider>
         </TranscriptPacing.Provider>
       </TranscriptVisibility.Provider>

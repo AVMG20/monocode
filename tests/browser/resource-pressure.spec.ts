@@ -6,11 +6,10 @@ test("keeps many processes compact, with details and stop controls on demand", a
   page,
 }, testInfo) => {
   test.setTimeout(60_000);
-  await page.addInitScript(() =>
-    localStorage.setItem("monocode.insetLayout", "1"),
-  );
   await page.goto("/tests/browser/workspace-performance.html");
-  await expect(page.locator(".inset-shell")).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator(".workspace-background")).toBeVisible({
+    timeout: 15_000,
+  });
   await page.evaluate(() => {
     const fixture = window as unknown as {
       resourceStops: string[];

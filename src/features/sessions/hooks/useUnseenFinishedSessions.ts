@@ -7,19 +7,23 @@ export function useUnseenFinishedSessions(
   sessions: Session[],
   busySessionIds: ReadonlySet<string>,
   activeSessionId?: string,
+  shownSessionId?: string,
 ): Set<string> {
   const busyForDoneRef = useRef(busySessionIds);
   const focusedForDoneRef = useRef(activeSessionId);
+  const shownForDoneRef = useRef(shownSessionId);
   const unseenFinishedRef = useRef<Set<string>>(new Set());
   if (
     busyForDoneRef.current !== busySessionIds ||
-    focusedForDoneRef.current !== activeSessionId
+    focusedForDoneRef.current !== activeSessionId ||
+    shownForDoneRef.current !== shownSessionId
   ) {
     unseenFinishedRef.current = nextUnseenFinishedSessions({
       previousBusyIds: busyForDoneRef.current,
       busyIds: busySessionIds,
       previousUnseenIds: unseenFinishedRef.current,
       focusedSessionId: activeSessionId,
+      shownSessionId,
       untrackedIds: new Set(
         sessions
           .filter((session) => !isLiveAgentSession(session))
@@ -28,6 +32,7 @@ export function useUnseenFinishedSessions(
     });
     busyForDoneRef.current = busySessionIds;
     focusedForDoneRef.current = activeSessionId;
+    shownForDoneRef.current = shownSessionId;
   }
   return unseenFinishedRef.current;
 }

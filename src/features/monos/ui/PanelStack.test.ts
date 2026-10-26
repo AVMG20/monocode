@@ -53,3 +53,17 @@ it("stacks pages, with only the top one in reach, and lets them slide away", () 
   expect(container.textContent).toBe("panel");
   expect(reachable()).toEqual(["panel"]);
 });
+
+const layerTransforms = () =>
+  [...container.querySelectorAll<HTMLElement>("p")]
+    .filter((p) => p.textContent !== "panel")
+    .map((p) => p.parentElement!.style.transform);
+
+it("shows pages open at mount in place, and slides in only later ones", () => {
+  render(["thread"]);
+  // No frame has run: a page that was already open is already in view.
+  expect(layerTransforms()).toEqual(["none"]);
+  expect(reachable()).toEqual(["thread"]);
+  render(["thread", "document"]);
+  expect(layerTransforms()).toEqual(["translateX(-18%)", "translateX(100%)"]);
+});

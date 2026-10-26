@@ -45,6 +45,16 @@ export function BackgroundTasksBar({
     if (!key) setStoppingAll(false);
   }, [key]);
 
+  // A stop that never lands gives the buttons back rather than spinning on.
+  useEffect(() => {
+    if (stopping.size === 0 && !stoppingAll) return;
+    const id = window.setTimeout(() => {
+      setStopping(new Set());
+      setStoppingAll(false);
+    }, 8000);
+    return () => window.clearTimeout(id);
+  }, [stopping, stoppingAll]);
+
   if (tasks.length === 0 && !subagents) return null;
 
   const multiple = tasks.length > 1;
@@ -134,8 +144,12 @@ export function BackgroundTasksBar({
                 ) : null}
                 {stopTask || (!multiple && stopAll) ? (
                   <StopButton
-                    label="Stop"
-                    title={`Stop ${task.description || "background task"}`}
+                    label={stopTask ? "Stop" : "Stop all"}
+                    title={
+                      stopTask
+                        ? `Stop ${task.description || "background task"}`
+                        : "Stop the turn and its background work"
+                    }
                     busy={stopping.has(task.id) || stoppingAll}
                     onClick={() => (stopTask ? stopTask(task.id) : stopAll?.())}
                   />

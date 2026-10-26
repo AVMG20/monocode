@@ -66,6 +66,7 @@ const GLASS_TINT_ID: &str = "monocode.webview-glass-tint";
 const FLOATING_GLASS_ID: &str = "monocode.floating-glass";
 const FLOATING_CONTENT_ID: &str = "monocode.floating-content";
 /// Matches the floating chat's `rounded-2xl` CSS outline.
+#[allow(dead_code)]
 const FLOATING_CORNER_RADIUS: f64 = 16.0;
 
 const RTLD_DEFAULT: *mut c_void = -2isize as *mut c_void;
@@ -241,6 +242,9 @@ fn set_launch_background(window: &WebviewWindow, r: u8, g: u8, b: u8) {
 
 /// Borderless chats need their rounded shape and fill in AppKit, so newly
 /// exposed resize edges never wait for a WebKit frame or CSS backdrop filter.
+// Unused since the floating Mono chat was removed; kept until a Mac build
+// can confirm deleting it (and its imports) compiles cleanly.
+#[allow(dead_code)]
 pub fn prepare_floating_window(window: &WebviewWindow) {
     let Some(native) = ns_window(window) else {
         return;
@@ -292,6 +296,7 @@ pub fn prepare_floating_window(window: &WebviewWindow) {
     set_launch_background(window, 23, 23, 23);
 }
 
+#[allow(dead_code)]
 fn floating_corner_mask() -> Retained<NSImage> {
     // A one-point stretchable center preserves the 16pt corners at every
     // window size and screen scale, without regenerating a mask on resize.

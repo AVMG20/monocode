@@ -82,7 +82,7 @@ const ACTIONS: [&str; 12] = [
     "list", "delegate", "get", "steer", "message", "retry", "cancel", "wait", "review", "finish",
     "respond", "answer",
 ];
-const APP_ACTIONS: [&str; 32] = [
+const APP_ACTIONS: [&str; 27] = [
     "models.list",
     "sessions.list",
     "sessions.read",
@@ -109,11 +109,6 @@ const APP_ACTIONS: [&str; 32] = [
     "memory.add",
     "memory.replace",
     "memory.remove",
-    "habits.list",
-    "habits.add",
-    "habits.update",
-    "habits.run",
-    "habits.remove",
     "chat.card",
 ];
 const APP_USAGE: &str = r#"MonoCode app access — use in a thread enabled by /operator.
@@ -192,7 +187,7 @@ Actions:
                   saved conversation. Open files, terminals and worktrees
                   are kept. Reuse --request-id on retries.
                   stop, archive and delete cannot target the calling session,
-                  Mono chats, habit runs or orchestration workers. Sessions
+                  Mono chats or orchestration workers. Sessions
                   must belong to the chosen project.
   worktrees.list {}  Working copies in this project, with paths and branches.
   worktrees.create {"branch":"feature/name","base":"HEAD","existing":false}
@@ -210,7 +205,7 @@ Actions:
                   to derive it from the body. Use {"id":"...","body":"..."}
                   to edit an existing note; title and tags are also optional.
                   Omitted fields stay unchanged. Reuse --request-id on retries.
-  artifacts.list {"limit":30,"offset":0}  Mono or habit only. Saved artifact titles.
+  artifacts.list {"limit":30,"offset":0}  Mono only. Saved artifact titles.
   artifacts.read {"id":"..."}  Full content of one artifact.
   artifacts.write {"kind":"document","title":"PR review",
                    "summary":"Merge queue and blockers",
@@ -226,7 +221,7 @@ Actions:
                   Update your standing instructions only when the user asks.
                   Preserve the other instructions. If the file changed since
                   soul.read, read it again and reapply the requested changes.
-                  Habit runs and other sessions cannot change a Mono's soul.
+                  Other sessions cannot change a Mono's soul.
   memory.read    {"topic":"releases"}  Mono only. Without topic:
                   MEMORY.md, how much of it loads, and the topic names.
   memory.search  {"query":"release tags","since":"7d"}
@@ -241,27 +236,11 @@ Actions:
                   Strike the one entry containing find through and add fact.
   memory.remove  {"find":"text of the entry","topic":"..."}
                   Delete the one entry containing find, for a wrong entry.
-  habits.list    {}  Mono only. Your habits: what each does, when it runs
-                  next, and how its last run went.
-  habits.add     {"name":"Morning CI check","instructions":"...",
-                  "schedule":{"kind":"weekdays","time":"09:00"}}
-                  Add only after the user agreed to it in this chat. kind is
-                  hourly (with "minute"), daily, weekdays or weekly (with
-                  "dayOfWeek", 0 = Sunday); time is local 24-hour HH:MM.
-                  Each run is a hidden session that posts to this chat only
-                  when it has something worth saying.
-  habits.update  {"id":"...","name":"...","instructions":"...",
-                  "schedule":{...},"enabled":false}  Change or pause one.
-  habits.run     {"id":"..."}  Run one within a minute, to try it out.
-  habits.remove  {"id":"..."}
-  chat.card      Mono or habit only. Post a card to the Mono's chat:
+  chat.card      Mono only. Post a card to the Mono's chat:
                   {"type":"pr","repo":"owner/repo","number":123,"note":"..."}
                   {"type":"session","sessionId":"...","note":"..."}
                   {"type":"choices","options":["First choice","Second choice"]}
-                  {"type":"habit","name":"...","instructions":"...",
-                   "schedule":{"kind":"daily","time":"09:00"}}
-                  choices accepts 1–4 options. A habit card is a suggestion;
-                  the user must start it before it is scheduled.
+                  choices accepts 1–4 options.
 
 The output is one JSON line: {"ok":true,"result":...} or {"ok":false,"error":"..."}.
 Use --input - to pass JSON on stdin. Never print MonoCode credentials.
@@ -689,7 +668,6 @@ mod tests {
             r#"{"type":"pr","repo":"owner/repo","number":123}"#,
             r#"{"type":"session","sessionId":"other"}"#,
             r#"{"type":"choices","options":["Review","Ship"]}"#,
-            r#"{"type":"habit","name":"Check CI","instructions":"Check CI","schedule":{"kind":"daily","time":"09:00"}}"#,
         ] {
             assert!(matches!(
                 parse_args_for(&args(&["chat.card", "--json", input]), true),
@@ -701,7 +679,7 @@ mod tests {
         assert!(parse_args_for(&args(&["chat.card"]), false).is_err());
         let help = app_help();
         assert!(help.contains("chat.card"));
-        for kind in ["pr", "session", "choices", "habit"] {
+        for kind in ["pr", "session", "choices"] {
             assert!(help.contains(&format!(r#""type":"{kind}""#)));
         }
     }
@@ -726,6 +704,6 @@ mod tests {
         }
         assert!(app_help().contains("only when the user asks"));
         assert!(app_help().contains("expectedHash"));
-        assert!(app_help().contains("Habit runs and other sessions cannot change"));
+        assert!(app_help().contains("Other sessions cannot change"));
     }
 }

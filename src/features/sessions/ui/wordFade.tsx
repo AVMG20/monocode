@@ -232,7 +232,7 @@ export function usePacedText(
         rerender();
       }
       // Once the reveal has run into the end of what has arrived there is
-      // nothing to do until more does, which restarts this.
+      // nothing to do until more does.
       if (position >= text.length && shown.current < text.length) {
         if (heldText !== text) {
           heldText = text;
@@ -243,7 +243,12 @@ export function usePacedText(
           rerender();
         }
       }
-      if (shown.current < text.length) frame = requestAnimationFrame(tick);
+      // Keep going while the reply streams. Stopping once caught up relied on
+      // the next chunk restarting this effect, but a chunk that renders
+      // before the caught-up render commits leaves `behind` unchanged, and
+      // the reply froze until it finished.
+      if (shown.current < text.length || streaming)
+        frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
     document.addEventListener("visibilitychange", finishHidden);

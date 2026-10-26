@@ -26,6 +26,8 @@ type Props = {
   onStop?: (blockId: string) => void;
   /** Runs whose background task can be stopped from their line. */
   stoppable?: ReadonlySet<string>;
+  /** False while another tab is in front: its clocks hold still. */
+  visible?: boolean;
 };
 
 /**
@@ -40,11 +42,14 @@ export function RunningSubagents({
   onView,
   onStop,
   stoppable,
+  visible = true,
 }: Props) {
   const [now, setNow] = useState(() => Date.now());
   const [stopping, setStopping] = useState<ReadonlySet<string>>(new Set());
   const live = runs.filter((block) => liveIds.has(block.id)).length;
-  const ticking = live > 0;
+  // A hidden pane's session is frozen, so its runs would read as running
+  // (and re-render every second) until the pane is shown again.
+  const ticking = live > 0 && visible;
 
   // A stop that never lands gives the button back rather than spinning on.
   useEffect(() => {
@@ -215,19 +220,25 @@ function Row({
  * steered into that run joins it, so its runs stay counted.
  */
 export function runningSubagents(blocks: Block[]): Block[] {
-  const turn: Block[] = [];
-  for (let i = blocks.length - 1; i >= 0; i--) {
-    const block = blocks[i];
+  // Runs every streamed update: find the turn's start, then slice it once
+  // (building it with unshift was quadratic in the turn's length).
+  let start = blocks.length;
+  while (start > 0) {
+    const block = blocks[start - 1];
     if (block.role === "user" && !block.internal && !block.steered) break;
-    turn.unshift(block);
+    start -= 1;
   }
-  return turn.filter(
+  const turn = blocks.slice(start);
+  const runs = turn.filter(
     (block) =>
       isSubagentBlock(block) &&
       toolCallState(block) === "pending" &&
       !isSupersededSyntheticSubagent(block, turn),
   );
+  return runs.length ? runs : NO_RUNS;
 }
+
+const NO_RUNS: Block[] = [];
 
 /**
  * Each run's own background task id, keyed by the run's block id. The task

@@ -2,18 +2,13 @@ import {
   CheckCircle,
   ChevronLeft,
   ChevronRight,
-  Code,
   DashboardSquare,
   Inbox,
   PanelLeft,
-  GitBranch,
-  Plus,
-  Search,
   Settings,
   StickyNote,
   Terminal,
   X,
-  Zap,
 } from "../../shared/ui/icons";
 import {
   memo,
@@ -44,7 +39,7 @@ import { TerminalSpinner } from "../../features/sessions/ui/TerminalSpinner";
 import { TabLabel } from "../../shared/ui/TabLabel";
 import { WindowControls } from "./WindowControls";
 import { PixelMascot } from "../../features/projects/ui/PixelMascot";
-import { MonoRailMascot } from "../../features/monos/ui/MonoRailMascot";
+import type { ThreadStatus } from "../../features/coordinator/model/coordinator";
 import {
   MONO_STATUS_LABEL,
   type MonoLook,
@@ -63,23 +58,9 @@ import {
   useExternalTitleTabDrop,
 } from "../../features/workspace/model/paneDrop";
 import type { PaneEdge } from "../../features/workspace/model/layout";
-import {
-  APP_VIEW_LABELS,
-  type AppView,
-} from "../../features/workspace/model/appViewTabs";
-
-const APP_VIEW_ICONS = {
-  search: Search,
-  inbox: Inbox,
-  notes: StickyNote,
-  automations: Zap,
-};
 
 export type Tab = {
   id: string;
-  appView?: AppView;
-  /** A Mono open as a tab; its name is the title. */
-  mono?: { mascot: string; color: string; status: MonoState["status"] };
   /** Project folder name, e.g. `agent-terminal`. */
   project: string;
   /** Focused conversation title; empty for a fresh session. */
@@ -119,36 +100,21 @@ type Props = {
    * The Mono filling the main area. It takes the tabs' place, and nothing
    * project-scoped belongs beside it.
    */
-  mono?: { look: MonoLook; state: MonoState };
-  /**
-   * Takes the tabs' place, as the inset layout's Settings does with its
-   * breadcrumb and actions.
-   */
-  content?: ReactNode;
+  mono?: {
+    look: MonoLook;
+    state: MonoState;
+    /** The project's thread shown in its chat's place. */
+    thread?: { title: string; status: ThreadStatus };
+  };
   /** Shows or hides the Mono's overview panel beside its chat. */
   onToggleMonoOverview?: () => void;
   monoOverviewOpen?: boolean;
-  /** A project's threads: how many wait for the user and how many run. */
-  monoThreads?: ThreadCounts;
   onOpenMonoSettings?: () => void;
   /** The full-height Mono panel owns these while it is open. */
   hideWindowControls?: boolean;
   projectRailOpen?: boolean;
   sessionSidebarOpen?: boolean;
   compactRail?: boolean;
-  /**
-   * Spans the inset layout's outer glass, above the rail and the card, and
-   * owns the rail toggle and history navigation in both rail states.
-   */
-  inset?: boolean;
-  /** Inset layout: the right sidebar holding the project tools. */
-  rightPanelOpen?: boolean;
-  onToggleRightPanel?: () => void;
-  /** The working tree has changes; dots the right panel toggle. */
-  rightPanelDot?: boolean;
-  /** An app view (Search, Inbox, Notes, Automations) is shown, which has no
-   * project files beside it. */
-  rightPanelUnavailable?: boolean;
   canGoBack?: boolean;
   canGoForward?: boolean;
   onGoBack?: () => void;
@@ -157,8 +123,6 @@ type Props = {
   onToggleSessionSidebar?: () => void;
   onSelect: (id: string) => void;
   onNewTerminal?: () => void;
-  /** Inset layout: a new session, from the end of the tabs. */
-  onNewSession?: () => void;
   onOpenSettings?: () => void;
   onOpenInbox?: () => void;
   onOpenNotes?: () => void;
@@ -186,11 +150,6 @@ export function tabCopy(tab: Tab): {
   meta: string;
   tooltip: string;
 } {
-  if (tab.appView) {
-    const headline = APP_VIEW_LABELS[tab.appView];
-    return { headline, meta: "", tooltip: headline };
-  }
-  if (tab.mono) return { headline: tab.title, meta: "", tooltip: tab.title };
   const project = tab.project.trim() || "~";
   const conversation = tab.title.trim();
   const file = tab.files[0] ?? "";
@@ -358,7 +317,6 @@ function TitleTabItem({
 }) {
   const { headline, meta, tooltip } = tabCopy(tab);
   const fileIcon = tab.files[0];
-  const AppViewIcon = tab.appView ? APP_VIEW_ICONS[tab.appView] : null;
   const accessibleTooltip =
     (tab.doneHarnesses?.length ?? 0) > 0
       ? `${tooltip} · Response complete`
@@ -416,16 +374,7 @@ function TitleTabItem({
             : "text-content/50 hover:bg-content/5 hover:text-content"
         }`}
       >
-        {AppViewIcon ? (
-          <AppViewIcon className="size-3.5 shrink-0" strokeWidth={1.75} />
-        ) : tab.mono ? (
-          <MonoRailMascot
-            name={tab.mono.mascot}
-            color={tab.mono.color}
-            status={tab.mono.status}
-            className="size-3.5 shrink-0"
-          />
-        ) : tab.harnesses.length > 0 ? (
+        {tab.harnesses.length > 0 ? (
           <TabHarnesses
             harnesses={tab.harnesses}
             busyHarnesses={tab.busyHarnesses}
@@ -602,21 +551,6 @@ export function DevModeLabel() {
   );
 }
 
-/** The Development badge as an icon, for the inset title bar. */
-export function DevModeIcon() {
-  if (!import.meta.env.DEV) return null;
-  return (
-    <span
-      title="Development build"
-      aria-label="Development build"
-      role="img"
-      className="grid size-6 shrink-0 place-items-center text-skill"
-    >
-      <Code className="size-3.5" strokeWidth={1.75} />
-    </span>
-  );
-}
-
 /** Flex spacer that keeps the Development badge next to the visit arrows. */
 export function DevModeSlot() {
   return (
@@ -672,42 +606,29 @@ export function TabVisitNav({
   );
 }
 
-type ThreadCounts = { waiting: number; busy: number };
-
 /** A Mono's overview toggle and settings, beside its conversation. */
-export function MonoViewActions({
+function MonoViewActions({
   name,
   overviewOpen,
   onToggleOverview,
   onOpenSettings,
-  threads,
   className = "",
 }: {
   name: string;
   overviewOpen: boolean;
   onToggleOverview?: () => void;
   onOpenSettings?: () => void;
-  /** A project's threads, counted on the overview button. */
-  threads?: ThreadCounts;
   className?: string;
 }) {
   const label = overviewOpen ? "Hide overview" : "Show overview";
-  const detail = threads
-    ? [
-        threads.waiting ? `${threads.waiting} waiting for you` : "",
-        threads.busy ? `${threads.busy} busy` : "",
-      ]
-        .filter(Boolean)
-        .join(", ")
-    : "";
   return (
     <div className={`flex items-center gap-1 ${className}`}>
       {onToggleOverview ? (
         <button
           type="button"
           aria-pressed={overviewOpen}
-          title={detail ? `${label} (${detail})` : label}
-          aria-label={detail ? `${label}, ${detail}` : label}
+          title={label}
+          aria-label={label}
           data-tauri-drag-region="false"
           onClick={onToggleOverview}
           className={`flex h-6 items-center gap-1.5 rounded-md px-2 text-[12px] ${
@@ -718,17 +639,6 @@ export function MonoViewActions({
         >
           <DashboardSquare className="size-3.5" strokeWidth={1.75} />
           Overview
-          {threads?.busy ? (
-            <span className="flex items-center gap-1 rounded-full bg-accent/12 px-1.5 text-[10.5px] tabular-nums text-accent">
-              <TerminalSpinner className="inline-block w-2.5 select-none text-center text-[10px] leading-none" />
-              {threads.busy}
-            </span>
-          ) : null}
-          {threads?.waiting ? (
-            <span className="grid min-w-4 place-items-center rounded-full bg-amber-400/90 px-1 text-[10.5px] font-semibold tabular-nums leading-4 text-black">
-              {threads.waiting}
-            </span>
-          ) : null}
         </button>
       ) : null}
       {onOpenSettings ? (
@@ -773,20 +683,13 @@ function TitleBarComponent({
   activeId,
   cwd,
   mono,
-  content,
   onToggleMonoOverview,
   monoOverviewOpen = false,
-  monoThreads,
   onOpenMonoSettings,
   hideWindowControls = false,
   projectRailOpen = true,
   sessionSidebarOpen = true,
   compactRail = false,
-  inset = false,
-  rightPanelOpen = false,
-  onToggleRightPanel,
-  rightPanelDot = false,
-  rightPanelUnavailable = false,
   canGoBack = false,
   canGoForward = false,
   onGoBack,
@@ -795,7 +698,6 @@ function TitleBarComponent({
   onToggleSessionSidebar,
   onSelect,
   onNewTerminal,
-  onNewSession,
   onOpenSettings,
   onOpenInbox,
   onOpenNotes,
@@ -815,10 +717,6 @@ function TitleBarComponent({
   const { displayed, tabNodeRef, finishMotion } = useTabCloseMotion(tabs);
   const tabStripRef = useRef<HTMLDivElement | null>(null);
   const paneDropArmed = useRef(false);
-  const appTabIds = useRef(new Set<string>());
-  appTabIds.current = new Set(
-    tabs.filter((tab) => tab.appView || tab.mono).map((tab) => tab.id),
-  );
   const externalTabDrop = useMemo<
     ReorderExternalDrop<string> | undefined
   >(() => {
@@ -835,7 +733,6 @@ function TitleBarComponent({
     return onPlaceOnPane
       ? {
           onMove: (tabId, event) => {
-            if (appTabIds.current.has(tabId)) return false;
             if (tabId === activeId || !pulledBelowTabs(event)) {
               setExternalPaneDrop(null);
               return false;
@@ -849,7 +746,6 @@ function TitleBarComponent({
             return over != null;
           },
           onDrop: (tabId, event) => {
-            if (appTabIds.current.has(tabId)) return false;
             if (tabId === activeId || !pulledBelowTabs(event)) return false;
             const over = paneDropFromPoint(event.clientX, event.clientY);
             if (!over) return false;
@@ -928,13 +824,9 @@ function TitleBarComponent({
   );
   const systemTitle = useMemo(() => {
     const activeName = activeTab
-      ? activeTab.appView
-        ? APP_VIEW_LABELS[activeTab.appView]
-        : activeTab.mono
-          ? activeTab.title
-          : activeTab.files[0]
-            ? basename(activeTab.files[0])
-            : activeTab.project
+      ? activeTab.files[0]
+        ? basename(activeTab.files[0])
+        : activeTab.project
       : "";
     const project = cwd ? basename(cwd) : "";
     if (activeName && project && activeName !== project) {
@@ -1068,61 +960,24 @@ function TitleBarComponent({
   const projectless = !showCurrentProject;
   // An open project is labeled in the sidebar, above Sessions / Explorer /
   // Changes. Without a project that sidebar is gone, so the picker stays here.
-  // The inset sidebar's header menu switches projects.
   const showProjectButton =
-    !inset && railClosed && Boolean(onSelectProject) && !showCurrentProject;
+    railClosed && Boolean(onSelectProject) && !showCurrentProject;
   const showTrailingActions =
-    !inset &&
     !mono &&
     projectless &&
     railClosed &&
     Boolean(onOpenInbox || onOpenNotes || onOpenSettings);
-  const showRightPanelToggle = inset && Boolean(onToggleRightPanel);
-  // A Mono's own overview holds its changes; app views have none beside them.
-  const rightPanelOff = !!mono || rightPanelUnavailable;
-  const changesDot = rightPanelDot && !rightPanelOff;
   const trailingControls =
     showTrailingActions ||
-    showRightPanelToggle ||
     (mono && (onToggleMonoOverview || onOpenMonoSettings)) ||
     (!IS_MAC && !hideWindowControls) ? (
       <div className="flex h-full shrink-0 items-stretch">
-        {showRightPanelToggle ? (
-          // Clear of the window's right edge, like the traffic lights' inset
-          // on the left.
-          <div className="flex items-center pl-1.5 pr-3">
-            <IconButton
-              label={
-                changesDot
-                  ? `Toggle right sidebar (${MOD}${SHIFT}B, uncommitted changes)`
-                  : `Toggle right sidebar (${MOD}${SHIFT}B)`
-              }
-              active={rightPanelOpen && !rightPanelOff}
-              disabled={rightPanelOff}
-              onClick={onToggleRightPanel}
-            >
-              <span className="relative grid">
-                <GitBranch
-                  className={`size-3.5 ${changesDot ? "overview-tab-icon-with-dot" : ""}`}
-                  strokeWidth={1.75}
-                />
-                {changesDot ? (
-                  <span
-                    aria-hidden
-                    className="absolute -top-[2px] -right-[2px] size-1.5 rounded-full bg-accent"
-                  />
-                ) : null}
-              </span>
-            </IconButton>
-          </div>
-        ) : null}
         {mono && (onToggleMonoOverview || onOpenMonoSettings) ? (
           <MonoViewActions
             name={mono.look.name}
             overviewOpen={monoOverviewOpen}
             onToggleOverview={onToggleMonoOverview}
             onOpenSettings={onOpenMonoSettings}
-            threads={monoThreads}
             className="px-3"
           />
         ) : null}
@@ -1154,47 +1009,12 @@ function TitleBarComponent({
   // exempts buttons, links and inputs on its own.
   return (
     <header
-      data-inset-title-bar={inset || undefined}
-      className={`flex h-10 shrink-0 select-none items-stretch${
-        inset ? "" : " border-b border-stroke"
-      }${compactRail && !mono && !inset ? " body-glass" : ""}`}
+      className={`flex h-10 shrink-0 select-none items-stretch border-b border-stroke${
+        compactRail && !mono ? " body-glass" : ""
+      }`}
       data-tauri-drag-region="deep"
     >
-      {inset ? (
-        <div
-          data-inset-title-nav
-          // As wide as the open rail, so the tabs start over the card.
-          // Closed, the tab strip's own inset is gap enough after the arrows.
-          className={`flex shrink-0 items-center${sessionSidebarOpen ? " pr-1.5" : ""}`}
-          style={{ minWidth: "var(--inset-rail-width, 0px)" }}
-        >
-          <div
-            // Center the toggle over the sidebar's project icon.
-            className={`shrink-0 ${trafficLightsVisible ? "w-[78px]" : "w-2.5"}`}
-          />
-          {onToggleSessionSidebar ? (
-            // Hovering the toggle peeks a collapsed sidebar out.
-            <span data-sidebar-peek-trigger className="flex">
-              <IconButton
-                label={`Toggle Sidebar (${MOD}B)`}
-                onClick={onToggleSessionSidebar}
-              >
-                <PanelLeft className="size-3.5" strokeWidth={1.75} />
-              </IconButton>
-            </span>
-          ) : null}
-          <DevModeIcon />
-          {/* History sits at the rail's far edge and follows it as the
-              sidebar resizes. */}
-          <div className="flex-1" />
-          <TabVisitNav
-            canGoBack={canGoBack}
-            canGoForward={canGoForward}
-            onGoBack={onGoBack}
-            onGoForward={onGoForward}
-          />
-        </div>
-      ) : compactRail ? (
+      {compactRail ? (
         <div
           data-compact-title-nav
           // A full Mono's title bar starts beside the 48px compact rail.
@@ -1212,7 +1032,11 @@ function TitleBarComponent({
       ) : null}
       {/* Both the rail and the sidebar step aside without a project, so the
           title bar takes over the traffic lights and the rail toggle. */}
-      {projectless && railClosed && !compactRail && !inset ? (
+      {/* An open project's sidebar carries them instead, when it shows. */}
+      {projectless &&
+      railClosed &&
+      !compactRail &&
+      !(mono && sessionSidebarOpen) ? (
         <>
           {trafficLightsVisible ? <div className="w-[78px] shrink-0" /> : null}
           <div className="flex shrink-0 items-center px-1.5">
@@ -1225,12 +1049,9 @@ function TitleBarComponent({
           </div>
         </>
       ) : null}
-      {!inset &&
-      !sessionSidebarOpen &&
-      !projectless &&
-      onToggleSessionSidebar ? (
+      {!sessionSidebarOpen && !projectless && onToggleSessionSidebar ? (
         <div className="flex shrink-0 items-center px-1.5">
-          {trafficLightsVisible && railClosed && !compactRail && !inset ? (
+          {trafficLightsVisible && railClosed && !compactRail ? (
             <div className="w-[70px] shrink-0" />
           ) : null}
           <IconButton
@@ -1256,13 +1077,11 @@ function TitleBarComponent({
 
       <div
         className={`flex min-w-0 flex-1 items-stretch${
-          showProjectButton && !inset ? " border-l border-stroke" : ""
+          showProjectButton ? " border-l border-stroke" : ""
         }`}
       >
-        {content ? (
-          content
-        ) : mono && !inset ? (
-          <MonoTitle look={mono.look} state={mono.state} />
+        {mono ? (
+          <MonoTitle look={mono.look} state={mono.state} thread={mono.thread} />
         ) : (
           <div
             className="relative h-full min-w-0 flex-1 overflow-hidden"
@@ -1355,24 +1174,11 @@ function TitleBarComponent({
                   </div>
                 );
               })}
-              {onNewSession ? (
-                // Sized and plated like an inactive tab beside it.
-                <button
-                  type="button"
-                  title={`New session (${MOD}T)`}
-                  aria-label={`New session (${MOD}T)`}
-                  data-tauri-drag-region="false"
-                  onClick={onNewSession}
-                  className="ml-0.5 grid size-7.5 shrink-0 cursor-default place-items-center rounded-md bg-content/4 text-content/50 opacity-65 hover:bg-content/7 hover:text-content hover:opacity-100 focus-visible:opacity-100"
-                >
-                  <Plus className="size-3.5" strokeWidth={1.75} />
-                </button>
-              ) : null}
             </div>
           </div>
         )}
 
-        {!IS_MAC && !IS_WIN && !content ? (
+        {!IS_MAC && !IS_WIN ? (
           <div className="flex min-w-0 flex-1 items-center justify-center px-4">
             <span className="pointer-events-none truncate text-[11.5px] font-medium text-content/40 select-none">
               {systemTitle}
@@ -1398,8 +1204,26 @@ function TitleBarComponent({
 
 export const TitleBar = memo(TitleBarComponent);
 
-/** In a Mono's view the title bar names it and shows its status. */
-function MonoTitle({ look, state }: { look: MonoLook; state: MonoState }) {
+const THREAD_STATUS_TEXT: Record<ThreadStatus, string> = {
+  waiting: "Waiting for you",
+  busy: "Working",
+  inactive: "Idle",
+  solved: "Solved",
+};
+
+/**
+ * In a project's view the title bar names it and shows its status, or the
+ * thread shown in its chat's place and that thread's.
+ */
+function MonoTitle({
+  look,
+  state,
+  thread,
+}: {
+  look: MonoLook;
+  state: MonoState;
+  thread?: { title: string; status: ThreadStatus };
+}) {
   return (
     <div
       data-mono-title
@@ -1412,17 +1236,44 @@ function MonoTitle({ look, state }: { look: MonoLook; state: MonoState }) {
         still={state.status === "idle"}
         className="size-4 shrink-0"
       />
-      <span className="min-w-0 truncate text-[13px] font-medium text-content">
-        {look.name}
-      </span>
       <span
-        data-mono-status={state.status}
-        className={`shrink-0 text-[12px] ${
-          state.status === "needs-you" ? "text-accent" : "text-content/45"
+        className={`min-w-0 truncate text-[13px] font-medium ${
+          thread ? "max-w-[40%] shrink-0 text-content/55" : "text-content"
         }`}
       >
-        {MONO_STATUS_LABEL[state.status]}
+        {look.name}
       </span>
+      {thread ? (
+        <>
+          <ChevronRight
+            aria-hidden
+            className="size-3 shrink-0 text-content/35"
+          />
+          <span
+            data-thread-title
+            className="min-w-0 truncate text-[13px] font-medium text-content"
+          >
+            {thread.title}
+          </span>
+          <span
+            data-thread-status={thread.status}
+            className={`shrink-0 text-[12px] ${
+              thread.status === "waiting" ? "text-amber-400" : "text-content/45"
+            }`}
+          >
+            {THREAD_STATUS_TEXT[thread.status]}
+          </span>
+        </>
+      ) : (
+        <span
+          data-mono-status={state.status}
+          className={`shrink-0 text-[12px] ${
+            state.status === "needs-you" ? "text-accent" : "text-content/45"
+          }`}
+        >
+          {MONO_STATUS_LABEL[state.status]}
+        </span>
+      )}
     </div>
   );
 }

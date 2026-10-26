@@ -17,7 +17,6 @@ import {
 } from "../../features/workspace/model/layout";
 import { forgetHarnessSession } from "../../integrations/harness/core/registry";
 import { isMonoSession } from "../../features/monos/model/mono";
-import { isHabitRun } from "../../features/monos/model/monoHabits";
 
 const SESSION_DETACH_DELAY_MS = 250;
 
@@ -70,11 +69,9 @@ export function useIdleSessionDetach({
     // Inbox and resident agents own panes independently of project tabs. Keep
     // their drafts and attachments mounted when the user switches views.
     for (const session of sessions) {
-      // A habit's hidden run is removed by its scheduler when it ends.
       if (
         session.inboxAsk ||
         isMonoSession(session.id) ||
-        isHabitRun(session.id) ||
         keepRef.current?.has(session.id) ||
         // A coordinator's message waits in the queue for the thread to idle.
         session.queuedMessages?.some((message) => message.forwardedBy)

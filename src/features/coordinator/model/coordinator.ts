@@ -50,6 +50,8 @@ export type ProjectThread = {
 export type ThreadView = {
   sessionId: string;
   title: string;
+  /** When the project took it on. */
+  addedAt: number;
   status: ThreadStatus;
   /** Short line under the title: what it is doing or last said. */
   activity?: string;
@@ -358,6 +360,7 @@ export function threadView(input: {
   const base = {
     sessionId: thread.sessionId,
     title: threadTitle(session?.title?.trim() ? session : summary),
+    addedAt: thread.addedAt,
     updatedAt,
     harness: session?.harness ?? summary?.harness,
     model: session?.model ?? summary?.model,
@@ -394,15 +397,16 @@ export function threadView(input: {
   return { ...base, status: "inactive", activity: reply };
 }
 
+/** What a thread with no title of its own is called. */
+export const UNTITLED_THREAD = "Untitled thread";
+
 /** A thread's name without the harness prefix session titles carry. */
 function threadTitle(
   source: Pick<Session, "title" | "harness"> | undefined,
 ): string {
   const title = source?.title?.trim();
-  if (!title) return "Untitled thread";
-  return (
-    sessionDisplayTitle(title, source!.harness).trim() || "Untitled thread"
-  );
+  if (!title) return UNTITLED_THREAD;
+  return sessionDisplayTitle(title, source!.harness).trim() || UNTITLED_THREAD;
 }
 
 /** Threads by status, most recently active first within each. */

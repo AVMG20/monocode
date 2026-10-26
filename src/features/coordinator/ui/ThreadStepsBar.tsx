@@ -85,7 +85,11 @@ export function ThreadStepsBar({
       {open ? (
         <ol className="max-h-[40vh] overflow-y-auto px-4 pb-2.5 pt-0.5">
           {steps.items.map((item, index) => (
-            <StepRow key={item.id ?? `${index}:${item.text}`} item={item} />
+            <StepRow
+              key={item.id ?? `${index}:${item.text}`}
+              item={item}
+              busy={busy}
+            />
           ))}
         </ol>
       ) : null}
@@ -111,10 +115,10 @@ function saveOpen(open: boolean): void {
   }
 }
 
-function StepRow({ item }: { item: TaskListItem }) {
+function StepRow({ item, busy }: { item: TaskListItem; busy: boolean }) {
   return (
     <li className="flex min-w-0 items-start gap-2.5 py-1">
-      <StepState status={item.status} />
+      <StepState status={item.status} busy={busy} />
       <span
         className={`min-w-0 flex-1 text-[12.5px] leading-[18px] ${
           item.status === "in_progress"
@@ -132,7 +136,13 @@ function StepRow({ item }: { item: TaskListItem }) {
   );
 }
 
-function StepState({ status }: { status: TaskListItemStatus }) {
+function StepState({
+  status,
+  busy,
+}: {
+  status: TaskListItemStatus;
+  busy: boolean;
+}) {
   if (status === "completed")
     return (
       <span
@@ -148,7 +158,12 @@ function StepState({ status }: { status: TaskListItemStatus }) {
         aria-label="In progress"
         className="mt-px grid size-4 shrink-0 place-items-center text-accent"
       >
-        <Loader className="size-4 motion-safe:animate-spin" strokeWidth={2} />
+        {/* A stopped turn leaves its step in progress; it only spins while
+            something is working on it. */}
+        <Loader
+          className={`size-4 ${busy ? "motion-safe:animate-spin" : "opacity-60"}`}
+          strokeWidth={2}
+        />
       </span>
     );
   return (

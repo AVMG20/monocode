@@ -102,7 +102,6 @@ import {
 } from "../model/inboxFilters";
 import { copyText } from "../../../platform/tauri/clipboard";
 import { projectKey, projectName } from "../../../shared/lib/paths";
-import { inProjectScope } from "../../projects/model/projectScope";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { playCue } from "../../settings/model/sounds";
 import {
@@ -371,14 +370,10 @@ type CiRepairProps = {
 };
 
 type Props = {
-  tabbed?: boolean;
-  active?: boolean;
   onAsk: (item: InboxItem) => Promise<string>;
   onAskRestart: (item: InboxItem) => Promise<string>;
   onAskMount: (portal: InboxSessionPortal | null) => void;
   cwd: string;
-  /** Shows only this project's items, plus ones not tied to any project. */
-  scopeProject?: string;
   recents: RecentProject[];
   besideRail?: boolean;
   compactRail?: boolean;
@@ -396,13 +391,10 @@ type Props = {
 };
 
 export function InboxView({
-  tabbed = false,
-  active = true,
   onAsk,
   onAskRestart,
   onAskMount,
   cwd,
-  scopeProject,
   recents,
   besideRail = false,
   compactRail = false,
@@ -473,43 +465,27 @@ export function InboxView({
   const [jiraProjects, setJiraProjects] = useState<JiraProject[]>([]);
   const prevRefresh = useRef(refresh);
 
-  // Fetches still cover every project, sharing the background poll's cache,
-  // so switching projects is instant; a scoped Inbox only shows its own.
+  // Fetches cover every project, sharing the background poll's cache, so
+  // switching projects is instant.
   const projects = useMemo(
     () => inboxProjectsForRail(recents, cwd),
     [cwd, recents],
   );
-  const shownProjects = useMemo(
-    () =>
-      scopeProject
-        ? projects.filter((project) =>
-            sameProjectPath(project.path, scopeProject),
-          )
-        : projects,
-    [projects, scopeProject],
-  );
-  const scopedItems = useMemo(
-    () =>
-      scopeProject
-        ? items.filter((item) => inProjectScope(item.projectPath, scopeProject))
-        : items,
-    [items, scopeProject],
-  );
   const projectOptions = useMemo(
-    () => inboxProjectOptions(shownProjects, logos),
-    [logos, shownProjects],
+    () => inboxProjectOptions(projects, logos),
+    [logos, projects],
   );
   const linearProjects = useMemo(
-    () => linearProjectOptions(scopedItems),
-    [scopedItems],
+    () => linearProjectOptions(items),
+    [items],
   );
   const activeFilters = useMemo(
     () =>
       pruneInboxFilters(
         filters,
-        shownProjects.map((project) => project.path),
+        projects.map((project) => project.path),
       ),
-    [filters, shownProjects],
+    [filters, projects],
   );
   const filtersActive = hasActiveInboxFilters(
     activeFilters,
@@ -551,7 +527,6 @@ export function InboxView({
   }, [target]);
 
   useEffect(() => {
-    if (!active) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       event.preventDefault();
@@ -568,7 +543,7 @@ export function InboxView({
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [active, connectMenuOpen, filterMenu]);
+  }, [connectMenuOpen, filterMenu]);
 
   useEffect(() => {
     const onChange = () => {
@@ -785,7 +760,7 @@ export function InboxView({
   const visibleItems = useMemo(() => {
     if (!sourceAvailable) return [];
     const visible = applyInboxFilters(
-      scopedItems,
+      items,
       activeFilters,
       searchInput,
       Date.now(),
@@ -802,7 +777,6 @@ export function InboxView({
   }, [
     activeFilters,
     items,
-    scopedItems,
     searchInput,
     source,
     sourceAvailable,
@@ -823,14 +797,14 @@ export function InboxView({
   const sourceEntries = useMemo(
     () =>
       sourceAvailable
-        ? scopedItems
+        ? items
             .filter((item) => item.provider === source)
             .map((item) => ({
               key: inboxItemKey(item),
               updatedAt: item.updatedAt,
             }))
         : [],
-    [scopedItems, source, sourceAvailable],
+    [items, source, sourceAvailable],
   );
   const sourceHasUnseen = useMemo(
     () => sourceEntries.some(isInboxEntryUnseen),
@@ -1172,27 +1146,25 @@ export function InboxView({
       data-app-inbox
       className="flex min-h-0 min-w-0 flex-1 flex-col text-content"
     >
-      {!tabbed ? (
-        <div
-          data-app-view-header
-          className="flex h-10 shrink-0 select-none items-center border-b border-stroke"
-          data-tauri-drag-region="deep"
-        >
-          {IS_MAC && compactRail ? <div className="w-4 shrink-0" /> : null}
-          {IS_MAC && !besideRail ? <div className="w-[78px] shrink-0" /> : null}
-          {besideRail ? null : (
-            <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />
-          )}
-          <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-[13px]">
-            <Inbox
-              className="size-3.5 shrink-0 text-content/45"
-              strokeWidth={1.75}
-            />
-            <span className="min-w-0 truncate text-content">Inbox</span>
-          </div>
-          {IS_MAC ? null : <WindowControls />}
+      <div
+        data-app-view-header
+        className="flex h-10 shrink-0 select-none items-center border-b border-stroke"
+        data-tauri-drag-region="deep"
+      >
+        {IS_MAC && compactRail ? <div className="w-4 shrink-0" /> : null}
+        {IS_MAC && !besideRail ? <div className="w-[78px] shrink-0" /> : null}
+        {besideRail ? null : (
+          <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />
+        )}
+        <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-[13px]">
+          <Inbox
+            className="size-3.5 shrink-0 text-content/45"
+            strokeWidth={1.75}
+          />
+          <span className="min-w-0 truncate text-content">Inbox</span>
         </div>
-      ) : null}
+        {IS_MAC ? null : <WindowControls />}
+      </div>
 
       <div className="flex min-h-0 min-w-0 flex-1">
         {list}

@@ -6,47 +6,30 @@ import { PanelRightToggle } from "../../../shared/ui/icons";
 const MIN_WIDTH = 340;
 const DEFAULT_WIDTH = 400;
 let rememberedWidth = DEFAULT_WIDTH;
-/** A project's overview hosts whole threads, so it opens at half the window. */
-const WIDE_MIN_WIDTH = 420;
-let rememberedWideWidth: number | undefined;
-const wideDefault = () =>
-  Math.max(WIDE_MIN_WIDTH, Math.min(960, Math.round(window.innerWidth * 0.5)));
 
-/** The shared frame for a Mono's details and turn sidebars. */
+/** The frame of a project's overview panel beside its chat. */
 export function MonoSidebar({
   open,
-  kind,
   label,
   color,
   windowControls,
-  expanded = false,
-  wide = false,
   children,
 }: {
   open: boolean;
-  /** Opens at half the window and may grow wider, as a project's does. */
-  wide?: boolean;
-  /** Fills the view beside it instead of keeping its dragged width. */
-  expanded?: boolean;
-  kind: "details" | "sessions";
   label: string;
   color: string;
   windowControls?: ReactNode;
   children: ReactNode;
 }) {
   const resize = useDragResize({
-    min: wide ? WIDE_MIN_WIDTH : MIN_WIDTH,
-    // The overview hosts whole sessions and documents, so it may grow wide;
-    // either way the chat keeps a good share.
-    max: wide
-      ? () => Math.min(1200, Math.round(window.innerWidth * 0.7))
-      : () => Math.min(960, Math.round(window.innerWidth * 0.62)),
-    defaultWidth: wide ? wideDefault() : DEFAULT_WIDTH,
-    initial: wide ? (rememberedWideWidth ?? wideDefault()) : rememberedWidth,
+    min: MIN_WIDTH,
+    // Wide enough for a diff when dragged; the chat keeps a good share.
+    max: () => Math.min(960, Math.round(window.innerWidth * 0.62)),
+    defaultWidth: DEFAULT_WIDTH,
+    initial: rememberedWidth,
     direction: "left",
     onCommit: (width) => {
-      if (wide) rememberedWideWidth = width;
-      else rememberedWidth = width;
+      rememberedWidth = width;
     },
   });
   return (
@@ -55,8 +38,7 @@ export function MonoSidebar({
       aria-label={label}
       aria-hidden={!open || undefined}
       inert={!open || undefined}
-      data-mono-details={kind === "details" ? "" : undefined}
-      data-mono-sessions={kind === "sessions" ? "" : undefined}
+      data-mono-details=""
       data-open={open}
       style={
         {
@@ -66,20 +48,16 @@ export function MonoSidebar({
             : "0px",
         } as CSSProperties
       }
-      className={`mono-details-panel relative flex h-full min-h-0 flex-col font-sans ${
-        expanded ? "!w-auto min-w-0 flex-1" : "shrink-0 border-l border-stroke"
-      }`}
+      className="mono-details-panel relative flex h-full min-h-0 shrink-0 flex-col border-l border-stroke font-sans"
     >
-      {expanded ? null : (
-        <div
-          role="separator"
-          aria-orientation="vertical"
-          aria-label={`Resize Mono ${kind}`}
-          className={`absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize touch-none ${resize.dragging ? "bg-content/15" : "hover:bg-content/10"}`}
-          onPointerDown={resize.onPointerDown}
-          onDoubleClick={resize.onDoubleClick}
-        />
-      )}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize overview"
+        className={`absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize touch-none ${resize.dragging ? "bg-content/15" : "hover:bg-content/10"}`}
+        onPointerDown={resize.onPointerDown}
+        onDoubleClick={resize.onDoubleClick}
+      />
       {windowControls ? (
         <div className="absolute right-0 top-0 z-30 h-10">{windowControls}</div>
       ) : null}
